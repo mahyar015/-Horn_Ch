@@ -1,0 +1,298 @@
+# ba_meta require api 9
+# ba_meta export plugin
+
+from babase import (
+    app,
+    UIScale as uis,
+    Call
+)
+from bauiv1 import (
+    containerwidget as cw,
+    buttonwidget as bw,
+    textwidget as tw,
+    get_special_widget as gsw,
+    getsound as gs,
+)
+from bascenev1 import (
+    chatmessage as CM,
+    screenmessage as push,
+)
+import socket
+import time
+import threading
+
+# ============================================
+# کلاس Utility (مثل AR در فایل اصلی)
+# ============================================
+class UT:
+    """کلاس ابزار برای ساخت ویجت‌ها (مشابه AR)"""
+    
+    @classmethod
+    def get_ui_scale(cls):
+        """دریافت اسکیل بر اساس اندازه UI"""
+        ui_scale = app.ui_v1.uiscale
+        scale_map = {uis.SMALL: 1.5, uis.MEDIUM: 1.1, uis.LARGE: 0.8}
+        return scale_map.get(ui_scale, 1.0)
+    
+    @classmethod
+    def create_window(cls, source, size=(300, 200), extra_scale=0.0, **kwargs):
+        """ساخت پنجره با تنظیمات مشابه AR.cw"""
+        center = source.get_screen_space_center() if source else None
+        window = cw(
+            **kwargs,
+            size=size,
+            scale=cls.get_ui_scale() + extra_scale,
+            transition='in_scale',
+            color=(0.1, 0.1, 0.15),
+            parent=gsw('overlay_stack'),
+            scale_origin_stack_offset=center
+        )
+        return window
+    
+    @classmethod
+    def add_close_button(cls, window, position=(270, 170)):
+        """اضافه کردن دکمه بستن (مشابه AR.add_close_button)"""
+        return bw(
+            parent=window,
+            size=(25, 25),
+            position=position,
+            label='X',
+            color=(0.8, 0.2, 0.2),
+            textcolor=(1, 1, 1),
+            on_activate_call=lambda: cls.close_window(window)
+        )
+    
+    @classmethod
+    def close_window(cls, window):
+        """بستن پنجره با افکت"""
+        gs('swish').play()
+        cw(window, transition='out_scale')
+    
+    @classmethod
+    def err(cls, message):
+        """نمایش خطا (مشابه AR.err)"""
+        gs('block').play()
+        push(f"❌ {message}", color=(1, 0.5, 0))
+    
+    @classmethod
+    def ok(cls):
+        """نمایش تایید (مشابه AR.ok)"""
+        gs('dingSmallHigh').play()
+        push("✅ Done!", color=(0, 1, 0))
+
+# ============================================
+# ترد برای گرفتن پینگ واقعی (از فایل اصلی)
+# ============================================
+class RealPingThread(threading.Thread):
+    def __init__(self):
+        super().__init__()
+        self.daemon = True
+        self.running = True
+        self.server_ip = "127.0.0.1"
+        self.server_port = 43210
+        self.current_ping = 0.0
+
+    def run(self):
+        while self.running:
+            try:
+                if self.server_ip != "127.0.0.1":
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    sock.settimeout(1)
+                    start_time = time.time()
+                    sock.sendto(b'\x0b', (self.server_ip, self.server_port))
+                    
+                    try:
+                        data, _ = sock.recvfrom(10)
+                        if data == b'\x0c':
+                            self.current_ping = round((time.time() - start_time) * 1000.0, 2)
+                        else:
+                            self.current_ping = 999
+                    except socket.timeout:
+                        self.current_ping = 999
+                    except:
+                        self.current_ping = 0
+                    finally:
+                        sock.close()
+                else:
+                    self.current_ping = 0
+            except:
+                self.current_ping = 0
+            time.sleep(1)
+
+    def stop(self):
+        self.running = False
+
+# ============================================
+# کلاس اصلی مود Ping
+# ============================================
+class PingButton:
+    def __init__(self, source):
+        """ساخت پنجره Ping"""
+        self.source = source
+        self.ping_thread = None
+        self.create_window()
+    
+    def create_window(self):
+        """ساخت پنجره با الگوی AR.cw"""
+        self.window = UT.create_window(
+            source=self.source,
+            size=(300, 180),
+            extra_scale=0.1
+        )
+        
+        # دکمه بستن
+        UT.add_close_button(self.window, position=(270, 150))
+        
+        # عنوان
+        tw(
+            parent=self.window,
+            text='📡 Ping Monitor',
+            position=(150, 140),
+            h_align='center',
+            scale=1.2,
+            color=(0, 1, 1)
+        )
+        
+        # نمایش پینگ لحظه‌ای
+        self.ping_display = tw(
+            parent=self.window,
+            text='⏳ Waiting...',
+            position=(150, 100),
+            h_align='center',
+            scale=1.5,
+            color=(1, 1, 1)
+        )
+        
+        # دکمه ارسال پینگ
+        bw(
+            parent=self.window,
+            label='📤 Send Ping to Chat',
+            size=(200, 40),
+            position=(50, 40),
+            on_activate_call=self.send_ping,
+            color=(0.2, 0.6, 0.8),
+            textcolor=(1, 1, 1),
+            button_type='square'
+        )
+        
+        # استارت ترد پینگ
+        self.start_ping_thread()
+        gs('swish').play()
+    
+    def start_ping_thread(self):
+        """استارت ترد پینگ"""
+        if self.ping_thread is None or not self.ping_thread.is_alive():
+            self.ping_thread = RealPingThread()
+            self.ping_thread.start()
+            # شروع آپدیت نمایش پینگ
+            self.update_ping_display()
+    
+    def update_ping_display(self):
+        """آپدیت نمایش پینگ روی پنجره"""
+        if not hasattr(self, 'window') or not self.window.exists():
+            return
+        
+        try:
+            if self.ping_thread:
+                ping = self.ping_thread.current_ping
+                if ping > 0:
+                    # تغییر رنگ بر اساس مقدار پینگ
+                    if ping < 100:
+                        color = (0, 1, 0)  # سبز
+                    elif ping < 300:
+                        color = (1, 1, 0)  # زرد
+                    else:
+                        color = (1, 0, 0)  # قرمز
+                    
+                    tw(self.ping_display, text=f"{ping} ms", color=color)
+                else:
+                    tw(self.ping_display, text="🔴 Not Connected", color=(1, 0.5, 0))
+        except:
+            pass
+        
+        # آپدیت هر 1 ثانیه
+        from babase import apptimer
+        apptimer(1.0, self.update_ping_display)
+    
+    def send_ping(self):
+        """ارسال پینگ به چت"""
+        try:
+            if self.ping_thread:
+                ping = self.ping_thread.current_ping
+                if ping > 0:
+                    message = f"📡 Ping: {ping} ms"
+                    CM(message)
+                    push(f"✅ {message}", color=(0, 1, 0))
+                    gs('dingSmall').play()
+                else:
+                    UT.err("Not connected to any server!")
+            else:
+                UT.err("Ping thread not running!")
+        except Exception as e:
+            UT.err(f"Error: {str(e)}")
+    
+    def __del__(self):
+        """توقف ترد در هنگام بسته شدن"""
+        if self.ping_thread:
+            self.ping_thread.stop()
+            self.ping_thread = None
+
+# ============================================
+# کلاس اصلی پلاگین (مثل byTaha در فایل اصلی)
+# ============================================
+class byPing(Plugin):
+    """پلاگین ساده برای نمایش پینگ در بازی BombSquad"""
+    
+    def __init__(self):
+        # پیام خوش‌آمدگویی
+        from bauiv1 import apptimer
+        apptimer(5, lambda: push("📡 Ping Monitor Loaded! Click 'Ping' in Party Menu", color=(0, 1, 1)))
+        
+        # اضافه کردن دکمه به منوی مهمانی
+        self.patch_party_window()
+    
+    def patch_party_window(self):
+        """اضافه کردن دکمه Ping به منوی مهمانی (مثل فایل اصلی)"""
+        from bauiv1lib import party
+        
+        # ذخیره تابع اصلی
+        original_init = party.PartyWindow.__init__
+        
+        def new_init(self, *args, **kwargs):
+            # اجرای تابع اصلی
+            result = original_init(self, *args, **kwargs)
+            
+            # اضافه کردن دکمه Ping
+            bw(
+                parent=self._root_widget,
+                position=(self._width - 80, self._height - 48),
+                size=(70, 25),
+                label='📡',
+                icon=None,
+                on_activate_call=lambda: PingButton(self._root_widget),
+                color=(0.2, 0.6, 0.8),
+                textcolor=(1, 1, 1),
+                text_scale=0.6,
+                button_type='square'
+            )
+            
+            # اضافه کردن برچسب زیر دکمه
+            tw(
+                parent=self._root_widget,
+                text='Ping',
+                position=(self._width - 80, self._height - 75),
+                h_align='center',
+                scale=0.4,
+                color=(0.8, 0.8, 1)
+            )
+            
+            return result
+        
+        # جایگزینی تابع
+        party.PartyWindow.__init__ = new_init
+
+# ============================================
+# تابع ورودی پلاگین (مورد نیاز BombSquad)
+# ============================================
+def ba_plugin():
+    return byPing()
