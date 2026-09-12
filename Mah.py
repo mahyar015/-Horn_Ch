@@ -43,21 +43,6 @@ DEFAULT_LIMITS = {
 DEFAULT_UNKNOWN = 999999
 
 
-def get_pos(key, default):
-    try:
-        return app.config.get(f'mahyar_btn_{key}', default)
-    except:
-        return default
-
-
-def save_pos(key, pos):
-    try:
-        app.config[f'mahyar_btn_{key}'] = pos
-        app.config.commit()
-    except:
-        pass
-
-
 def get_limits():
     try:
         saved = app.config.get('mahyar_limits', None)
@@ -128,135 +113,26 @@ class AR:
 
 
 # ============================================
-# 🎯 Position Editor
-# ============================================
-class PositionEditor:
-    def __init__(s, source, btn_key, btn_name):
-        s.btn_key = btn_key
-        s.btn_name = btn_name
-
-        s.w = AR.cw(source=source, size=(340, 380), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(310, 340))
-
-        tw(parent=s.w, text=f'Move: {btn_name}', scale=1.0,
-           position=(170, 335), h_align='center', color=(1, 1, 0))
-
-        tw(parent=s.w, text='Save & re-open party menu to see',
-           position=(170, 310), scale=0.5,
-           h_align='center', color=(0.8, 0.8, 1))
-
-        s.pos_x, s.pos_y = get_pos(btn_key, (-100, -80))
-
-        s.pos_text = tw(parent=s.w, text=f'X: {s.pos_x}   Y: {s.pos_y}',
-                        position=(170, 275), scale=0.8,
-                        h_align='center', color=(0, 1, 1))
-
-        bw(parent=s.w, label='↑', size=(70, 50), position=(135, 215),
-           on_activate_call=Call(s.move, 'up'),
-           color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
-           button_type='square', text_scale=1.5)
-
-        bw(parent=s.w, label='←', size=(70, 50), position=(55, 155),
-           on_activate_call=Call(s.move, 'left'),
-           color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
-           button_type='square', text_scale=1.5)
-
-        bw(parent=s.w, label='↓', size=(70, 50), position=(135, 155),
-           on_activate_call=Call(s.move, 'down'),
-           color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
-           button_type='square', text_scale=1.5)
-
-        bw(parent=s.w, label='→', size=(70, 50), position=(215, 155),
-           on_activate_call=Call(s.move, 'right'),
-           color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
-           button_type='square', text_scale=1.5)
-
-        tw(parent=s.w, text='Step Size:', scale=0.7,
-           position=(30, 110), color=(1, 1, 1))
-
-        s.step = 5
-        s.step_text = tw(parent=s.w, text=f'{s.step} px', scale=0.7,
-                        position=(150, 110), color=(1, 1, 0))
-
-        bw(parent=s.w, label='1', size=(60, 30), position=(30, 70),
-           on_activate_call=Call(s.set_step, 1),
-           color=(0.5, 0.5, 0.7), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
-        bw(parent=s.w, label='5', size=(60, 30), position=(100, 70),
-           on_activate_call=Call(s.set_step, 5),
-           color=(0.4, 0.5, 0.7), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
-        bw(parent=s.w, label='10', size=(60, 30), position=(170, 70),
-           on_activate_call=Call(s.set_step, 10),
-           color=(0.4, 0.6, 0.8), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
-        bw(parent=s.w, label='20', size=(60, 30), position=(240, 70),
-           on_activate_call=Call(s.set_step, 20),
-           color=(0.3, 0.7, 0.8), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
-
-        bw(parent=s.w, label='Reset Position', size=(150, 35),
-           position=(95, 25), on_activate_call=s.reset_pos,
-           color=(0.8, 0.2, 0.2), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
-
-        gs('swish').play()
-
-    def move(s, direction):
-        step = s.step
-
-        if direction == 'left':
-            s.pos_x -= step
-        elif direction == 'right':
-            s.pos_x += step
-        elif direction == 'up':
-            s.pos_y += step
-        elif direction == 'down':
-            s.pos_y -= step
-
-        save_pos(s.btn_key, (s.pos_x, s.pos_y))
-        tw(s.pos_text, text=f'X: {s.pos_x}   Y: {s.pos_y}')
-        push(f'{s.btn_name}: X={s.pos_x}, Y={s.pos_y}', color=(0, 1, 1))
-        gs('click01').play()
-
-    def set_step(s, value):
-        s.step = value
-        tw(s.step_text, text=f'{value} px')
-        gs('dingSmall').play()
-
-    def reset_pos(s):
-        if s.btn_key == 'math':
-            default = (-100, -80)
-        else:
-            default = (-100, -48)
-        s.pos_x, s.pos_y = default
-        save_pos(s.btn_key, default)
-        tw(s.pos_text, text=f'X: {s.pos_x}   Y: {s.pos_y}')
-        push('Position reset!', color=(0, 1, 1))
-        gs('dingSmallHigh').play()
-
-
-# ============================================
-# 🧮 Calculator
+# 🧮 Calculator (کوچیک‌تر)
 # ============================================
 class Calculator:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(340, 440), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(310, 400))
+        s.w = AR.cw(source=source, size=(300, 380), ps=AR.UIS() * 0.35)
+        AR.add_close_button(s.w, position=(275, 345))
 
-        tw(parent=s.w, text='Math Engine', scale=0.9,
-           position=(170, 395), h_align='center', color=(1, 0.5, 0.9))
+        tw(parent=s.w, text='Math Engine', scale=0.85,
+           position=(150, 340), h_align='center', color=(1, 0.5, 0.9))
 
-        tw(parent=s.w, text=SIGNATURE, scale=0.5,
-           position=(170, 380), h_align='center', color=(0.6, 0.6, 0.8))
+        tw(parent=s.w, text=SIGNATURE, scale=0.45,
+           position=(150, 325), h_align='center', color=(0.6, 0.6, 0.8))
 
-        s.display = tw(parent=s.w, text='0', scale=1.2,
-                       position=(170, 348), h_align='center',
-                       color=(0.3, 1, 0.7), maxwidth=310)
+        s.display = tw(parent=s.w, text='0', scale=1.1,
+                       position=(150, 298), h_align='center',
+                       color=(0.3, 1, 0.7), maxwidth=270)
 
-        s.expression = tw(parent=s.w, text='', scale=0.55,
-                          position=(170, 328), h_align='center',
-                          color=(0.9, 0.7, 1), maxwidth=310)
+        s.expression = tw(parent=s.w, text='', scale=0.5,
+                          position=(150, 280), h_align='center',
+                          color=(0.9, 0.7, 1), maxwidth=270)
 
         s.current_input = '0'
         s.previous_input = ''
@@ -264,54 +140,56 @@ class Calculator:
         s.reset_next_input = False
         s.last_expression = ''
 
-        bw(parent=s.w, label='Copy', size=(150, 28),
-           position=(15, 295), on_activate_call=Call(s.copy_result),
-           color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1), button_type='square')
-        bw(parent=s.w, label='Send', size=(150, 28),
-           position=(175, 295), on_activate_call=Call(s.send_to_chat),
-           color=(0.7, 0.4, 0.2), textcolor=(1, 1, 1), button_type='square')
+        bw(parent=s.w, label='Copy', size=(130, 25),
+           position=(15, 250), on_activate_call=Call(s.copy_result),
+           color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1), button_type='square',
+           text_scale=0.7)
+        bw(parent=s.w, label='Send', size=(130, 25),
+           position=(155, 250), on_activate_call=Call(s.send_to_chat),
+           color=(0.7, 0.4, 0.2), textcolor=(1, 1, 1), button_type='square',
+           text_scale=0.7)
 
-        row_y = 255
-        row_gap = 36
-        btn_h = 30
+        row_y = 215
+        row_gap = 32
+        btn_h = 27
 
         rows = [
-            [('AC', s.clear_all, (15, row_y), (48, btn_h), (0.7, 0.2, 0.3)),
-             ('+/-', s.toggle_sign, (70, row_y), (48, btn_h), (0.3, 0.4, 0.7)),
-             ('%', s.percentage, (125, row_y), (48, btn_h), (0.3, 0.4, 0.7)),
-             ('R', s.square_root, (180, row_y), (48, btn_h), (0.3, 0.4, 0.7)),
-             ('x2', s.square, (235, row_y), (48, btn_h), (0.3, 0.4, 0.7)),
-             ('/', lambda: s.set_operation('/'), (290, row_y), (35, btn_h), (0.8, 0.6, 0.1))],
-            [('7', lambda: s.append_number('7'), (15, row_y-row_gap), (48, btn_h), (0.25, 0.3, 0.45)),
-             ('8', lambda: s.append_number('8'), (70, row_y-row_gap), (48, btn_h), (0.25, 0.3, 0.45)),
-             ('9', lambda: s.append_number('9'), (125, row_y-row_gap), (48, btn_h), (0.25, 0.3, 0.45)),
-             ('×', lambda: s.set_operation('*'), (180, row_y-row_gap), (48, btn_h), (0.8, 0.6, 0.1)),
-             ('DEL', s.backspace, (235, row_y-row_gap), (48, btn_h), (0.6, 0.15, 0.25)),
-             ('1/x', s.reciprocal, (290, row_y-row_gap), (35, btn_h), (0.3, 0.4, 0.7))],
-            [('4', lambda: s.append_number('4'), (15, row_y-row_gap*2), (48, btn_h), (0.25, 0.3, 0.45)),
-             ('5', lambda: s.append_number('5'), (70, row_y-row_gap*2), (48, btn_h), (0.25, 0.3, 0.45)),
-             ('6', lambda: s.append_number('6'), (125, row_y-row_gap*2), (48, btn_h), (0.25, 0.3, 0.45)),
-             ('-', lambda: s.set_operation('-'), (180, row_y-row_gap*2), (48, btn_h), (0.8, 0.6, 0.1)),
-             ('n!', s.factorial, (235, row_y-row_gap*2), (48, btn_h), (0.3, 0.4, 0.7)),
-             ('log', s.logarithm, (290, row_y-row_gap*2), (35, btn_h), (0.3, 0.4, 0.7))],
-            [('1', lambda: s.append_number('1'), (15, row_y-row_gap*3), (48, btn_h), (0.25, 0.3, 0.45)),
-             ('2', lambda: s.append_number('2'), (70, row_y-row_gap*3), (48, btn_h), (0.25, 0.3, 0.45)),
-             ('3', lambda: s.append_number('3'), (125, row_y-row_gap*3), (48, btn_h), (0.25, 0.3, 0.45)),
-             ('+', lambda: s.set_operation('+'), (180, row_y-row_gap*3), (48, btn_h), (0.8, 0.6, 0.1)),
-             ('^', s.power, (235, row_y-row_gap*3), (48, btn_h), (0.3, 0.4, 0.7)),
-             ('pi', s.pi_value, (290, row_y-row_gap*3), (35, btn_h), (0.5, 0.3, 0.7))],
-            [('0', lambda: s.append_number('0'), (15, row_y-row_gap*4), (103, btn_h), (0.25, 0.3, 0.45)),
-             ('.', s.add_decimal, (125, row_y-row_gap*4), (48, btn_h), (0.25, 0.3, 0.45)),
-             ('=', s.calculate, (180, row_y-row_gap*4), (48, btn_h), (0.15, 0.65, 0.35)),
-             ('e', s.e_value, (235, row_y-row_gap*4), (48, btn_h), (0.5, 0.3, 0.7)),
-             ('!', s.factorial, (290, row_y-row_gap*4), (35, btn_h), (0.3, 0.4, 0.7))],
+            [('AC', s.clear_all, (15, row_y), (42, btn_h), (0.7, 0.2, 0.3)),
+             ('+/-', s.toggle_sign, (63, row_y), (42, btn_h), (0.3, 0.4, 0.7)),
+             ('%', s.percentage, (111, row_y), (42, btn_h), (0.3, 0.4, 0.7)),
+             ('R', s.square_root, (159, row_y), (42, btn_h), (0.3, 0.4, 0.7)),
+             ('x2', s.square, (207, row_y), (42, btn_h), (0.3, 0.4, 0.7)),
+             ('/', lambda: s.set_operation('/'), (255, row_y), (30, btn_h), (0.8, 0.6, 0.1))],
+            [('7', lambda: s.append_number('7'), (15, row_y-row_gap), (42, btn_h), (0.25, 0.3, 0.45)),
+             ('8', lambda: s.append_number('8'), (63, row_y-row_gap), (42, btn_h), (0.25, 0.3, 0.45)),
+             ('9', lambda: s.append_number('9'), (111, row_y-row_gap), (42, btn_h), (0.25, 0.3, 0.45)),
+             ('×', lambda: s.set_operation('*'), (159, row_y-row_gap), (42, btn_h), (0.8, 0.6, 0.1)),
+             ('DEL', s.backspace, (207, row_y-row_gap), (42, btn_h), (0.6, 0.15, 0.25)),
+             ('1/x', s.reciprocal, (255, row_y-row_gap), (30, btn_h), (0.3, 0.4, 0.7))],
+            [('4', lambda: s.append_number('4'), (15, row_y-row_gap*2), (42, btn_h), (0.25, 0.3, 0.45)),
+             ('5', lambda: s.append_number('5'), (63, row_y-row_gap*2), (42, btn_h), (0.25, 0.3, 0.45)),
+             ('6', lambda: s.append_number('6'), (111, row_y-row_gap*2), (42, btn_h), (0.25, 0.3, 0.45)),
+             ('-', lambda: s.set_operation('-'), (159, row_y-row_gap*2), (42, btn_h), (0.8, 0.6, 0.1)),
+             ('n!', s.factorial, (207, row_y-row_gap*2), (42, btn_h), (0.3, 0.4, 0.7)),
+             ('log', s.logarithm, (255, row_y-row_gap*2), (30, btn_h), (0.3, 0.4, 0.7))],
+            [('1', lambda: s.append_number('1'), (15, row_y-row_gap*3), (42, btn_h), (0.25, 0.3, 0.45)),
+             ('2', lambda: s.append_number('2'), (63, row_y-row_gap*3), (42, btn_h), (0.25, 0.3, 0.45)),
+             ('3', lambda: s.append_number('3'), (111, row_y-row_gap*3), (42, btn_h), (0.25, 0.3, 0.45)),
+             ('+', lambda: s.set_operation('+'), (159, row_y-row_gap*3), (42, btn_h), (0.8, 0.6, 0.1)),
+             ('^', s.power, (207, row_y-row_gap*3), (42, btn_h), (0.3, 0.4, 0.7)),
+             ('pi', s.pi_value, (255, row_y-row_gap*3), (30, btn_h), (0.5, 0.3, 0.7))],
+            [('0', lambda: s.append_number('0'), (15, row_y-row_gap*4), (90, btn_h), (0.25, 0.3, 0.45)),
+             ('.', s.add_decimal, (111, row_y-row_gap*4), (42, btn_h), (0.25, 0.3, 0.45)),
+             ('=', s.calculate, (159, row_y-row_gap*4), (42, btn_h), (0.15, 0.65, 0.35)),
+             ('e', s.e_value, (207, row_y-row_gap*4), (42, btn_h), (0.5, 0.3, 0.7)),
+             ('!', s.factorial, (255, row_y-row_gap*4), (30, btn_h), (0.3, 0.4, 0.7))],
         ]
 
         for row in rows:
             for label, callback, pos, size, color in row:
                 bw(parent=s.w, label=label, size=size, position=pos,
                    on_activate_call=callback, color=color,
-                   textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
+                   textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
 
         AR.swish()
 
@@ -580,43 +458,38 @@ class EditLimitsWindow:
 
 
 # ============================================
-# 🤖 Auto Buyer Window
+# 🤖 Auto Buyer Window (بدون Edit Position)
 # ============================================
 class AutoBuyerWindow:
     def __init__(s, source):
         s.source = source
 
-        s.w = AR.cw(source=source, size=(380, 520), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(350, 480))
+        s.w = AR.cw(source=source, size=(380, 480), ps=AR.UIS() * 0.4)
+        AR.add_close_button(s.w, position=(350, 440))
 
         tw(parent=s.w, text='Auto Buyer', scale=1.1,
-           position=(190, 475), h_align='center', color=(0, 1, 1))
+           position=(190, 435), h_align='center', color=(0, 1, 1))
 
         tw(parent=s.w, text=SIGNATURE, scale=0.5,
-           position=(190, 455), h_align='center', color=(0.6, 0.6, 0.8))
+           position=(190, 415), h_align='center', color=(0.6, 0.6, 0.8))
 
         status = "ON" if auto_buyer_enabled else "OFF"
         status_color = (0, 1, 0) if auto_buyer_enabled else (1, 0, 0)
 
         s.status_text = tw(parent=s.w, text=f'Status: {status}',
-                           position=(190, 425), h_align='center',
+                           position=(190, 385), h_align='center',
                            scale=0.8, color=status_color)
 
         s.toggle_btn = bw(parent=s.w,
                           label='Turn OFF' if auto_buyer_enabled else 'Turn ON',
-                          size=(140, 30), position=(20, 385),
+                          size=(140, 30), position=(20, 345),
                           on_activate_call=Call(s.toggle),
                           color=(0.7, 0.2, 0.2) if auto_buyer_enabled else (0.2, 0.7, 0.2),
                           textcolor=(1, 1, 1), button_type='square')
 
         bw(parent=s.w, label='Reset All', size=(140, 30),
-           position=(180, 385), on_activate_call=Call(s.reset_all),
+           position=(180, 345), on_activate_call=Call(s.reset_all),
            color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
-
-        bw(parent=s.w, label='Edit AutoBuy Position', size=(300, 30),
-           position=(20, 345), on_activate_call=Call(s.edit_auto_pos),
-           color=(0.5, 0.3, 0.7), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.7)
 
         tw(parent=s.w, text='─── Item Limits ───',
@@ -640,7 +513,6 @@ class AutoBuyerWindow:
         row_height = 34
 
         num_rows = (len(items) + 1) // 2
-        # ✅ ارتفاع بیشتر تا sig/tag بالاتر بیان
         total_h = num_rows * row_height + 80
 
         for i, (name, limit) in enumerate(items):
@@ -680,9 +552,6 @@ class AutoBuyerWindow:
     def edit_item(s, name):
         EditLimitsWindow(s.w, item_name=name)
         teck(3.0, s.refresh_after_edit)
-
-    def edit_auto_pos(s):
-        PositionEditor(s.w, 'auto', 'AutoBuy Button')
 
     def refresh_after_edit(s):
         if s.w.exists():
@@ -833,9 +702,7 @@ class byMahyar(Plugin):
         def e(self, *a, **k):
             r = o(self, *a, **k)
 
-            # ✅ مکان ثابت: Math بالای AutoBuy
-            # Math در (width-100, height-80)
-            # AutoBuy دقیقاً زیرش در (width-100, height-48)
+            # ✅ Math بالا، AutoBuy زیرش (ثابت)
             b_calc = AR.bw(
                 position=(self._width - 100, self._height - 80),
                 parent=self._root_widget,
