@@ -5,7 +5,6 @@ from bauiv1 import (
     textwidget as tw,
     get_special_widget as gsw,
     getsound as gs,
-    apptimer as teck,
     UIScale as uis,
     app as APP,
     Call,
@@ -24,10 +23,22 @@ from bascenev1 import (
 import math
 import re
 import time
-import threading
 import bauiv1 as bui
 import bascenev1
 from babase import app
+
+# ✅✅✅ دو تا تایمر جدا:
+# teck_scene: برای UI (به صحنه گره می‌خوره)
+# teck: برای loop های پایدار (مستقل از صحنه - هرگز نمی‌میره)
+from babase import apptimer as teck_scene
+
+try:
+    from _babase import apptimer as teck
+    print("[Mahyar] ✅ Using _babase.apptimer (SCENE-INDEPENDENT)")
+except Exception as e:
+    from babase import apptimer as teck
+    print(f"[Mahyar] ⚠️ Fallback to babase.apptimer: {e}")
+
 from bascenev1lib.mainmenu import MainMenuSession
 
 SIGNATURE = "By Mahyar"
@@ -184,7 +195,7 @@ spam_timer = None
 server_ip, server_port = get_saved_server()
 
 auto_reconnect_enabled = False
-auto_reconnect_timer = None
+auto_reconnect_busy = False
 
 my_own_name = None
 my_own_client_id = None
@@ -254,7 +265,7 @@ def safe_chat_send(message):
 
 
 # ============================================
-# ✅ Connection override برای ذخیره IP/Port
+# ✅ Connection override
 # ============================================
 original_connect_to_party = original_connect
 
@@ -346,12 +357,9 @@ def stop_spam():
 # ============================================
 # 🔄 Auto Reconnect Logic
 # ============================================
-auto_reconnect_busy = False
-
-
 def auto_reconnect_check():
-    global auto_reconnect_enabled, auto_reconnect_timer, server_ip, server_port
-    global auto_reconnect_busy
+    """فقط یه بار چک می‌کنه - loop بالا صداش می‌زنه"""
+    global auto_reconnect_enabled, server_ip, server_port, auto_reconnect_busy
 
     if not auto_reconnect_enabled:
         return
@@ -375,6 +383,10 @@ def auto_reconnect_check():
                         auto_reconnect_busy = False
                         return
 
+                    if attempt > 40:
+                        auto_reconnect_busy = False
+                        return
+
                     foreground = bascenev1.get_foreground_host_session()
                     if isinstance(foreground, MainMenuSession):
                         push(f"Connecting... (try {attempt+1})", color=(1, 1, 0))
@@ -383,22 +395,7 @@ def auto_reconnect_check():
                         except Exception as e:
                             print(f"Auto connect attempt {attempt} error: {e}")
 
-                        def check_connected(inner=0):
-                            global auto_reconnect_busy
-                            if not auto_reconnect_enabled:
-                                auto_reconnect_busy = False
-                                return
-                            if inner > 15:
-                                push("Retrying...", color=(1, 0.5, 0))
-                                teck(0.5, lambda: try_connect(attempt + 1))
-                                return
-                            if get_connection_info():
-                                push("Reconnected!", color=(0, 1, 0))
-                                auto_reconnect_busy = False
-                            else:
-                                teck(0.2, lambda: check_connected(inner + 1))
-
-                        teck(0.5, check_connected)
+                        teck(0.5, lambda: try_connect(attempt + 1))
                     else:
                         teck(0.3, lambda: try_connect(attempt))
                 except Exception as e:
@@ -409,28 +406,18 @@ def auto_reconnect_check():
     except Exception as e:
         print(f"Auto reconnect check error: {e}")
 
-    auto_reconnect_timer = teck(2.0, auto_reconnect_check)
-
 
 def start_auto_reconnect():
-    global auto_reconnect_enabled, auto_reconnect_timer, auto_reconnect_busy
+    global auto_reconnect_enabled, auto_reconnect_busy
     auto_reconnect_enabled = True
     auto_reconnect_busy = False
-    if auto_reconnect_timer:
-        try: auto_reconnect_timer.cancel()
-        except: pass
-    auto_reconnect_timer = teck(1.0, auto_reconnect_check)
     push("Auto Reconnect: ON", color=(0, 1, 0))
 
 
 def stop_auto_reconnect():
-    global auto_reconnect_enabled, auto_reconnect_timer, auto_reconnect_busy
+    global auto_reconnect_enabled, auto_reconnect_busy
     auto_reconnect_enabled = False
     auto_reconnect_busy = False
-    if auto_reconnect_timer:
-        try: auto_reconnect_timer.cancel()
-        except: pass
-        auto_reconnect_timer = None
     push("Auto Reconnect: OFF", color=(1, 0.5, 0))
 
 
@@ -510,7 +497,7 @@ class Calculator:
             s.current_input = result_str; s.last_expression += f" = {result_str}"
             if s.expression.exists(): tw(s.expression, text=s.last_expression)
             s.operation = None; s.reset_next_input = True; s.update_display(); gs('dingSmallHigh').play()
-        except: s.current_input = 'Error'; s.update_display(); gs('error').play(); teck(2.0, s.clear_all)
+        except: s.current_input = 'Error'; s.update_display(); gs('error').play(); teck_scene(2.0, s.clear_all)
     def clear_all(s):
         s.current_input = '0'; s.previous_input = ''; s.operation = None; s.reset_next_input = False; s.last_expression = ''
         s.update_display()
@@ -1224,10 +1211,11 @@ def check_spam_command(msg):
 
 
 # ============================================
-# 🔄 PERSISTENT LOOP (با try/finally - تضمینی)
+# 🔄 PERSISTENT LOOPS (مستقل از صحنه - هرگز خاموش نمی‌شن)
 # ============================================
 _calc_seen = []
 _calc_seen_set = set()
+_loops_started = False
 
 
 def check_calc_once():
@@ -1253,30 +1241,66 @@ def check_calc_once():
 
 
 def chat_loop():
-    """حلقه چت - با try/finally تضمین می‌کنه تایمر بعدی ساخته بشه"""
+    """حلقه چت - با teck مستقل از صحنه"""
     try:
         check_chat_once()
     except Exception as e:
-        print(f"Chat loop inner error: {e}")
+        print(f"Chat loop error: {e}")
     finally:
-        # ✅ این خط همیشه اجرا می‌شه، حتی اگه check_chat_once خطا بده
         try:
-            teck(0.03, chat_loop)
+            teck(0.05, chat_loop)
         except Exception as e:
             print(f"Chat timer restart failed: {e}")
 
 
 def calc_loop():
-    """حلقه ماشین حساب - با try/finally"""
+    """حلقه ماشین حساب - مستقل از صحنه"""
     try:
         check_calc_once()
     except Exception as e:
-        print(f"Calc loop inner error: {e}")
+        print(f"Calc loop error: {e}")
     finally:
         try:
             teck(0.3, calc_loop)
         except Exception as e:
             print(f"Calc timer restart failed: {e}")
+
+
+def auto_reconnect_loop():
+    """حلقه Auto Reconnect - مستقل از صحنه"""
+    try:
+        auto_reconnect_check()
+    except Exception as e:
+        print(f"AutoReconnect loop error: {e}")
+    finally:
+        try:
+            teck(2.0, auto_reconnect_loop)
+        except Exception as e:
+            print(f"AutoReconnect timer restart failed: {e}")
+
+
+def start_all_loops():
+    """شروع همه حلقه‌های پایدار - فقط یک بار"""
+    global _loops_started
+    if _loops_started:
+        return
+    _loops_started = True
+    print("[Mahyar] 🚀 Starting persistent loops (scene-independent)...")
+    try:
+        teck(0.1, chat_loop)
+        print("[Mahyar] ✅ Chat loop started")
+    except Exception as e:
+        print(f"Failed to start chat_loop: {e}")
+    try:
+        teck(0.3, calc_loop)
+        print("[Mahyar] ✅ Calc loop started")
+    except Exception as e:
+        print(f"Failed to start calc_loop: {e}")
+    try:
+        teck(1.0, auto_reconnect_loop)
+        print("[Mahyar] ✅ AutoReconnect loop started")
+    except Exception as e:
+        print(f"Failed to start auto_reconnect_loop: {e}")
 
 
 # ============================================
@@ -1286,7 +1310,7 @@ def calc_loop():
 # ba_meta export babase.Plugin
 class byMahyar(Plugin):
     def __init__(s):
-        global my_own_name, my_own_client_id, my_own_display_num, last_msg_count
+        global my_own_name, last_msg_count
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
         try:
@@ -1299,72 +1323,40 @@ class byMahyar(Plugin):
 
         def e(self, *a, **k):
             r = o(self, *a, **k)
+            teck_scene(0.5, get_my_ids)
 
-            teck(0.5, get_my_ids)
-
-            b_calc = AR.bw(
-                position=(self._width - 100, self._height - 100),
-                parent=self._root_widget,
-                size=(85, 25),
-                label='Math',
-                color=(0.3, 0.5, 0.8)
-            )
+            b_calc = AR.bw(position=(self._width - 100, self._height - 100),
+                parent=self._root_widget, size=(85, 25), label='Math', color=(0.3, 0.5, 0.8))
             bw(b_calc, on_activate_call=Call(s.delayed_open, Calculator, b_calc))
 
-            b_auto = AR.bw(
-                position=(self._width - 100, self._height - 130),
-                parent=self._root_widget,
-                size=(85, 25),
-                label='AutoBuy',
-                color=(0.2, 0.6, 0.8)
-            )
+            b_auto = AR.bw(position=(self._width - 100, self._height - 130),
+                parent=self._root_widget, size=(85, 25), label='AutoBuy', color=(0.2, 0.6, 0.8))
             bw(b_auto, on_activate_call=Call(s.delayed_open, AutoBuyerWindow, b_auto))
 
-            b_react = AR.bw(
-                position=(self._width - 100, self._height - 160),
-                parent=self._root_widget,
-                size=(85, 25),
-                label='React',
-                color=(0.8, 0.5, 0.2)
-            )
+            b_react = AR.bw(position=(self._width - 100, self._height - 160),
+                parent=self._root_widget, size=(85, 25), label='React', color=(0.8, 0.5, 0.2))
             bw(b_react, on_activate_call=Call(s.delayed_open, ReactionEditorWindow, b_react))
 
-            b_reply = AR.bw(
-                position=(self._width - 100, self._height - 190),
-                parent=self._root_widget,
-                size=(85, 25),
-                label='Reply',
-                color=(0.3, 0.7, 0.4)
-            )
+            b_reply = AR.bw(position=(self._width - 100, self._height - 190),
+                parent=self._root_widget, size=(85, 25), label='Reply', color=(0.3, 0.7, 0.4))
             bw(b_reply, on_activate_call=Call(s.delayed_open, AutoReplyEditorWindow, b_reply))
 
-            b_spam = AR.bw(
-                position=(self._width - 100, self._height - 220),
-                parent=self._root_widget,
-                size=(85, 25),
-                label='Spam',
-                color=(0.8, 0.3, 0.3)
-            )
+            b_spam = AR.bw(position=(self._width - 100, self._height - 220),
+                parent=self._root_widget, size=(85, 25), label='Spam', color=(0.8, 0.3, 0.3))
             bw(b_spam, on_activate_call=Call(s.delayed_open, SpamWindow, b_spam))
 
-            b_recon = AR.bw(
-                position=(self._width - 100, self._height - 250),
-                parent=self._root_widget,
-                size=(85, 25),
-                label='Reconnect',
-                color=(0.4, 0.6, 0.4)
-            )
+            b_recon = AR.bw(position=(self._width - 100, self._height - 250),
+                parent=self._root_widget, size=(85, 25), label='Reconnect', color=(0.4, 0.6, 0.4))
             bw(b_recon, on_activate_call=Call(s.delayed_open, ReconnectWindow, b_recon))
 
             return r
 
         party.PartyWindow.__init__ = e
 
-        # ✅ شروع حلقه‌های پایدار (هرگز خاموش نمی‌شن)
-        teck(0.5, chat_loop)
-        teck(0.5, calc_loop)
+        # ✅ شروع همه حلقه‌های پایدار (فقط یک بار در طول عمر بازی)
+        start_all_loops()
 
-        teck(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
+        teck_scene(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
 
     def delayed_open(s, cls, btn):
-        teck(0.05, lambda: cls(btn))
+        teck_scene(0.05, lambda: cls(btn))
