@@ -18,7 +18,8 @@ from bascenev1 import (
     get_chat_messages as GCM,
     get_game_roster as get_roster,
     connect_to_party as original_connect,
-    disconnect_from_host as original_disconnect
+    disconnect_from_host as original_disconnect,
+    get_connection_to_host_info_2 as get_connection_info
 )
 import math
 import re
@@ -49,95 +50,104 @@ DEFAULT_COOLDOWNS = {'fr': 5.0, 'cu': 5.0, 'fl': 5.0}
 DEFAULT_COOLDOWN = 5.0
 DEFAULT_AUTO_REPLIES = {}
 
-auto_react_enabled = True
-auto_reply_enabled = True
-
 
 def get_limits():
     try:
         saved = app.config.get('mahyar_limits', None)
         if saved:
-            d = dict(DEFAULT_LIMITS)
-            d.update(saved)
-            return d
-    except:
-        pass
+            d = dict(DEFAULT_LIMITS); d.update(saved); return d
+    except: pass
     return dict(DEFAULT_LIMITS)
 
 
 def save_limits(limits):
     try:
-        app.config['mahyar_limits'] = dict(limits)
-        app.config.commit()
-    except:
-        pass
+        app.config['mahyar_limits'] = dict(limits); app.config.commit()
+    except: pass
 
 
 def get_reactions():
     try:
-        saved = app.config.get('mahyar_reactions_v15', None)
+        saved = app.config.get('mahyar_reactions_v16', None)
         if saved:
-            d = dict(DEFAULT_REACTIONS)
-            d.update(saved)
-            return d
-    except:
-        pass
+            d = dict(DEFAULT_REACTIONS); d.update(saved); return d
+    except: pass
     return dict(DEFAULT_REACTIONS)
 
 
 def save_reactions(reactions):
     try:
-        app.config['mahyar_reactions_v15'] = dict(reactions)
-        app.config.commit()
-    except:
-        pass
+        app.config['mahyar_reactions_v16'] = dict(reactions); app.config.commit()
+    except: pass
 
 
 def get_cooldowns():
     try:
-        saved = app.config.get('mahyar_cooldowns_v15', None)
+        saved = app.config.get('mahyar_cooldowns_v16', None)
         if saved:
-            d = dict(DEFAULT_COOLDOWNS)
-            d.update(saved)
-            return d
-    except:
-        pass
+            d = dict(DEFAULT_COOLDOWNS); d.update(saved); return d
+    except: pass
     return dict(DEFAULT_COOLDOWNS)
 
 
 def save_cooldowns(cooldowns):
     try:
-        app.config['mahyar_cooldowns_v15'] = dict(cooldowns)
-        app.config.commit()
-    except:
-        pass
+        app.config['mahyar_cooldowns_v16'] = dict(cooldowns); app.config.commit()
+    except: pass
 
 
 def get_auto_replies():
     try:
         saved = app.config.get('mahyar_auto_replies', None)
         if saved:
-            d = dict(DEFAULT_AUTO_REPLIES)
-            d.update(saved)
-            return d
-    except:
-        pass
+            d = dict(DEFAULT_AUTO_REPLIES); d.update(saved); return d
+    except: pass
     return dict(DEFAULT_AUTO_REPLIES)
 
 
 def save_auto_replies(replies):
     try:
-        app.config['mahyar_auto_replies'] = dict(replies)
+        app.config['mahyar_auto_replies'] = dict(replies); app.config.commit()
+    except: pass
+
+
+def get_spam_settings():
+    try:
+        msg = app.config.get('mahyar_spam_msg', '')
+        delay = app.config.get('mahyar_spam_delay', 2.0)
+        return msg, float(delay)
+    except: return '', 2.0
+
+
+def save_spam_settings(msg, delay):
+    try:
+        app.config['mahyar_spam_msg'] = msg
+        app.config['mahyar_spam_delay'] = float(delay)
         app.config.commit()
-    except:
-        pass
+    except: pass
+
+
+def get_enabled_state(key, default=True):
+    try:
+        return app.config.get(f'mahyar_enabled_{key}', default)
+    except: return default
+
+
+def save_enabled_state(key, value):
+    try:
+        app.config[f'mahyar_enabled_{key}'] = value
+        app.config.commit()
+    except: pass
 
 
 LIMITS = get_limits()
 REACTIONS = get_reactions()
 COOLDOWNS = get_cooldowns()
 AUTO_REPLIES = get_auto_replies()
-auto_buyer_enabled = True
+
+auto_react_enabled = get_enabled_state('react', True)
+auto_reply_enabled = get_enabled_state('reply', True)
+auto_buyer_enabled = get_enabled_state('buyer', True)
 
 last_msg_count = 0
 processed_sell_ids = set()
@@ -145,10 +155,14 @@ processed_buy_ids = set()
 processed_bids = set()
 react_cooldown = {}
 auto_reply_cooldown = {}
+
+# ✅ Spam
 spam_active = False
 spam_message = ""
 spam_delay = 2.0
+spam_counter = 0
 spam_timer = None
+
 server_ip = "127.0.0.1"
 server_port = 43210
 my_own_name = None
@@ -193,8 +207,7 @@ def get_my_ids():
     global my_own_client_id, my_own_display_num, my_own_name
     try:
         roster = get_roster()
-        if not my_own_name:
-            return None, None
+        if not my_own_name: return None, None
         for entry in roster:
             display = entry.get('display_string', '')
             if display.endswith(my_own_name):
@@ -203,10 +216,8 @@ def get_my_ids():
                 if players:
                     name_full = players[0].get('name_full', '')
                     if name_full and ' ' in name_full:
-                        try:
-                            my_own_display_num = int(name_full.split(' ')[0])
-                        except:
-                            my_own_display_num = None
+                        try: my_own_display_num = int(name_full.split(' ')[0])
+                        except: my_own_display_num = None
                 return my_own_client_id, my_own_display_num
         return None, None
     except Exception as e:
@@ -218,59 +229,63 @@ def safe_chat_send(message):
     CM(message)
 
 
+# ============================================
+# 🎯 Auto-Reply
+# ============================================
 def check_auto_reply(msg):
-    if not auto_reply_enabled:
-        return False
+    if not auto_reply_enabled: return False
     try:
-        sender = None
-        content = msg
+        sender = None; content = msg
         if ': ' in msg:
             parts = msg.split(': ', 1)
-            sender = parts[0].strip()
-            content = parts[1].strip()
+            sender = parts[0].strip(); content = parts[1].strip()
         if sender and my_own_name:
-            if sender == my_own_name:
-                return False
+            if sender == my_own_name: return False
         content_lower = content.lower()
         for keyword, response in AUTO_REPLIES.items():
             if keyword.lower() in content_lower:
                 cd_key = f"{keyword}_{sender or 'unknown'}"
                 current_time = time.time()
                 last_time = auto_reply_cooldown.get(cd_key, 0)
-                if current_time - last_time < 2.0:
-                    continue
+                if current_time - last_time < 2.0: continue
                 auto_reply_cooldown[cd_key] = current_time
                 if len(auto_reply_cooldown) > 50:
                     now = time.time()
                     to_del = [k for k, v in auto_reply_cooldown.items() if now - v > 60]
-                    for k in to_del:
-                        del auto_reply_cooldown[k]
-                safe_chat_send(response)
-                gs('dingSmall').play()
+                    for k in to_del: del auto_reply_cooldown[k]
+                safe_chat_send(response); gs('dingSmall').play()
                 return True
-    except Exception as e:
-        print(f"Auto-Reply error: {e}")
+    except Exception as e: print(f"Auto-Reply error: {e}")
     return False
 
 
+# ============================================
+# 🎯 Spam Logic (با شمارنده برای فرستادن متن یکسان)
+# ============================================
 def spam_send():
-    global spam_active, spam_message, spam_delay, spam_timer
-    if not spam_active:
-        return
+    global spam_active, spam_message, spam_delay, spam_timer, spam_counter
+    if not spam_active: return
     try:
-        safe_chat_send(spam_message)
+        # ✅ برای فرستادن پیام یکسان، یه کاراکتر نامرئی (zero-width) به آخرش اضافه میکنیم
+        # این کار باعث میشه BombSquad فکر کنه پیام جدید هست
+        invisible_chars = ['', '\u200b', '\u200c', '\u200d', '\u2060']
+        suffix = invisible_chars[spam_counter % len(invisible_chars)]
+        spam_counter += 1
+        
+        safe_chat_send(spam_message + suffix)
         spam_timer = teck(spam_delay, spam_send)
     except:
         spam_active = False
 
 
 def start_spam(message, delay=2.0):
-    global spam_active, spam_message, spam_delay
-    if spam_active:
-        return
+    global spam_active, spam_message, spam_delay, spam_counter
+    if spam_active: return
     spam_active = True
     spam_message = message
     spam_delay = float(delay)
+    spam_counter = 0
+    save_spam_settings(message, delay)
     spam_send()
     push(f"Spam Started: {message}", color=(0, 1, 0))
 
@@ -278,10 +293,8 @@ def start_spam(message, delay=2.0):
 def stop_spam():
     global spam_active, spam_timer
     if spam_timer:
-        try:
-            spam_timer.cancel()
-        except:
-            pass
+        try: spam_timer.cancel()
+        except: pass
         spam_timer = None
     spam_active = False
     push("Spam Stopped", color=(1, 0.5, 0))
@@ -292,28 +305,28 @@ def stop_spam():
 # ============================================
 class Calculator:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(300, 400), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(275, 365))
-        tw(parent=s.w, text='Math Engine', scale=0.85, position=(150, 360), h_align='center', color=(1, 0.5, 0.9))
-        tw(parent=s.w, text=SIGNATURE, scale=0.45, position=(150, 345), h_align='center', color=(0.6, 0.6, 0.8))
-        s.display = tw(parent=s.w, text='0', scale=1.1, position=(150, 315), h_align='center', color=(0.3, 1, 0.7), maxwidth=270)
-        s.expression = tw(parent=s.w, text='', scale=0.5, position=(150, 295), h_align='center', color=(0.9, 0.7, 1), maxwidth=270)
+        s.w = AR.cw(source=source, size=(280, 380), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(255, 345))
+        tw(parent=s.w, text='Math Engine', scale=0.85, position=(140, 340), h_align='center', color=(1, 0.5, 0.9))
+        tw(parent=s.w, text=SIGNATURE, scale=0.45, position=(140, 325), h_align='center', color=(0.6, 0.6, 0.8))
+        s.display = tw(parent=s.w, text='0', scale=1.1, position=(140, 295), h_align='center', color=(0.3, 1, 0.7), maxwidth=250)
+        s.expression = tw(parent=s.w, text='', scale=0.5, position=(140, 275), h_align='center', color=(0.9, 0.7, 1), maxwidth=250)
         s.current_input = '0'
         s.previous_input = ''
         s.operation = None
         s.reset_next_input = False
         s.last_expression = ''
-        bw(parent=s.w, label='Copy', size=(130, 25), position=(15, 262), on_activate_call=Call(s.copy_result), color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        bw(parent=s.w, label='Send', size=(130, 25), position=(155, 262), on_activate_call=Call(s.send_to_chat), color=(0.7, 0.4, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        row_y = 225
-        row_gap = 32
-        btn_h = 27
+        bw(parent=s.w, label='Copy', size=(120, 25), position=(15, 242), on_activate_call=Call(s.copy_result), color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+        bw(parent=s.w, label='Send', size=(120, 25), position=(145, 242), on_activate_call=Call(s.send_to_chat), color=(0.7, 0.4, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+        row_y = 210
+        row_gap = 30
+        btn_h = 25
         rows = [
-            [('AC', s.clear_all, (15, row_y), (42, btn_h), (0.7, 0.2, 0.3)), ('+/-', s.toggle_sign, (63, row_y), (42, btn_h), (0.3, 0.4, 0.7)), ('%', s.percentage, (111, row_y), (42, btn_h), (0.3, 0.4, 0.7)), ('R', s.square_root, (159, row_y), (42, btn_h), (0.3, 0.4, 0.7)), ('x2', s.square, (207, row_y), (42, btn_h), (0.3, 0.4, 0.7)), ('/', lambda: s.set_operation('/'), (255, row_y), (30, btn_h), (0.8, 0.6, 0.1))],
-            [('7', lambda: s.append_number('7'), (15, row_y-row_gap), (42, btn_h), (0.25, 0.3, 0.45)), ('8', lambda: s.append_number('8'), (63, row_y-row_gap), (42, btn_h), (0.25, 0.3, 0.45)), ('9', lambda: s.append_number('9'), (111, row_y-row_gap), (42, btn_h), (0.25, 0.3, 0.45)), ('×', lambda: s.set_operation('*'), (159, row_y-row_gap), (42, btn_h), (0.8, 0.6, 0.1)), ('DEL', s.backspace, (207, row_y-row_gap), (42, btn_h), (0.6, 0.15, 0.25)), ('1/x', s.reciprocal, (255, row_y-row_gap), (30, btn_h), (0.3, 0.4, 0.7))],
-            [('4', lambda: s.append_number('4'), (15, row_y-row_gap*2), (42, btn_h), (0.25, 0.3, 0.45)), ('5', lambda: s.append_number('5'), (63, row_y-row_gap*2), (42, btn_h), (0.25, 0.3, 0.45)), ('6', lambda: s.append_number('6'), (111, row_y-row_gap*2), (42, btn_h), (0.25, 0.3, 0.45)), ('-', lambda: s.set_operation('-'), (159, row_y-row_gap*2), (42, btn_h), (0.8, 0.6, 0.1)), ('n!', s.factorial, (207, row_y-row_gap*2), (42, btn_h), (0.3, 0.4, 0.7)), ('log', s.logarithm, (255, row_y-row_gap*2), (30, btn_h), (0.3, 0.4, 0.7))],
-            [('1', lambda: s.append_number('1'), (15, row_y-row_gap*3), (42, btn_h), (0.25, 0.3, 0.45)), ('2', lambda: s.append_number('2'), (63, row_y-row_gap*3), (42, btn_h), (0.25, 0.3, 0.45)), ('3', lambda: s.append_number('3'), (111, row_y-row_gap*3), (42, btn_h), (0.25, 0.3, 0.45)), ('+', lambda: s.set_operation('+'), (159, row_y-row_gap*3), (42, btn_h), (0.8, 0.6, 0.1)), ('^', s.power, (207, row_y-row_gap*3), (42, btn_h), (0.3, 0.4, 0.7)), ('pi', s.pi_value, (255, row_y-row_gap*3), (30, btn_h), (0.5, 0.3, 0.7))],
-            [('0', lambda: s.append_number('0'), (15, row_y-row_gap*4), (90, btn_h), (0.25, 0.3, 0.45)), ('.', s.add_decimal, (111, row_y-row_gap*4), (42, btn_h), (0.25, 0.3, 0.45)), ('=', s.calculate, (159, row_y-row_gap*4), (42, btn_h), (0.15, 0.65, 0.35)), ('e', s.e_value, (207, row_y-row_gap*4), (42, btn_h), (0.5, 0.3, 0.7)), ('!', s.factorial, (255, row_y-row_gap*4), (30, btn_h), (0.3, 0.4, 0.7))],
+            [('AC', s.clear_all, (15, row_y), (40, btn_h), (0.7, 0.2, 0.3)), ('+/-', s.toggle_sign, (60, row_y), (40, btn_h), (0.3, 0.4, 0.7)), ('%', s.percentage, (105, row_y), (40, btn_h), (0.3, 0.4, 0.7)), ('R', s.square_root, (150, row_y), (40, btn_h), (0.3, 0.4, 0.7)), ('x2', s.square, (195, row_y), (40, btn_h), (0.3, 0.4, 0.7)), ('/', lambda: s.set_operation('/'), (240, row_y), (30, btn_h), (0.8, 0.6, 0.1))],
+            [('7', lambda: s.append_number('7'), (15, row_y-row_gap), (40, btn_h), (0.25, 0.3, 0.45)), ('8', lambda: s.append_number('8'), (60, row_y-row_gap), (40, btn_h), (0.25, 0.3, 0.45)), ('9', lambda: s.append_number('9'), (105, row_y-row_gap), (40, btn_h), (0.25, 0.3, 0.45)), ('×', lambda: s.set_operation('*'), (150, row_y-row_gap), (40, btn_h), (0.8, 0.6, 0.1)), ('DEL', s.backspace, (195, row_y-row_gap), (40, btn_h), (0.6, 0.15, 0.25)), ('1/x', s.reciprocal, (240, row_y-row_gap), (30, btn_h), (0.3, 0.4, 0.7))],
+            [('4', lambda: s.append_number('4'), (15, row_y-row_gap*2), (40, btn_h), (0.25, 0.3, 0.45)), ('5', lambda: s.append_number('5'), (60, row_y-row_gap*2), (40, btn_h), (0.25, 0.3, 0.45)), ('6', lambda: s.append_number('6'), (105, row_y-row_gap*2), (40, btn_h), (0.25, 0.3, 0.45)), ('-', lambda: s.set_operation('-'), (150, row_y-row_gap*2), (40, btn_h), (0.8, 0.6, 0.1)), ('n!', s.factorial, (195, row_y-row_gap*2), (40, btn_h), (0.3, 0.4, 0.7)), ('log', s.logarithm, (240, row_y-row_gap*2), (30, btn_h), (0.3, 0.4, 0.7))],
+            [('1', lambda: s.append_number('1'), (15, row_y-row_gap*3), (40, btn_h), (0.25, 0.3, 0.45)), ('2', lambda: s.append_number('2'), (60, row_y-row_gap*3), (40, btn_h), (0.25, 0.3, 0.45)), ('3', lambda: s.append_number('3'), (105, row_y-row_gap*3), (40, btn_h), (0.25, 0.3, 0.45)), ('+', lambda: s.set_operation('+'), (150, row_y-row_gap*3), (40, btn_h), (0.8, 0.6, 0.1)), ('^', s.power, (195, row_y-row_gap*3), (40, btn_h), (0.3, 0.4, 0.7)), ('pi', s.pi_value, (240, row_y-row_gap*3), (30, btn_h), (0.5, 0.3, 0.7))],
+            [('0', lambda: s.append_number('0'), (15, row_y-row_gap*4), (85, btn_h), (0.25, 0.3, 0.45)), ('.', s.add_decimal, (105, row_y-row_gap*4), (40, btn_h), (0.25, 0.3, 0.45)), ('=', s.calculate, (150, row_y-row_gap*4), (40, btn_h), (0.15, 0.65, 0.35)), ('e', s.e_value, (195, row_y-row_gap*4), (40, btn_h), (0.5, 0.3, 0.7)), ('!', s.factorial, (240, row_y-row_gap*4), (30, btn_h), (0.3, 0.4, 0.7))],
         ]
         for row in rows:
             for label, callback, pos, size, color in row:
@@ -436,23 +449,22 @@ class Calculator:
 
 
 # ============================================
-# ⚙️ Edit Reaction
+# ⚙️ Edit Reaction (کوچیک)
 # ============================================
 class EditReactionWindow:
     def __init__(s, source, trigger_code, parent_window=None):
         s.trigger_code = trigger_code
         s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(320, 240), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(290, 200))
+        s.w = AR.cw(source=source, size=(280, 220), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(250, 180))
         current = REACTIONS.get(trigger_code, '')
         current_cd = COOLDOWNS.get(trigger_code, DEFAULT_COOLDOWN)
-        tw(parent=s.w, text=f'Edit "%{trigger_code}"', scale=0.85, position=(160, 195), h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text='Reply with:', scale=0.6, position=(160, 170), h_align='center', color=(0.8, 0.8, 1))
-        s.input = tw(parent=s.w, text=current, editable=True, scale=0.9, position=(40, 130), size=(240, 32), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='Cooldown (seconds):', scale=0.6, position=(160, 100), h_align='center', color=(0.8, 0.8, 1))
-        s.cd_input = tw(parent=s.w, text=str(current_cd), editable=True, scale=0.9, position=(40, 65), size=(240, 32), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='(هر چند ثانیه یک بار جواب بده)', position=(160, 42), scale=0.45, h_align='center', color=(0.7, 0.7, 1))
-        bw(parent=s.w, label='Save', size=(140, 35), position=(90, 5), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
+        tw(parent=s.w, text=f'Edit "%{trigger_code}"', scale=0.8, position=(140, 175), h_align='center', color=(1, 1, 0))
+        tw(parent=s.w, text='Reply with:', scale=0.55, position=(140, 152), h_align='center', color=(0.8, 0.8, 1))
+        s.input = tw(parent=s.w, text=current, editable=True, scale=0.85, position=(30, 115), size=(220, 30), h_align='center', color=(0.9, 0.9, 0.9))
+        tw(parent=s.w, text='Cooldown (sec):', scale=0.55, position=(140, 88), h_align='center', color=(0.8, 0.8, 1))
+        s.cd_input = tw(parent=s.w, text=str(current_cd), editable=True, scale=0.85, position=(30, 55), size=(220, 30), h_align='center', color=(0.9, 0.9, 0.9))
+        bw(parent=s.w, label='Save', size=(120, 32), position=(80, 10), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
         gs('swish').play()
     def save(s):
         value = tw(query=s.input).strip().lower()
@@ -472,7 +484,7 @@ class EditReactionWindow:
         if cd_value < 0: cd_value = 0
         COOLDOWNS[s.trigger_code] = cd_value
         save_reactions(REACTIONS); save_cooldowns(COOLDOWNS)
-        bui.screenmessage(f'%{s.trigger_code} → {value} ({cd_value}s)', color=(0, 1, 0))
+        bui.screenmessage(f'%{s.trigger_code} → {value}', color=(0, 1, 0))
         gs('dingSmallHigh').play()
         if s.parent_window:
             try: s.parent_window.build_grid()
@@ -483,28 +495,28 @@ class EditReactionWindow:
 class AddReactionWindow:
     def __init__(s, source, parent_window=None):
         s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(320, 260), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(290, 220))
-        tw(parent=s.w, text='Add New Reaction', scale=0.9, position=(160, 215), h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text='When someone uses %:', scale=0.6, position=(160, 185), h_align='center', color=(1, 1, 1))
-        s.trigger_input = tw(parent=s.w, text='', editable=True, scale=0.9, position=(40, 150), size=(240, 32), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='I reply with:', scale=0.6, position=(160, 120), h_align='center', color=(1, 1, 1))
-        s.response_input = tw(parent=s.w, text='', editable=True, scale=0.9, position=(40, 85), size=(240, 32), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='Cooldown (seconds):', scale=0.6, position=(160, 55), h_align='center', color=(1, 1, 1))
-        s.cd_input = tw(parent=s.w, text=str(DEFAULT_COOLDOWN), editable=True, scale=0.9, position=(40, 20), size=(240, 32), h_align='center', color=(0.9, 0.9, 0.9))
-        bw(parent=s.w, label='Add', size=(100, 30), position=(110, -5), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
+        s.w = AR.cw(source=source, size=(280, 240), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(250, 200))
+        tw(parent=s.w, text='Add New', scale=0.85, position=(140, 195), h_align='center', color=(1, 1, 0))
+        tw(parent=s.w, text='When %:', scale=0.55, position=(140, 168), h_align='center', color=(1, 1, 1))
+        s.trigger_input = tw(parent=s.w, text='', editable=True, scale=0.85, position=(30, 135), size=(220, 30), h_align='center', color=(0.9, 0.9, 0.9))
+        tw(parent=s.w, text='Reply:', scale=0.55, position=(140, 108), h_align='center', color=(1, 1, 1))
+        s.response_input = tw(parent=s.w, text='', editable=True, scale=0.85, position=(30, 75), size=(220, 30), h_align='center', color=(0.9, 0.9, 0.9))
+        tw(parent=s.w, text='Cooldown (sec):', scale=0.55, position=(140, 48), h_align='center', color=(1, 1, 1))
+        s.cd_input = tw(parent=s.w, text=str(DEFAULT_COOLDOWN), editable=True, scale=0.85, position=(30, 15), size=(220, 30), h_align='center', color=(0.9, 0.9, 0.9))
+        bw(parent=s.w, label='Add', size=(90, 28), position=(95, -20), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
         gs('swish').play()
     def save(s):
         trigger = tw(query=s.trigger_input).strip().lower()
         response = tw(query=s.response_input).strip().lower()
         if not trigger or not response:
-            AR.err('Both fields required!'); return
+            AR.err('Both required!'); return
         try: cd_value = float(tw(query=s.cd_input).strip())
         except: cd_value = DEFAULT_COOLDOWN
         if cd_value < 0: cd_value = 0
         REACTIONS[trigger] = response; COOLDOWNS[trigger] = cd_value
         save_reactions(REACTIONS); save_cooldowns(COOLDOWNS)
-        bui.screenmessage(f'%{trigger} → {response} ({cd_value}s)', color=(0, 1, 0))
+        bui.screenmessage(f'%{trigger} → {response}', color=(0, 1, 0))
         gs('dingSmallHigh').play()
         if s.parent_window:
             try: s.parent_window.build_grid()
@@ -515,34 +527,33 @@ class AddReactionWindow:
 class ReactionEditorWindow:
     def __init__(s, source, parent_window=None):
         s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(340, 440), ps=AR.UIS() * 0.35)
-        AR.add_close_button(s.w, position=(310, 400))
-        tw(parent=s.w, text='Auto React', scale=1.0, position=(170, 395), h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.45, position=(170, 378), h_align='center', color=(0.6, 0.6, 0.8))
-        s.id_text = tw(parent=s.w, text=f'cid={my_own_client_id or "?"} num={my_own_display_num if my_own_display_num is not None else "?"}', position=(170, 360), scale=0.45, h_align='center', color=(0, 1, 1))
-        s.scroll = sw(parent=s.w, size=(300, 180), position=(20, 170))
-        s.container = cw(parent=s.scroll, size=(280, 300), background=False)
+        s.w = AR.cw(source=source, size=(320, 400), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(290, 360))
+        tw(parent=s.w, text='Auto React', scale=0.95, position=(160, 355), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(160, 340), h_align='center', color=(0.6, 0.6, 0.8))
+        s.id_text = tw(parent=s.w, text=f'cid={my_own_client_id or "?"} num={my_own_display_num if my_own_display_num is not None else "?"}', position=(160, 322), scale=0.4, h_align='center', color=(0, 1, 1))
+        s.scroll = sw(parent=s.w, size=(280, 160), position=(20, 150))
+        s.container = cw(parent=s.scroll, size=(260, 300), background=False)
         s.item_buttons = {}
         s.build_grid()
-        bw(parent=s.w, label='+ Add', size=(85, 32), position=(20, 130), on_activate_call=Call(s.add_new), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
-        bw(parent=s.w, label='Reset', size=(85, 32), position=(115, 130), on_activate_call=Call(s.reset_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
-        bw(parent=s.w, label='Refresh IDs', size=(85, 32), position=(210, 130), on_activate_call=Call(s.refresh_ids), color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
-        s.toggle_btn = bw(parent=s.w, label='ON' if auto_react_enabled else 'OFF', size=(300, 35), position=(20, 85), on_activate_call=Call(s.toggle), color=(0.2, 0.7, 0.2) if auto_react_enabled else (0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.8)
-        tw(parent=s.w, text='Auto React is ' + ('ON' if auto_react_enabled else 'OFF'), position=(170, 60), scale=0.5, h_align='center', color=(1, 1, 0.8))
+        bw(parent=s.w, label='+ Add', size=(80, 30), position=(20, 110), on_activate_call=Call(s.add_new), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+        bw(parent=s.w, label='Reset', size=(80, 30), position=(110, 110), on_activate_call=Call(s.reset_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+        bw(parent=s.w, label='IDs', size=(80, 30), position=(200, 110), on_activate_call=Call(s.refresh_ids), color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+        s.toggle_btn = bw(parent=s.w, label='ON' if auto_react_enabled else 'OFF', size=(280, 32), position=(20, 70), on_activate_call=Call(s.toggle), color=(0.2, 0.7, 0.2) if auto_react_enabled else (0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
         gs('swish').play()
     def build_grid(s):
         for child in s.container.get_children(): child.delete()
         s.item_buttons.clear()
         items = list(REACTIONS.items())
-        row_height = 34
+        row_height = 32
         total_h = len(items) * row_height + 20
         for i, (trigger, response) in enumerate(items):
             y = total_h - (i + 1) * row_height
             cd = COOLDOWNS.get(trigger, DEFAULT_COOLDOWN)
-            btn = bw(parent=s.container, label=f'%{trigger} → {response} ({cd}s)', size=(185, 28), position=(5, y), on_activate_call=Call(s.edit_item, trigger), color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
+            btn = bw(parent=s.container, label=f'%{trigger} → {response} ({cd}s)', size=(175, 26), position=(5, y), on_activate_call=Call(s.edit_item, trigger), color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1), button_type='square', text_scale=0.5)
             s.item_buttons[trigger] = btn
-            bw(parent=s.container, label='X', size=(30, 28), position=(195, y), on_activate_call=Call(s.delete_item, trigger), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        cw(s.container, size=(280, total_h))
+            bw(parent=s.container, label='X', size=(28, 26), position=(185, y), on_activate_call=Call(s.delete_item, trigger), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
+        cw(s.container, size=(260, total_h))
     def refresh_ids(s):
         cid, num = get_my_ids()
         display_num = num if num is not None else "?"
@@ -561,38 +572,39 @@ class ReactionEditorWindow:
         global REACTIONS, COOLDOWNS
         REACTIONS = dict(DEFAULT_REACTIONS); COOLDOWNS = dict(DEFAULT_COOLDOWNS)
         save_reactions(REACTIONS); save_cooldowns(COOLDOWNS)
-        bui.screenmessage('Reset to defaults!', color=(0, 1, 1)); gs('dingSmallHigh').play()
+        bui.screenmessage('Reset!', color=(0, 1, 1)); gs('dingSmallHigh').play()
         s.build_grid()
     def toggle(s):
         global auto_react_enabled
         auto_react_enabled = not auto_react_enabled
+        save_enabled_state('react', auto_react_enabled)
         if auto_react_enabled:
-            bw(s.toggle_btn, label='ON', color=(0.2, 0.7, 0.2)); bui.screenmessage('Auto React ON', color=(0, 1, 0))
+            bw(s.toggle_btn, label='ON', color=(0.2, 0.7, 0.2)); bui.screenmessage('React ON', color=(0, 1, 0))
         else:
-            bw(s.toggle_btn, label='OFF', color=(0.7, 0.2, 0.2)); bui.screenmessage('Auto React OFF', color=(1, 0.5, 0))
+            bw(s.toggle_btn, label='OFF', color=(0.7, 0.2, 0.2)); bui.screenmessage('React OFF', color=(1, 0.5, 0))
         gs('dingSmall').play()
 
 
 # ============================================
-# ⚙️ Auto-Reply Editor
+# ⚙️ Auto-Reply Editor (کوچیک)
 # ============================================
 class EditAutoReplyWindow:
     def __init__(s, source, keyword, parent_window=None):
         s.keyword = keyword; s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(320, 200), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(290, 160))
+        s.w = AR.cw(source=source, size=(280, 180), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(250, 140))
         current = AUTO_REPLIES.get(keyword, '')
-        tw(parent=s.w, text=f'Edit "{keyword}"', scale=0.85, position=(160, 155), h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text='Reply with:', scale=0.6, position=(160, 130), h_align='center', color=(0.8, 0.8, 1))
-        s.input = tw(parent=s.w, text=current, editable=True, scale=0.9, position=(40, 85), size=(240, 32), h_align='center', color=(0.9, 0.9, 0.9))
-        bw(parent=s.w, label='Save', size=(100, 35), position=(50, 20), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
-        bw(parent=s.w, label='Delete', size=(100, 35), position=(170, 20), on_activate_call=Call(s.delete), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square')
+        tw(parent=s.w, text=f'Edit "{keyword}"', scale=0.8, position=(140, 135), h_align='center', color=(1, 1, 0))
+        tw(parent=s.w, text='Reply:', scale=0.55, position=(140, 112), h_align='center', color=(0.8, 0.8, 1))
+        s.input = tw(parent=s.w, text=current, editable=True, scale=0.85, position=(30, 75), size=(220, 30), h_align='center', color=(0.9, 0.9, 0.9))
+        bw(parent=s.w, label='Save', size=(90, 30), position=(40, 20), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
+        bw(parent=s.w, label='Delete', size=(90, 30), position=(150, 20), on_activate_call=Call(s.delete), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square')
         gs('swish').play()
     def save(s):
         value = tw(query=s.input).strip()
-        if not value: AR.err('Field required!'); return
+        if not value: AR.err('Required!'); return
         AUTO_REPLIES[s.keyword] = value; save_auto_replies(AUTO_REPLIES)
-        bui.screenmessage(f'"{s.keyword}" → {value}', color=(0, 1, 0)); gs('dingSmallHigh').play()
+        bui.screenmessage(f'Saved!', color=(0, 1, 0)); gs('dingSmallHigh').play()
         if s.parent_window:
             try: s.parent_window.build_grid()
             except: pass
@@ -600,7 +612,7 @@ class EditAutoReplyWindow:
     def delete(s):
         if s.keyword in AUTO_REPLIES: del AUTO_REPLIES[s.keyword]
         save_auto_replies(AUTO_REPLIES)
-        bui.screenmessage(f'Deleted: {s.keyword}', color=(1, 0.5, 0)); gs('dingSmallLow').play()
+        bui.screenmessage(f'Deleted!', color=(1, 0.5, 0)); gs('dingSmallLow').play()
         if s.parent_window:
             try: s.parent_window.build_grid()
             except: pass
@@ -610,21 +622,21 @@ class EditAutoReplyWindow:
 class AddAutoReplyWindow:
     def __init__(s, source, parent_window=None):
         s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(320, 220), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(290, 180))
-        tw(parent=s.w, text='Add Auto Reply', scale=0.9, position=(160, 175), h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text='When message contains:', scale=0.6, position=(160, 145), h_align='center', color=(1, 1, 1))
-        s.keyword_input = tw(parent=s.w, text='', editable=True, scale=0.9, position=(40, 110), size=(240, 32), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='Reply with:', scale=0.6, position=(160, 80), h_align='center', color=(1, 1, 1))
-        s.response_input = tw(parent=s.w, text='', editable=True, scale=0.9, position=(40, 45), size=(240, 32), h_align='center', color=(0.9, 0.9, 0.9))
-        bw(parent=s.w, label='Add', size=(100, 30), position=(110, 5), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
+        s.w = AR.cw(source=source, size=(280, 200), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(250, 160))
+        tw(parent=s.w, text='Add Auto Reply', scale=0.85, position=(140, 155), h_align='center', color=(1, 1, 0))
+        tw(parent=s.w, text='When contains:', scale=0.55, position=(140, 128), h_align='center', color=(1, 1, 1))
+        s.keyword_input = tw(parent=s.w, text='', editable=True, scale=0.85, position=(30, 95), size=(220, 30), h_align='center', color=(0.9, 0.9, 0.9))
+        tw(parent=s.w, text='Reply:', scale=0.55, position=(140, 68), h_align='center', color=(1, 1, 1))
+        s.response_input = tw(parent=s.w, text='', editable=True, scale=0.85, position=(30, 35), size=(220, 30), h_align='center', color=(0.9, 0.9, 0.9))
+        bw(parent=s.w, label='Add', size=(90, 28), position=(95, 0), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
         gs('swish').play()
     def save(s):
         keyword = tw(query=s.keyword_input).strip()
         response = tw(query=s.response_input).strip()
-        if not keyword or not response: AR.err('Both fields required!'); return
+        if not keyword or not response: AR.err('Both required!'); return
         AUTO_REPLIES[keyword] = response; save_auto_replies(AUTO_REPLIES)
-        bui.screenmessage(f'"{keyword}" → {response}', color=(0, 1, 0)); gs('dingSmallHigh').play()
+        bui.screenmessage(f'Saved!', color=(0, 1, 0)); gs('dingSmallHigh').play()
         if s.parent_window:
             try: s.parent_window.build_grid()
             except: pass
@@ -634,102 +646,106 @@ class AddAutoReplyWindow:
 class AutoReplyEditorWindow:
     def __init__(s, source, parent_window=None):
         s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(340, 440), ps=AR.UIS() * 0.35)
-        AR.add_close_button(s.w, position=(310, 400))
-        tw(parent=s.w, text='Auto Reply', scale=1.0, position=(170, 395), h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.45, position=(170, 378), h_align='center', color=(0.6, 0.6, 0.8))
-        s.scroll = sw(parent=s.w, size=(300, 180), position=(20, 170))
-        s.container = cw(parent=s.scroll, size=(280, 300), background=False)
+        s.w = AR.cw(source=source, size=(320, 400), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(290, 360))
+        tw(parent=s.w, text='Auto Reply', scale=0.95, position=(160, 355), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(160, 340), h_align='center', color=(0.6, 0.6, 0.8))
+        s.scroll = sw(parent=s.w, size=(280, 160), position=(20, 150))
+        s.container = cw(parent=s.scroll, size=(260, 300), background=False)
         s.item_buttons = {}
         s.build_grid()
-        bw(parent=s.w, label='+ Add', size=(85, 32), position=(20, 130), on_activate_call=Call(s.add_new), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
-        bw(parent=s.w, label='Clear All', size=(85, 32), position=(115, 130), on_activate_call=Call(s.clear_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
-        s.toggle_btn = bw(parent=s.w, label='ON' if auto_reply_enabled else 'OFF', size=(85, 32), position=(210, 130), on_activate_call=Call(s.toggle), color=(0.2, 0.7, 0.2) if auto_reply_enabled else (0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.8)
-        tw(parent=s.w, text='Auto Reply is ' + ('ON' if auto_reply_enabled else 'OFF'), position=(170, 100), scale=0.5, h_align='center', color=(1, 1, 0.8))
+        bw(parent=s.w, label='+ Add', size=(80, 30), position=(20, 110), on_activate_call=Call(s.add_new), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+        bw(parent=s.w, label='Clear', size=(80, 30), position=(110, 110), on_activate_call=Call(s.clear_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+        s.toggle_btn = bw(parent=s.w, label='ON' if auto_reply_enabled else 'OFF', size=(80, 30), position=(200, 110), on_activate_call=Call(s.toggle), color=(0.2, 0.7, 0.2) if auto_reply_enabled else (0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
+        tw(parent=s.w, text='Everywhere keyword matches → reply', position=(160, 85), scale=0.4, h_align='center', color=(0.7, 0.7, 1))
         gs('swish').play()
     def build_grid(s):
         for child in s.container.get_children(): child.delete()
         s.item_buttons.clear()
         items = list(AUTO_REPLIES.items())
-        row_height = 34
+        row_height = 32
         total_h = len(items) * row_height + 20
         for i, (keyword, response) in enumerate(items):
             y = total_h - (i + 1) * row_height
-            btn = bw(parent=s.container, label=f'{keyword} → {response}', size=(185, 28), position=(5, y), on_activate_call=Call(s.edit_item, keyword), color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
+            btn = bw(parent=s.container, label=f'{keyword} → {response}', size=(175, 26), position=(5, y), on_activate_call=Call(s.edit_item, keyword), color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1), button_type='square', text_scale=0.5)
             s.item_buttons[keyword] = btn
-            bw(parent=s.container, label='X', size=(30, 28), position=(195, y), on_activate_call=Call(s.delete_item, keyword), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        cw(s.container, size=(280, total_h))
+            bw(parent=s.container, label='X', size=(28, 26), position=(185, y), on_activate_call=Call(s.delete_item, keyword), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
+        cw(s.container, size=(260, total_h))
     def add_new(s): AddAutoReplyWindow(s.w, parent_window=s)
     def edit_item(s, keyword): EditAutoReplyWindow(s.w, keyword=keyword, parent_window=s)
     def delete_item(s, keyword):
         if keyword in AUTO_REPLIES: del AUTO_REPLIES[keyword]
         save_auto_replies(AUTO_REPLIES)
-        bui.screenmessage(f'Deleted: {keyword}', color=(1, 0.5, 0)); gs('dingSmallLow').play()
+        bui.screenmessage(f'Deleted!', color=(1, 0.5, 0)); gs('dingSmallLow').play()
         s.build_grid()
     def clear_all(s):
         global AUTO_REPLIES
         AUTO_REPLIES = {}; save_auto_replies(AUTO_REPLIES)
-        bui.screenmessage('All auto replies cleared!', color=(1, 0.5, 0)); gs('dingSmallLow').play()
+        bui.screenmessage('Cleared!', color=(1, 0.5, 0)); gs('dingSmallLow').play()
         s.build_grid()
     def toggle(s):
         global auto_reply_enabled
         auto_reply_enabled = not auto_reply_enabled
+        save_enabled_state('reply', auto_reply_enabled)
         if auto_reply_enabled:
-            bw(s.toggle_btn, label='ON', color=(0.2, 0.7, 0.2)); bui.screenmessage('Auto Reply ON', color=(0, 1, 0))
+            bw(s.toggle_btn, label='ON', color=(0.2, 0.7, 0.2)); bui.screenmessage('Reply ON', color=(0, 1, 0))
         else:
-            bw(s.toggle_btn, label='OFF', color=(0.7, 0.2, 0.2)); bui.screenmessage('Auto Reply OFF', color=(1, 0.5, 0))
+            bw(s.toggle_btn, label='OFF', color=(0.7, 0.2, 0.2)); bui.screenmessage('Reply OFF', color=(1, 0.5, 0))
         gs('dingSmall').play()
 
 
 # ============================================
-# 🤖 Spam Window
+# 🤖 Spam Window (با سیو)
 # ============================================
 class SpamWindow:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(320, 300), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(290, 260))
-        tw(parent=s.w, text='Spam', scale=1.0, position=(160, 255), h_align='center', color=(1, 0.5, 0.5))
-        tw(parent=s.w, text=SIGNATURE, scale=0.45, position=(160, 238), h_align='center', color=(0.6, 0.6, 0.8))
-        s.status = tw(parent=s.w, text='Not Spamming', position=(160, 215), h_align='center', scale=0.7, color=(1, 1, 0))
-        tw(parent=s.w, text='Message:', scale=0.6, position=(160, 190), h_align='center', color=(1, 1, 1))
-        s.msg_input = tw(parent=s.w, text='', editable=True, scale=0.9, position=(40, 155), size=(240, 32), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='Delay (seconds):', scale=0.6, position=(160, 125), h_align='center', color=(1, 1, 1))
-        s.delay_input = tw(parent=s.w, text='2', editable=True, scale=0.9, position=(40, 90), size=(240, 32), h_align='center', color=(0.9, 0.9, 0.9))
-        bw(parent=s.w, label='START', size=(120, 35), position=(20, 40), on_activate_call=Call(s.start), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.8)
-        bw(parent=s.w, label='STOP', size=(120, 35), position=(180, 40), on_activate_call=Call(s.stop), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.8)
-        tw(parent=s.w, text='یا توی چت بنویس: اسپم سلام ۲', position=(160, 15), scale=0.45, h_align='center', color=(0.7, 0.7, 1))
+        saved_msg, saved_delay = get_spam_settings()
+        s.w = AR.cw(source=source, size=(300, 280), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(270, 240))
+        tw(parent=s.w, text='Spam', scale=0.95, position=(150, 235), h_align='center', color=(1, 0.5, 0.5))
+        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(150, 220), h_align='center', color=(0.6, 0.6, 0.8))
+        s.status = tw(parent=s.w, text='Not Spamming', position=(150, 198), h_align='center', scale=0.65, color=(1, 1, 0))
+        tw(parent=s.w, text='Message:', scale=0.55, position=(150, 175), h_align='center', color=(1, 1, 1))
+        s.msg_input = tw(parent=s.w, text=saved_msg, editable=True, scale=0.85, position=(30, 145), size=(240, 30), h_align='center', color=(0.9, 0.9, 0.9))
+        tw(parent=s.w, text='Delay (seconds):', scale=0.55, position=(150, 118), h_align='center', color=(1, 1, 1))
+        s.delay_input = tw(parent=s.w, text=str(saved_delay), editable=True, scale=0.85, position=(30, 85), size=(240, 30), h_align='center', color=(0.9, 0.9, 0.9))
+        s.toggle_btn = bw(parent=s.w, label='START', size=(120, 32), position=(20, 40), on_activate_call=Call(s.start), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
+        bw(parent=s.w, label='STOP', size=(120, 32), position=(160, 40), on_activate_call=Call(s.stop), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
+        tw(parent=s.w, text='Chat: "spam on/off" or "اسپم سلام ۲"', position=(150, 15), scale=0.4, h_align='center', color=(0.7, 0.7, 1))
         gs('swish').play()
     def start(s):
-        if spam_active: AR.err('Already spamming!'); return
+        if spam_active: AR.err('Already!'); return
         msg = tw(query=s.msg_input).strip()
-        if not msg: AR.err('Enter a message!'); return
+        if not msg: AR.err('Enter message!'); return
         try:
             delay = float(tw(query=s.delay_input).strip())
             if delay <= 0: raise ValueError
         except: AR.err('Invalid delay!'); return
         start_spam(msg, delay)
         tw(s.status, text=f'Spamming: {msg}', color=(0, 1, 0))
+        bw(s.toggle_btn, label='ON', color=(0.2, 0.7, 0.2))
     def stop(s):
-        stop_spam(); tw(s.status, text='Not Spamming', color=(1, 1, 0))
+        stop_spam(); tw(s.status, text='Stopped', color=(1, 1, 0))
+        bw(s.toggle_btn, label='START', color=(0.2, 0.7, 0.3))
 
 
 # ============================================
-# 🔄 Reconnect Window
+# 🔄 Reconnect Window (با import درست)
 # ============================================
 class ReconnectWindow:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(340, 280), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(310, 240))
-        tw(parent=s.w, text='Server Manager', scale=1.0, position=(170, 235), h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.45, position=(170, 218), h_align='center', color=(0.6, 0.6, 0.8))
-        tw(parent=s.w, text=f'IP: {server_ip}', position=(170, 195), h_align='center', scale=0.6, color=(0.8, 0.8, 1))
-        tw(parent=s.w, text=f'Port: {server_port}', position=(170, 175), h_align='center', scale=0.6, color=(0.8, 0.8, 1))
-        bw(parent=s.w, label='Reconnect', size=(140, 35), position=(20, 125), on_activate_call=Call(s.reconnect), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
-        bw(parent=s.w, label='Disconnect', size=(140, 35), position=(180, 125), on_activate_call=Call(s.disconnect), color=(0.7, 0.3, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
-        tw(parent=s.w, text='Manual Connect:', scale=0.6, position=(170, 95), h_align='center', color=(1, 1, 1))
-        s.ip_input = tw(parent=s.w, text=server_ip, editable=True, scale=0.8, position=(40, 65), size=(120, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        s.port_input = tw(parent=s.w, text=str(server_port), editable=True, scale=0.8, position=(180, 65), size=(120, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        bw(parent=s.w, label='Connect', size=(140, 32), position=(100, 20), on_activate_call=Call(s.manual_connect), color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+        s.w = AR.cw(source=source, size=(320, 260), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(290, 220))
+        tw(parent=s.w, text='Server Manager', scale=0.95, position=(160, 215), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(160, 200), h_align='center', color=(0.6, 0.6, 0.8))
+        tw(parent=s.w, text=f'IP: {server_ip}', position=(160, 178), h_align='center', scale=0.55, color=(0.8, 0.8, 1))
+        tw(parent=s.w, text=f'Port: {server_port}', position=(160, 160), h_align='center', scale=0.55, color=(0.8, 0.8, 1))
+        bw(parent=s.w, label='Reconnect', size=(130, 32), position=(20, 115), on_activate_call=Call(s.reconnect), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+        bw(parent=s.w, label='Disconnect', size=(130, 32), position=(170, 115), on_activate_call=Call(s.disconnect), color=(0.7, 0.3, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+        tw(parent=s.w, text='Manual Connect:', scale=0.55, position=(160, 88), h_align='center', color=(1, 1, 1))
+        s.ip_input = tw(parent=s.w, text=server_ip, editable=True, scale=0.75, position=(30, 60), size=(120, 26), h_align='center', color=(0.9, 0.9, 0.9))
+        s.port_input = tw(parent=s.w, text=str(server_port), editable=True, scale=0.75, position=(170, 60), size=(120, 26), h_align='center', color=(0.9, 0.9, 0.9))
+        bw(parent=s.w, label='Connect', size=(130, 30), position=(95, 20), on_activate_call=Call(s.manual_connect), color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
         gs('swish').play()
     def reconnect(s):
         if server_ip == "127.0.0.1": AR.err('No server saved!'); return
@@ -738,15 +754,15 @@ class ReconnectWindow:
             if conn:
                 original_disconnect(); time.sleep(1)
             original_connect(server_ip, server_port)
-            bui.screenmessage(f'Reconnecting to {server_ip}:{server_port}', color=(0, 1, 0))
-        except Exception as e: AR.err(f'Reconnect failed: {e}')
+            bui.screenmessage(f'Reconnecting...', color=(0, 1, 0))
+        except Exception as e: AR.err(f'Failed: {e}')
     def disconnect(s):
         try:
             conn = get_connection_info()
             if conn:
                 original_disconnect(); bui.screenmessage('Disconnected', color=(1, 0.5, 0))
             else: AR.err('Not connected!')
-        except Exception as e: AR.err(f'Disconnect failed: {e}')
+        except Exception as e: AR.err(f'Failed: {e}')
     def manual_connect(s):
         global server_ip, server_port
         try:
@@ -757,27 +773,27 @@ class ReconnectWindow:
             if conn:
                 original_disconnect(); time.sleep(1)
             original_connect(ip, port)
-            bui.screenmessage(f'Connected to {ip}:{port}', color=(0, 1, 0))
-        except Exception as e: AR.err(f'Connect failed: {e}')
+            bui.screenmessage(f'Connected!', color=(0, 1, 0))
+        except Exception as e: AR.err(f'Failed: {e}')
 
 
 # ============================================
-# 🤖 Auto Buyer Window
+# 🤖 Auto Buyer Window (کوچیک)
 # ============================================
 class AutoBuyerWindow:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(380, 480), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(350, 440))
-        tw(parent=s.w, text='Auto Buyer', scale=1.1, position=(190, 435), h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.5, position=(190, 415), h_align='center', color=(0.6, 0.6, 0.8))
+        s.w = AR.cw(source=source, size=(360, 440), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(330, 400))
+        tw(parent=s.w, text='Auto Buyer', scale=1.0, position=(180, 395), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.45, position=(180, 378), h_align='center', color=(0.6, 0.6, 0.8))
         status = "ON" if auto_buyer_enabled else "OFF"
         status_color = (0, 1, 0) if auto_buyer_enabled else (1, 0, 0)
-        s.status_text = tw(parent=s.w, text=f'Status: {status}', position=(190, 385), h_align='center', scale=0.8, color=status_color)
-        s.toggle_btn = bw(parent=s.w, label='Turn OFF' if auto_buyer_enabled else 'Turn ON', size=(140, 30), position=(20, 345), on_activate_call=Call(s.toggle), color=(0.7, 0.2, 0.2) if auto_buyer_enabled else (0.2, 0.7, 0.2), textcolor=(1, 1, 1), button_type='square')
-        bw(parent=s.w, label='Reset All', size=(140, 30), position=(180, 345), on_activate_call=Call(s.reset_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        tw(parent=s.w, text='─── Item Limits ───', position=(190, 310), h_align='center', scale=0.6, color=(1, 1, 0.8))
-        s.scroll = sw(parent=s.w, size=(340, 240), position=(20, 40))
-        s.container = cw(parent=s.scroll, size=(320, 700), background=False)
+        s.status_text = tw(parent=s.w, text=f'Status: {status}', position=(180, 355), h_align='center', scale=0.75, color=status_color)
+        s.toggle_btn = bw(parent=s.w, label='Turn OFF' if auto_buyer_enabled else 'Turn ON', size=(130, 28), position=(20, 320), on_activate_call=Call(s.toggle), color=(0.7, 0.2, 0.2) if auto_buyer_enabled else (0.2, 0.7, 0.2), textcolor=(1, 1, 1), button_type='square')
+        bw(parent=s.w, label='Reset', size=(130, 28), position=(170, 320), on_activate_call=Call(s.reset_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
+        tw(parent=s.w, text='─── Item Limits ───', position=(180, 288), h_align='center', scale=0.55, color=(1, 1, 0.8))
+        s.scroll = sw(parent=s.w, size=(320, 230), position=(20, 40))
+        s.container = cw(parent=s.scroll, size=(300, 700), background=False)
         s.item_buttons = {}
         s.build_grid()
         gs('swish').play()
@@ -785,19 +801,19 @@ class AutoBuyerWindow:
         for child in s.container.get_children(): child.delete()
         s.item_buttons.clear()
         items = list(LIMITS.items())
-        col_width = 160
-        row_height = 34
+        col_width = 150
+        row_height = 32
         num_rows = (len(items) + 1) // 2
-        total_h = num_rows * row_height + 80
+        total_h = num_rows * row_height + 60
         for i, (name, limit) in enumerate(items):
             col = i % 2
             row = i // 2
             x = 5 + col * col_width
             y = total_h - (row + 1) * row_height
             limit_str = str(int(limit)) if limit == int(limit) else f"{limit:.2f}".rstrip('0').rstrip('.')
-            btn = bw(parent=s.container, label=f'{name}: {limit_str}', size=(150, 30), position=(x, y), on_activate_call=Call(s.edit_item, name), color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+            btn = bw(parent=s.container, label=f'{name}: {limit_str}', size=(140, 28), position=(x, y), on_activate_call=Call(s.edit_item, name), color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
             s.item_buttons[name] = btn
-        cw(s.container, size=(320, total_h))
+        cw(s.container, size=(300, total_h))
     def refresh_list(s):
         for name, btn in s.item_buttons.items():
             try:
@@ -809,6 +825,7 @@ class AutoBuyerWindow:
     def toggle(s):
         global auto_buyer_enabled
         auto_buyer_enabled = not auto_buyer_enabled
+        save_enabled_state('buyer', auto_buyer_enabled)
         if auto_buyer_enabled:
             bw(s.toggle_btn, label='Turn OFF', color=(0.7, 0.2, 0.2))
             tw(s.status_text, text='Status: ON', color=(0, 1, 0))
@@ -822,26 +839,26 @@ class AutoBuyerWindow:
     def reset_all(s):
         global LIMITS
         LIMITS = dict(DEFAULT_LIMITS); save_limits(LIMITS)
-        bui.screenmessage('Reset to defaults!', color=(0, 1, 1)); gs('dingSmallHigh').play()
+        bui.screenmessage('Reset!', color=(0, 1, 1)); gs('dingSmallHigh').play()
         s.refresh_list()
 
 
 class EditLimitsWindow:
     def __init__(s, source, item_name, parent_window=None):
         s.item_name = item_name; s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(300, 180), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(270, 140))
+        s.w = AR.cw(source=source, size=(280, 160), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(250, 120))
         current = str(LIMITS.get(item_name, 0))
-        tw(parent=s.w, text=f'Set _ {item_name}', scale=0.9, position=(150, 135), h_align='center', color=(1, 1, 0))
-        s.input = tw(parent=s.w, text=current, editable=True, scale=1.0, position=(50, 85), size=(200, 35), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='(decimal allowed: e.g. 3.5)', position=(150, 60), scale=0.5, h_align='center', color=(0.7, 0.7, 1))
-        bw(parent=s.w, label='Save', size=(120, 35), position=(90, 15), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
+        tw(parent=s.w, text=f'Set _ {item_name}', scale=0.85, position=(140, 115), h_align='center', color=(1, 1, 0))
+        s.input = tw(parent=s.w, text=current, editable=True, scale=0.95, position=(40, 75), size=(200, 30), h_align='center', color=(0.9, 0.9, 0.9))
+        tw(parent=s.w, text='(decimal allowed)', position=(140, 52), scale=0.45, h_align='center', color=(0.7, 0.7, 1))
+        bw(parent=s.w, label='Save', size=(110, 30), position=(85, 15), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
         gs('swish').play()
     def save(s):
         try: value = float(tw(query=s.input).strip())
-        except: AR.err('Invalid number!'); return
+        except: AR.err('Invalid!'); return
         LIMITS[s.item_name] = value; save_limits(LIMITS)
-        bui.screenmessage(f'_{s.item_name} = {value}', color=(0, 1, 0)); gs('dingSmallHigh').play()
+        bui.screenmessage(f'Saved!', color=(0, 1, 0)); gs('dingSmallHigh').play()
         if s.parent_window:
             try: s.parent_window.refresh_list()
             except: pass
@@ -993,7 +1010,7 @@ def detect_calculation(message):
 
 
 # ============================================
-# 🧮 Chat Commands (اسپم)
+# 🧮 Chat Commands
 # ============================================
 def check_spam_command(msg):
     global spam_active
@@ -1003,6 +1020,17 @@ def check_spam_command(msg):
             _, content = msg.split(': ', 1)
         content = content.strip()
         content_lower = content.lower()
+
+        # ✅ دستورات روشن/خاموش
+        if content_lower in ('spam on', 'اسپم روشن'):
+            start_spam(spam_message if spam_message else 'spam', spam_delay)
+            return True
+
+        if content_lower in ('spam off', 'اسپم خاموش', 'توقف اسپم', 'stop spam'):
+            stop_spam()
+            return True
+
+        # دستور اسپم X Y
         match = re.match(r'^اسپم\s+(.+?)\s+([\d.]+)\s*$', content_lower)
         if match:
             message = match.group(1).strip()
@@ -1011,8 +1039,6 @@ def check_spam_command(msg):
             if delay <= 0: delay = 2.0
             if spam_active: stop_spam()
             start_spam(message, delay); return True
-        if content_lower in ('توقف اسپم', 'stop spam', 'اسپم توقف'):
-            stop_spam(); return True
     except Exception as e: print(f"Spam command error: {e}")
     return False
 
@@ -1042,9 +1068,9 @@ class byMahyar(Plugin):
 
             teck(0.5, get_my_ids)
 
-            # ✅ همه دکمه‌ها بغل چت - زیر هم
+            # ✅ همه دکمه‌ها بغل چت - پایین‌تر
             b_calc = AR.bw(
-                position=(self._width - 100, self._height - 80),
+                position=(self._width - 100, self._height - 100),
                 parent=self._root_widget,
                 size=(85, 25),
                 label='Math',
@@ -1053,7 +1079,7 @@ class byMahyar(Plugin):
             bw(b_calc, on_activate_call=Call(s.delayed_open, Calculator, b_calc))
 
             b_auto = AR.bw(
-                position=(self._width - 100, self._height - 110),
+                position=(self._width - 100, self._height - 130),
                 parent=self._root_widget,
                 size=(85, 25),
                 label='AutoBuy',
@@ -1062,7 +1088,7 @@ class byMahyar(Plugin):
             bw(b_auto, on_activate_call=Call(s.delayed_open, AutoBuyerWindow, b_auto))
 
             b_react = AR.bw(
-                position=(self._width - 100, self._height - 140),
+                position=(self._width - 100, self._height - 160),
                 parent=self._root_widget,
                 size=(85, 25),
                 label='React',
@@ -1071,7 +1097,7 @@ class byMahyar(Plugin):
             bw(b_react, on_activate_call=Call(s.delayed_open, ReactionEditorWindow, b_react))
 
             b_reply = AR.bw(
-                position=(self._width - 100, self._height - 170),
+                position=(self._width - 100, self._height - 190),
                 parent=self._root_widget,
                 size=(85, 25),
                 label='Reply',
@@ -1080,7 +1106,7 @@ class byMahyar(Plugin):
             bw(b_reply, on_activate_call=Call(s.delayed_open, AutoReplyEditorWindow, b_reply))
 
             b_spam = AR.bw(
-                position=(self._width - 100, self._height - 200),
+                position=(self._width - 100, self._height - 220),
                 parent=self._root_widget,
                 size=(85, 25),
                 label='Spam',
@@ -1089,7 +1115,7 @@ class byMahyar(Plugin):
             bw(b_spam, on_activate_call=Call(s.delayed_open, SpamWindow, b_spam))
 
             b_recon = AR.bw(
-                position=(self._width - 100, self._height - 230),
+                position=(self._width - 100, self._height - 250),
                 parent=self._root_widget,
                 size=(85, 25),
                 label='Reconnect',
