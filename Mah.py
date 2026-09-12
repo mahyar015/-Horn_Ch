@@ -43,6 +43,9 @@ DEFAULT_LIMITS = {
 DEFAULT_UNKNOWN = 999999
 
 
+# ============================================
+# ⚙️ ذخیره/بازیابی مکان دکمه‌ها
+# ============================================
 def get_pos(key, default):
     try:
         return app.config.get(f'mahyar_btn_{key}', default)
@@ -85,6 +88,9 @@ auto_buyer_enabled = True
 seen_messages = []
 seen_messages_set = set()
 processed_buy_ids = set()
+
+# رفرنس دکمه‌های اصلی برای جابجایی لحظه‌ای
+LIVE_BUTTONS = {}  # {'math': widget, 'auto': widget}
 
 
 class AR:
@@ -135,72 +141,84 @@ class PositionEditor:
         s.btn_key = btn_key
         s.btn_name = btn_name
 
-        s.w = AR.cw(source=source, size=(340, 360), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(310, 320))
+        s.w = AR.cw(source=source, size=(340, 380), ps=AR.UIS() * 0.4)
+        AR.add_close_button(s.w, position=(310, 340))
 
         tw(parent=s.w, text=f'Move: {btn_name}', scale=1.0,
-           position=(170, 315), h_align='center', color=(1, 1, 0))
+           position=(170, 335), h_align='center', color=(1, 1, 0))
 
-        tw(parent=s.w, text='Use arrows to move button',
-           position=(170, 290), scale=0.6,
+        tw(parent=s.w, text='Use arrows to move - live update',
+           position=(170, 310), scale=0.55,
            h_align='center', color=(0.8, 0.8, 1))
 
         s.pos_x, s.pos_y = get_pos(btn_key, (-100, -80))
 
         s.pos_text = tw(parent=s.w, text=f'X: {s.pos_x}   Y: {s.pos_y}',
-                        position=(170, 255), scale=0.8,
+                        position=(170, 275), scale=0.8,
                         h_align='center', color=(0, 1, 1))
 
-        bw(parent=s.w, label='↑', size=(70, 50), position=(135, 195),
+        bw(parent=s.w, label='↑', size=(70, 50), position=(135, 215),
            on_activate_call=Call(s.move, 'up'),
            color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
            button_type='square', text_scale=1.5)
 
-        bw(parent=s.w, label='←', size=(70, 50), position=(55, 135),
+        bw(parent=s.w, label='←', size=(70, 50), position=(55, 155),
            on_activate_call=Call(s.move, 'left'),
            color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
            button_type='square', text_scale=1.5)
 
-        bw(parent=s.w, label='↓', size=(70, 50), position=(135, 135),
+        bw(parent=s.w, label='↓', size=(70, 50), position=(135, 155),
            on_activate_call=Call(s.move, 'down'),
            color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
            button_type='square', text_scale=1.5)
 
-        bw(parent=s.w, label='→', size=(70, 50), position=(215, 135),
+        bw(parent=s.w, label='→', size=(70, 50), position=(215, 155),
            on_activate_call=Call(s.move, 'right'),
            color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
            button_type='square', text_scale=1.5)
 
         tw(parent=s.w, text='Step Size:', scale=0.7,
-           position=(30, 90), color=(1, 1, 1))
+           position=(30, 110), color=(1, 1, 1))
 
         s.step = 5
         s.step_text = tw(parent=s.w, text=f'{s.step} px', scale=0.7,
-                        position=(150, 90), color=(1, 1, 0))
+                        position=(150, 110), color=(1, 1, 0))
 
-        bw(parent=s.w, label='-10', size=(60, 30), position=(30, 50),
-           on_activate_call=Call(s.set_step, 10),
-           color=(0.7, 0.3, 0.3), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
-        bw(parent=s.w, label='-1', size=(60, 30), position=(100, 50),
+        bw(parent=s.w, label='1', size=(60, 30), position=(30, 70),
            on_activate_call=Call(s.set_step, 1),
-           color=(0.6, 0.3, 0.3), textcolor=(1, 1, 1),
+           color=(0.5, 0.5, 0.7), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.7)
-        bw(parent=s.w, label='+1', size=(60, 30), position=(170, 50),
-           on_activate_call=Call(s.set_step, 1),
-           color=(0.3, 0.6, 0.3), textcolor=(1, 1, 1),
+        bw(parent=s.w, label='5', size=(60, 30), position=(100, 70),
+           on_activate_call=Call(s.set_step, 5),
+           color=(0.4, 0.5, 0.7), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.7)
-        bw(parent=s.w, label='+10', size=(60, 30), position=(240, 50),
+        bw(parent=s.w, label='10', size=(60, 30), position=(170, 70),
            on_activate_call=Call(s.set_step, 10),
-           color=(0.3, 0.7, 0.3), textcolor=(1, 1, 1),
+           color=(0.4, 0.6, 0.8), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.7)
+        bw(parent=s.w, label='20', size=(60, 30), position=(240, 70),
+           on_activate_call=Call(s.set_step, 20),
+           color=(0.3, 0.7, 0.8), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.7)
 
         bw(parent=s.w, label='Reset Position', size=(150, 35),
-           position=(95, 10), on_activate_call=s.reset_pos,
+           position=(95, 25), on_activate_call=s.reset_pos,
            color=(0.8, 0.2, 0.2), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.7)
 
         gs('swish').play()
+
+    def update_live_button(s):
+        """آپدیت لحظه‌ای مکان دکمه اصلی"""
+        global LIVE_BUTTONS
+        try:
+            if s.btn_key in LIVE_BUTTONS:
+                btn = LIVE_BUTTONS[s.btn_key]
+                if btn and btn.exists():
+                    # ریفرش موقعیت
+                    pass  # دکمه‌های اصلی رو با تابع refresh استفاده میکنیم
+        except:
+            pass
 
     def move(s, direction):
         step = s.step
@@ -216,14 +234,15 @@ class PositionEditor:
 
         save_pos(s.btn_key, (s.pos_x, s.pos_y))
         tw(s.pos_text, text=f'X: {s.pos_x}   Y: {s.pos_y}')
+
+        # آپدیت لحظه‌ای دکمه‌های اصلی
+        refresh_main_buttons()
+
         gs('click01').play()
 
     def set_step(s, value):
-        if value > 0:
-            s.step = value
-        else:
-            s.step = 5
-        tw(s.step_text, text=f'{s.step} px')
+        s.step = value
+        tw(s.step_text, text=f'{value} px')
         gs('dingSmall').play()
 
     def reset_pos(s):
@@ -234,8 +253,29 @@ class PositionEditor:
         s.pos_x, s.pos_y = default
         save_pos(s.btn_key, default)
         tw(s.pos_text, text=f'X: {s.pos_x}   Y: {s.pos_y}')
+        refresh_main_buttons()
         push('Position reset!', color=(0, 1, 1))
         gs('dingSmallHigh').play()
+
+
+# ============================================
+# 🔄 تابع ریفرش دکمه‌های اصلی
+# ============================================
+def refresh_main_buttons():
+    """دکمه‌های اصلی رو جابجا میکنه (لحظه‌ای)"""
+    global LIVE_BUTTONS
+    try:
+        for key, btn in LIVE_BUTTONS.items():
+            if btn and btn.exists():
+                pos_x, pos_y = get_pos(key, (-100, -80))
+                # تلاش برای جابجایی
+                try:
+                    bw(btn, position=(btn.get_parent_window()._width + pos_x,
+                                      btn.get_parent_window()._height + pos_y))
+                except:
+                    pass
+    except Exception as e:
+        print(f"Refresh error: {e}")
 
 
 # ============================================
@@ -243,21 +283,21 @@ class PositionEditor:
 # ============================================
 class Calculator:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(340, 420), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(310, 380))
+        s.w = AR.cw(source=source, size=(340, 440), ps=AR.UIS() * 0.4)
+        AR.add_close_button(s.w, position=(310, 400))
 
         tw(parent=s.w, text='Math Engine', scale=0.9,
-           position=(170, 375), h_align='center', color=(1, 0.5, 0.9))
+           position=(170, 395), h_align='center', color=(1, 0.5, 0.9))
 
         tw(parent=s.w, text=SIGNATURE, scale=0.5,
-           position=(170, 360), h_align='center', color=(0.6, 0.6, 0.8))
+           position=(170, 380), h_align='center', color=(0.6, 0.6, 0.8))
 
         s.display = tw(parent=s.w, text='0', scale=1.2,
-                       position=(170, 328), h_align='center',
+                       position=(170, 348), h_align='center',
                        color=(0.3, 1, 0.7), maxwidth=310)
 
         s.expression = tw(parent=s.w, text='', scale=0.55,
-                          position=(170, 308), h_align='center',
+                          position=(170, 328), h_align='center',
                           color=(0.9, 0.7, 1), maxwidth=310)
 
         s.current_input = '0'
@@ -267,17 +307,17 @@ class Calculator:
         s.last_expression = ''
 
         bw(parent=s.w, label='Copy', size=(150, 28),
-           position=(15, 275), on_activate_call=Call(s.copy_result),
+           position=(15, 295), on_activate_call=Call(s.copy_result),
            color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1), button_type='square')
         bw(parent=s.w, label='Send', size=(150, 28),
-           position=(175, 275), on_activate_call=Call(s.send_to_chat),
+           position=(175, 295), on_activate_call=Call(s.send_to_chat),
            color=(0.7, 0.4, 0.2), textcolor=(1, 1, 1), button_type='square')
 
         bw(parent=s.w, label='Edit Position', size=(150, 28),
-           position=(95, 240), on_activate_call=Call(PositionEditor, s.w, 'math', 'Math Button'),
+           position=(95, 260), on_activate_call=Call(PositionEditor, s.w, 'math', 'Math Button'),
            color=(0.5, 0.3, 0.7), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
 
-        row_y = 200
+        row_y = 220
         row_gap = 36
         btn_h = 30
 
@@ -629,8 +669,9 @@ class AutoBuyerWindow:
            position=(190, 310), h_align='center',
            scale=0.6, color=(1, 1, 0.8))
 
+        # ✅ اسکرول‌ویجت با اندازه مناسب
         s.scroll = sw(parent=s.w, size=(340, 240), position=(20, 40))
-        s.container = cw(parent=s.scroll, size=(340, 600), background=False)
+        s.container = cw(parent=s.scroll, size=(320, 700), background=False)
 
         s.build_grid()
 
@@ -641,17 +682,18 @@ class AutoBuyerWindow:
             child.delete()
 
         items = list(LIMITS.items())
-        col_width = 165
-        row_height = 32
+        col_width = 160
+        row_height = 34
 
         num_rows = (len(items) + 1) // 2
-        total_h = num_rows * row_height + 20
+        # ✅ ارتفاع بیشتر برای جلوگیری از قطع شدن
+        total_h = num_rows * row_height + 40
 
         for i, (name, limit) in enumerate(items):
             col = i % 2
             row = i // 2
 
-            x = 10 + col * col_width
+            x = 5 + col * col_width
             y = total_h - (row + 1) * row_height
 
             if limit == int(limit):
@@ -660,12 +702,13 @@ class AutoBuyerWindow:
                 limit_str = f"{limit:.2f}".rstrip('0').rstrip('.')
 
             bw(parent=s.container, label=f'{name}: {limit_str}',
-               size=(150, 28), position=(x, y),
+               size=(150, 30), position=(x, y),
                on_activate_call=Call(s.edit_item, name),
                color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1),
                button_type='square', text_scale=0.6)
 
-        cw(s.container, size=(340, total_h))
+        # ✅ تنظیم اندازه کانتینر با ارتفاع بیشتر
+        cw(s.container, size=(320, total_h))
 
     def toggle(s):
         global auto_buyer_enabled
@@ -840,6 +883,7 @@ class byMahyar(Plugin):
             math_x, math_y = get_pos('math', (-100, -80))
             auto_x, auto_y = get_pos('auto', (-100, -48))
 
+            # دکمه Math
             b_calc = AR.bw(
                 position=(self._width + math_x, self._height + math_y),
                 parent=self._root_widget,
@@ -849,6 +893,7 @@ class byMahyar(Plugin):
             )
             bw(b_calc, on_activate_call=Call(Calculator, b_calc))
 
+            # دکمه AutoBuy
             b_auto = AR.bw(
                 position=(self._width + auto_x, self._height + auto_y),
                 parent=self._root_widget,
@@ -857,6 +902,11 @@ class byMahyar(Plugin):
                 color=(0.2, 0.6, 0.8)
             )
             bw(b_auto, on_activate_call=Call(AutoBuyerWindow, b_auto))
+
+            # ✅ ذخیره رفرنس‌ها برای جابجایی لحظه‌ای
+            global LIVE_BUTTONS
+            LIVE_BUTTONS['math'] = b_calc
+            LIVE_BUTTONS['auto'] = b_auto
 
             return r
 
