@@ -26,6 +26,7 @@ import re
 import time
 import bauiv1 as bui
 from babase import app
+from bascenev1lib.mainmenu import MainMenuSession
 
 SIGNATURE = "By Mahyar"
 CREATOR = "Creat By Mahyar\nTEL: @Mahyar015"
@@ -68,7 +69,7 @@ def save_limits(limits):
 
 def get_reactions():
     try:
-        saved = app.config.get('mahyar_reactions_v16', None)
+        saved = app.config.get('mahyar_reactions_v17', None)
         if saved:
             d = dict(DEFAULT_REACTIONS); d.update(saved); return d
     except: pass
@@ -77,13 +78,13 @@ def get_reactions():
 
 def save_reactions(reactions):
     try:
-        app.config['mahyar_reactions_v16'] = dict(reactions); app.config.commit()
+        app.config['mahyar_reactions_v17'] = dict(reactions); app.config.commit()
     except: pass
 
 
 def get_cooldowns():
     try:
-        saved = app.config.get('mahyar_cooldowns_v16', None)
+        saved = app.config.get('mahyar_cooldowns_v17', None)
         if saved:
             d = dict(DEFAULT_COOLDOWNS); d.update(saved); return d
     except: pass
@@ -92,7 +93,7 @@ def get_cooldowns():
 
 def save_cooldowns(cooldowns):
     try:
-        app.config['mahyar_cooldowns_v16'] = dict(cooldowns); app.config.commit()
+        app.config['mahyar_cooldowns_v17'] = dict(cooldowns); app.config.commit()
     except: pass
 
 
@@ -156,15 +157,20 @@ processed_bids = set()
 react_cooldown = {}
 auto_reply_cooldown = {}
 
-# ✅ Spam
 spam_active = False
 spam_message = ""
 spam_delay = 2.0
 spam_counter = 0
 spam_timer = None
 
+# ✅ ذخیره IP/Port سرور فعلی
 server_ip = "127.0.0.1"
 server_port = 43210
+
+# ✅ Auto Reconnect state
+auto_reconnect_enabled = False
+auto_reconnect_timer = None
+
 my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
@@ -260,17 +266,34 @@ def check_auto_reply(msg):
 
 
 # ============================================
-# 🎯 Spam Logic (با شمارنده برای فرستادن متن یکسان)
+# 🎯 Spam Logic (با کاراکتر نامرئی چرخشی - 10 تا)
 # ============================================
+# ✅ 10 کاراکتر نامرئی مختلف (برای جلوگیری از تشخیص پیام تکراری)
+INVISIBLE_CHARS = [
+    '',           # هیچی
+    '\u200b',     # Zero-width space
+    '\u200c',     # Zero-width non-joiner
+    '\u200d',     # Zero-width joiner
+    '\u2060',     # Word joiner
+    '\u180e',     # Mongolian vowel separator
+    '\ufeff',     # Zero-width no-break space (BOM)
+    '\u200e',     # Left-to-right mark
+    '\u200f',     # Right-to-left mark
+    '\u2061',     # Function application
+]
+
+
 def spam_send():
     global spam_active, spam_message, spam_delay, spam_timer, spam_counter
     if not spam_active: return
     try:
-        # ✅ برای فرستادن پیام یکسان، یه کاراکتر نامرئی (zero-width) به آخرش اضافه میکنیم
-        # این کار باعث میشه BombSquad فکر کنه پیام جدید هست
-        invisible_chars = ['', '\u200b', '\u200c', '\u200d', '\u2060']
-        suffix = invisible_chars[spam_counter % len(invisible_chars)]
+        # ✅ چرخش بین کاراکترهای نامرئی
+        suffix = INVISIBLE_CHARS[spam_counter % len(INVISIBLE_CHARS)]
         spam_counter += 1
+        
+        # اگه counter از 10 گذشت، به 1 برگردون
+        if spam_counter >= 100:
+            spam_counter = 0
         
         safe_chat_send(spam_message + suffix)
         spam_timer = teck(spam_delay, spam_send)
@@ -298,6 +321,54 @@ def stop_spam():
         spam_timer = None
     spam_active = False
     push("Spam Stopped", color=(1, 0.5, 0))
+
+
+# ============================================
+# 🔄 Auto Reconnect Logic
+# ============================================
+def auto_reconnect_check():
+    global auto_reconnect_enabled, auto_reconnect_timer, server_ip, server_port
+    
+    if not auto_reconnect_enabled:
+        return
+    
+    try:
+        # چک کن که آیا داخل سرور هستیم
+        conn = get_connection_info()
+        
+        if not conn:
+            # از سرور خارج شدیم!
+            if server_ip != "127.0.0.1":
+                push("Auto Reconnecting...", color=(1, 1, 0))
+                try:
+                    original_connect(server_ip, server_port)
+                except Exception as e:
+                    print(f"Auto reconnect failed: {e}")
+    except Exception as e:
+        print(f"Auto reconnect check error: {e}")
+    
+    # هر 3 ثانیه چک کن
+    auto_reconnect_timer = teck(3.0, auto_reconnect_check)
+
+
+def start_auto_reconnect():
+    global auto_reconnect_enabled, auto_reconnect_timer
+    auto_reconnect_enabled = True
+    if auto_reconnect_timer:
+        try: auto_reconnect_timer.cancel()
+        except: pass
+    auto_reconnect_timer = teck(3.0, auto_reconnect_check)
+    push("Auto Reconnect: ON", color=(0, 1, 0))
+
+
+def stop_auto_reconnect():
+    global auto_reconnect_enabled, auto_reconnect_timer
+    auto_reconnect_enabled = False
+    if auto_reconnect_timer:
+        try: auto_reconnect_timer.cancel()
+        except: pass
+        auto_reconnect_timer = None
+    push("Auto Reconnect: OFF", color=(1, 0.5, 0))
 
 
 # ============================================
@@ -449,7 +520,7 @@ class Calculator:
 
 
 # ============================================
-# ⚙️ Edit Reaction (کوچیک)
+# ⚙️ Edit Reaction
 # ============================================
 class EditReactionWindow:
     def __init__(s, source, trigger_code, parent_window=None):
@@ -586,7 +657,7 @@ class ReactionEditorWindow:
 
 
 # ============================================
-# ⚙️ Auto-Reply Editor (کوچیک)
+# ⚙️ Auto-Reply Editor
 # ============================================
 class EditAutoReplyWindow:
     def __init__(s, source, keyword, parent_window=None):
@@ -711,7 +782,7 @@ class SpamWindow:
         s.delay_input = tw(parent=s.w, text=str(saved_delay), editable=True, scale=0.85, position=(30, 85), size=(240, 30), h_align='center', color=(0.9, 0.9, 0.9))
         s.toggle_btn = bw(parent=s.w, label='START', size=(120, 32), position=(20, 40), on_activate_call=Call(s.start), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
         bw(parent=s.w, label='STOP', size=(120, 32), position=(160, 40), on_activate_call=Call(s.stop), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
-        tw(parent=s.w, text='Chat: "spam on/off" or "اسپم سلام ۲"', position=(150, 15), scale=0.4, h_align='center', color=(0.7, 0.7, 1))
+        tw(parent=s.w, text='Chat: "spam on/off"', position=(150, 15), scale=0.4, h_align='center', color=(0.7, 0.7, 1))
         gs('swish').play()
     def start(s):
         if spam_active: AR.err('Already!'); return
@@ -730,32 +801,69 @@ class SpamWindow:
 
 
 # ============================================
-# 🔄 Reconnect Window (با import درست)
+# 🔄 Reconnect Window (با Auto Reconnect و mainmenu)
 # ============================================
 class ReconnectWindow:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(320, 260), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(290, 220))
-        tw(parent=s.w, text='Server Manager', scale=0.95, position=(160, 215), h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(160, 200), h_align='center', color=(0.6, 0.6, 0.8))
-        tw(parent=s.w, text=f'IP: {server_ip}', position=(160, 178), h_align='center', scale=0.55, color=(0.8, 0.8, 1))
-        tw(parent=s.w, text=f'Port: {server_port}', position=(160, 160), h_align='center', scale=0.55, color=(0.8, 0.8, 1))
-        bw(parent=s.w, label='Reconnect', size=(130, 32), position=(20, 115), on_activate_call=Call(s.reconnect), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        bw(parent=s.w, label='Disconnect', size=(130, 32), position=(170, 115), on_activate_call=Call(s.disconnect), color=(0.7, 0.3, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        tw(parent=s.w, text='Manual Connect:', scale=0.55, position=(160, 88), h_align='center', color=(1, 1, 1))
-        s.ip_input = tw(parent=s.w, text=server_ip, editable=True, scale=0.75, position=(30, 60), size=(120, 26), h_align='center', color=(0.9, 0.9, 0.9))
-        s.port_input = tw(parent=s.w, text=str(server_port), editable=True, scale=0.75, position=(170, 60), size=(120, 26), h_align='center', color=(0.9, 0.9, 0.9))
-        bw(parent=s.w, label='Connect', size=(130, 30), position=(95, 20), on_activate_call=Call(s.manual_connect), color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
+        s.w = AR.cw(source=source, size=(320, 320), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(290, 280))
+        tw(parent=s.w, text='Server Manager', scale=0.95, position=(160, 275), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(160, 260), h_align='center', color=(0.6, 0.6, 0.8))
+        
+        s.ip_text = tw(parent=s.w, text=f'IP: {server_ip}', position=(160, 238), h_align='center', scale=0.55, color=(0.8, 0.8, 1))
+        s.port_text = tw(parent=s.w, text=f'Port: {server_port}', position=(160, 220), h_align='center', scale=0.55, color=(0.8, 0.8, 1))
+        
+        # ✅ دکمه RE (خارج و ورود مجدد)
+        bw(parent=s.w, label='RE (Rejoin)', size=(130, 32), position=(20, 175), on_activate_call=Call(s.re_button), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+        
+        bw(parent=s.w, label='Disconnect', size=(130, 32), position=(170, 175), on_activate_call=Call(s.disconnect), color=(0.7, 0.3, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+        
+        tw(parent=s.w, text='Manual Connect:', scale=0.55, position=(160, 148), h_align='center', color=(1, 1, 1))
+        s.ip_input = tw(parent=s.w, text=server_ip, editable=True, scale=0.75, position=(30, 120), size=(120, 26), h_align='center', color=(0.9, 0.9, 0.9))
+        s.port_input = tw(parent=s.w, text=str(server_port), editable=True, scale=0.75, position=(170, 120), size=(120, 26), h_align='center', color=(0.9, 0.9, 0.9))
+        
+        bw(parent=s.w, label='Connect', size=(130, 30), position=(95, 80), on_activate_call=Call(s.manual_connect), color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
+        
+        # ✅ دکمه Auto Reconnect
+        s.auto_btn = bw(parent=s.w, label='Auto Reconnect: ' + ('ON' if auto_reconnect_enabled else 'OFF'), size=(280, 32), position=(20, 35), on_activate_call=Call(s.toggle_auto), color=(0.2, 0.7, 0.2) if auto_reconnect_enabled else (0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+        
+        tw(parent=s.w, text='Auto rejoin if disconnected', position=(160, 12), scale=0.4, h_align='center', color=(0.7, 0.7, 1))
+        
         gs('swish').play()
-    def reconnect(s):
-        if server_ip == "127.0.0.1": AR.err('No server saved!'); return
+
+    def re_button(s):
+        """دکمه RE: از سرور خارج شو و دوباره وصل شو"""
+        global server_ip, server_port
+        
         try:
-            conn = get_connection_info()
-            if conn:
-                original_disconnect(); time.sleep(1)
-            original_connect(server_ip, server_port)
-            bui.screenmessage(f'Reconnecting...', color=(0, 1, 0))
-        except Exception as e: AR.err(f'Failed: {e}')
+            # چک: آیا داخل منوی اصلی هستیم؟
+            foreground = bascenev1.get_foreground_host_session()
+            if isinstance(foreground, MainMenuSession):
+                push('اینجا؟ چطور؟', color=(0, 1, 1))
+                return
+            
+            # چک: IP ذخیره شده؟
+            if server_ip == "127.0.0.1":
+                AR.err('No server saved!')
+                return
+            
+            # ✅ قدم 1: قطع اتصال
+            original_disconnect()
+            push('Disconnected', color=(1, 0.5, 0))
+            
+            # ✅ قدم 2: اتصال مجدد (با تأخیر کوتاه)
+            def reconnect():
+                try:
+                    original_connect(server_ip, server_port)
+                    bui.screenmessage(f'Rejoined {server_ip}:{server_port}', color=(0, 1, 0))
+                except Exception as e:
+                    bui.screenmessage(f'Rejoin failed: {e}', color=(1, 0, 0))
+            
+            teck(1.5, reconnect)
+            
+        except Exception as e:
+            AR.err(f'RE failed: {e}')
+
     def disconnect(s):
         try:
             conn = get_connection_info()
@@ -763,12 +871,15 @@ class ReconnectWindow:
                 original_disconnect(); bui.screenmessage('Disconnected', color=(1, 0.5, 0))
             else: AR.err('Not connected!')
         except Exception as e: AR.err(f'Failed: {e}')
+
     def manual_connect(s):
         global server_ip, server_port
         try:
             ip = tw(query=s.ip_input).strip()
             port = int(tw(query=s.port_input).strip())
             server_ip = ip; server_port = port
+            tw(s.ip_text, text=f'IP: {server_ip}')
+            tw(s.port_text, text=f'Port: {server_port}')
             conn = get_connection_info()
             if conn:
                 original_disconnect(); time.sleep(1)
@@ -776,9 +887,18 @@ class ReconnectWindow:
             bui.screenmessage(f'Connected!', color=(0, 1, 0))
         except Exception as e: AR.err(f'Failed: {e}')
 
+    def toggle_auto(s):
+        """روشن/خاموش کردن Auto Reconnect"""
+        if auto_reconnect_enabled:
+            stop_auto_reconnect()
+            bw(s.auto_btn, label='Auto Reconnect: OFF', color=(0.7, 0.2, 0.2))
+        else:
+            start_auto_reconnect()
+            bw(s.auto_btn, label='Auto Reconnect: ON', color=(0.2, 0.7, 0.2))
+
 
 # ============================================
-# 🤖 Auto Buyer Window (کوچیک)
+# 🤖 Auto Buyer Window
 # ============================================
 class AutoBuyerWindow:
     def __init__(s, source):
@@ -819,7 +939,7 @@ class AutoBuyerWindow:
             try:
                 if btn and btn.exists():
                     limit = LIMITS.get(name, 0)
-                    limit_str = str(int(limit)) if limit == int(limit) else f"{limit:.2f}".rstrip('0').rstrip('.')
+                    limit_str = str(int(limit)) if limit == int(limit) else f"{limit:.2f}".rstrip('.')
                     bw(btn, label=f'{name}: {limit_str}')
             except: pass
     def toggle(s):
@@ -1021,7 +1141,6 @@ def check_spam_command(msg):
         content = content.strip()
         content_lower = content.lower()
 
-        # ✅ دستورات روشن/خاموش
         if content_lower in ('spam on', 'اسپم روشن'):
             start_spam(spam_message if spam_message else 'spam', spam_delay)
             return True
@@ -1030,7 +1149,6 @@ def check_spam_command(msg):
             stop_spam()
             return True
 
-        # دستور اسپم X Y
         match = re.match(r'^اسپم\s+(.+?)\s+([\d.]+)\s*$', content_lower)
         if match:
             message = match.group(1).strip()
@@ -1046,6 +1164,8 @@ def check_spam_command(msg):
 # ============================================
 # 🎯 Main Plugin
 # ============================================
+import bascenev1
+
 # ba_meta require api 9
 # ba_meta export babase.Plugin
 class byMahyar(Plugin):
@@ -1068,7 +1188,6 @@ class byMahyar(Plugin):
 
             teck(0.5, get_my_ids)
 
-            # ✅ همه دکمه‌ها بغل چت - پایین‌تر
             b_calc = AR.bw(
                 position=(self._width - 100, self._height - 100),
                 parent=self._root_widget,
