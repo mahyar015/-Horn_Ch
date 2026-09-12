@@ -1348,56 +1348,57 @@ class ReconnectWindow:
 # ============================================
 class ModsMenu:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(400, 500), ps=AR.UIS() * 0.25)
-        AR.add_close_button(s.w, position=(370, 460))
+        s.w = AR.cw(source=source, size=(380, 460), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(350, 420))
 
-        tw(parent=s.w, text='🎮 Mods Menu', scale=1.2,
-           position=(200, 455), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text='🎮 Mods Menu', scale=1.1,
+           position=(190, 415), h_align='center', color=(0, 1, 1))
 
-        tw(parent=s.w, text=SIGNATURE, scale=0.5,
-           position=(200, 435), h_align='center', color=(0.6, 0.6, 0.8))
+        tw(parent=s.w, text=SIGNATURE, scale=0.45,
+           position=(190, 395), h_align='center', color=(0.6, 0.6, 0.8))
 
-        # دکمه‌ها - 2 ستون
         buttons = [
-            ('🔤 Calculator', Calculator, (20, 375), (170, 45), (0.3, 0.5, 0.8)),
-            ('🤖 Auto Buyer', AutoBuyerWindow, (210, 375), (170, 45), (0.2, 0.6, 0.8)),
-            ('⚡ Auto React', ReactionEditorWindow, (20, 320), (170, 45), (0.8, 0.5, 0.2)),
-            ('💬 Auto Reply', AutoReplyEditorWindow, (210, 320), (170, 45), (0.3, 0.7, 0.4)),
-            ('📢 Spam', SpamWindow, (20, 265), (170, 45), (0.8, 0.3, 0.3)),
-            ('🔄 Reconnect', ReconnectWindow, (210, 265), (170, 45), (0.4, 0.6, 0.4)),
+            ('🔤 Calculator', Calculator, (20, 340), (160, 40), (0.3, 0.5, 0.8)),
+            ('🤖 Auto Buyer', AutoBuyerWindow, (200, 340), (160, 40), (0.2, 0.6, 0.8)),
+            ('⚡ Auto React', ReactionEditorWindow, (20, 290), (160, 40), (0.8, 0.5, 0.2)),
+            ('💬 Auto Reply', AutoReplyEditorWindow, (200, 290), (160, 40), (0.3, 0.7, 0.4)),
+            ('📢 Spam', SpamWindow, (20, 240), (160, 40), (0.8, 0.3, 0.3)),
+            ('🔄 Reconnect', ReconnectWindow, (200, 240), (160, 40), (0.4, 0.6, 0.4)),
         ]
 
         for label, cls, pos, size, color in buttons:
             bw(
                 parent=s.w, label=label, size=size, position=pos,
-                on_activate_call=Call(cls, s.w),
+                on_activate_call=Call(s.open_sub, cls),
                 color=color, textcolor=(1, 1, 1), button_type='square',
                 text_scale=0.7
             )
 
-        # اطلاعات
-        tw(parent=s.w, text='─ Server Info ─', scale=0.6,
-           position=(200, 230), h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text=f'IP: {server_ip}  |  Port: {server_port}', scale=0.55,
-           position=(200, 210), h_align='center', color=(0.8, 0.8, 1))
+        tw(parent=s.w, text='─ Server Info ─', scale=0.55,
+           position=(190, 205), h_align='center', color=(1, 1, 0))
+        tw(parent=s.w, text=f'IP: {server_ip}  |  Port: {server_port}', scale=0.5,
+           position=(190, 185), h_align='center', color=(0.8, 0.8, 1))
         tw(parent=s.w, text=f'cid: {my_own_client_id or "?"}  |  num: {my_own_display_num if my_own_display_num is not None else "?"}',
-           scale=0.5, position=(200, 192), h_align='center', color=(0, 1, 1))
+           scale=0.45, position=(190, 168), h_align='center', color=(0, 1, 1))
 
-        tw(parent=s.w, text='─ Spam Command ─', scale=0.6,
-           position=(200, 162), h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text='توی چت: "اسپم سلام ۲"', scale=0.55,
-           position=(200, 142), h_align='center', color=(0.8, 1, 0.8))
-        tw(parent=s.w, text='برای توقف: "توقف اسپم"', scale=0.55,
-           position=(200, 125), h_align='center', color=(1, 0.8, 0.8))
+        tw(parent=s.w, text='─ Spam Command ─', scale=0.55,
+           position=(190, 140), h_align='center', color=(1, 1, 0))
+        tw(parent=s.w, text='توی چت: "اسپم سلام ۲"', scale=0.5,
+           position=(190, 120), h_align='center', color=(0.8, 1, 0.8))
+        tw(parent=s.w, text='برای توقف: "توقف اسپم"', scale=0.5,
+           position=(190, 105), h_align='center', color=(1, 0.8, 0.8))
 
-        tw(parent=s.w, text='─ Status ─', scale=0.6,
-           position=(200, 95), h_align='center', color=(1, 1, 0))
+        tw(parent=s.w, text='─ Status ─', scale=0.55,
+           position=(190, 78), h_align='center', color=(1, 1, 0))
         tw(parent=s.w, text=f'Auto Reply: {"ON" if auto_reply_enabled else "OFF"}  |  Auto React: {"ON" if auto_react_enabled else "OFF"}',
-           scale=0.5, position=(200, 75), h_align='center', color=(0.8, 1, 0.8))
+           scale=0.45, position=(190, 58), h_align='center', color=(0.8, 1, 0.8))
         tw(parent=s.w, text=f'Auto Buyer: {"ON" if auto_buyer_enabled else "OFF"}  |  Spam: {"ON" if spam_active else "OFF"}',
-           scale=0.5, position=(200, 58), h_align='center', color=(0.8, 1, 0.8))
+           scale=0.45, position=(190, 42), h_align='center', color=(0.8, 1, 0.8))
 
         gs('swish').play()
+
+    def open_sub(s, cls):
+        teck(0.05, lambda: cls(s.w))
 
 
 # ============================================
@@ -1472,15 +1473,15 @@ class byMahyar(Plugin):
 
             teck(0.5, get_my_ids)
 
-            # ✅ فقط یه دکمه: Mods (پایین‌تر)
+            # ✅ دکمه Mods بالاتر و راست‌تر
             b_mods = AR.bw(
-                position=(self._width - 100, self._height - 150),
+                position=(self._width - 70, self._height - 80),
                 parent=self._root_widget,
                 size=(80, 25),
                 label='Mods',
                 color=(0.8, 0.2, 0.7)
             )
-            bw(b_mods, on_activate_call=Call(ModsMenu, b_mods))
+            bw(b_mods, on_activate_call=Call(s.open_mods_menu, b_mods))
 
             return r
 
@@ -1491,6 +1492,9 @@ class byMahyar(Plugin):
         teck(0.05, check_chat)
         teck(0.1, s.check_calc)
         teck(20.0, s.update_ids_loop)
+
+    def open_mods_menu(s, btn):
+        teck(0.05, lambda: ModsMenu(btn))
 
     def update_ids_loop(s):
         get_my_ids()
