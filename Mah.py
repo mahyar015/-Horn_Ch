@@ -171,7 +171,6 @@ auto_buyer_enabled = get_enabled_state('buyer', True)
 last_msg_count = 0
 processed_sell_ids = set()
 processed_buy_ids = set()
-processed_bids = set()
 react_cooldown = {}
 auto_reply_cooldown = {}
 
@@ -185,9 +184,6 @@ server_ip, server_port = get_saved_server()
 
 auto_reconnect_enabled = False
 auto_reconnect_timer = None
-
-# ✅ فلگ سراسری: وقتی True باشه، check_chat اجازه نداره IP رو آپدیت کنه
-reconnect_in_progress = False
 
 my_own_name = None
 my_own_client_id = None
@@ -365,7 +361,6 @@ def auto_reconnect_check():
 
             def try_connect(attempt=0):
                 global auto_reconnect_busy
-                # ✅ تا وقتی وصل نشده ول نکن
                 try:
                     if not auto_reconnect_enabled:
                         auto_reconnect_busy = False
@@ -865,127 +860,37 @@ class SpamWindow:
 
 
 # ============================================
-# 🔄 Reconnect Window (دقیقاً مثل Auto Reconnect + قفل IP)
+# 🔄 Reconnect Window (فقط Auto Reconnect + Manual Connect)
 # ============================================
 class ReconnectWindow:
     def __init__(s, source):
         global server_ip, server_port
         server_ip, server_port = get_saved_server()
-        s._rejoining = False
-        
-        s.w = AR.cw(source=source, size=(320, 320), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(290, 280))
-        tw(parent=s.w, text='Server Manager', scale=0.95, position=(160, 275), h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(160, 260), h_align='center', color=(0.6, 0.6, 0.8))
-        
-        s.ip_text = tw(parent=s.w, text=f'IP: {server_ip}', position=(160, 238), h_align='center', scale=0.55, color=(0.8, 0.8, 1))
-        s.port_text = tw(parent=s.w, text=f'Port: {server_port}', position=(160, 220), h_align='center', scale=0.55, color=(0.8, 0.8, 1))
-        
-        bw(parent=s.w, label='RE (Rejoin)', size=(130, 32), position=(20, 175), on_activate_call=Call(s.re_button), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        bw(parent=s.w, label='Disconnect', size=(130, 32), position=(170, 175), on_activate_call=Call(s.disconnect), color=(0.7, 0.3, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        
-        tw(parent=s.w, text='Manual Connect:', scale=0.55, position=(160, 148), h_align='center', color=(1, 1, 1))
-        s.ip_input = tw(parent=s.w, text=server_ip, editable=True, scale=0.75, position=(30, 120), size=(120, 26), h_align='center', color=(0.9, 0.9, 0.9))
-        s.port_input = tw(parent=s.w, text=str(server_port), editable=True, scale=0.75, position=(170, 120), size=(120, 26), h_align='center', color=(0.9, 0.9, 0.9))
-        
-        bw(parent=s.w, label='Connect', size=(130, 30), position=(95, 80), on_activate_call=Call(s.manual_connect), color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
-        
-        s.auto_btn = bw(parent=s.w, label='Auto Reconnect: ' + ('ON' if auto_reconnect_enabled else 'OFF'), size=(280, 32), position=(20, 35), on_activate_call=Call(s.toggle_auto), color=(0.2, 0.7, 0.2) if auto_reconnect_enabled else (0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        
-        tw(parent=s.w, text='Auto rejoin if disconnected', position=(160, 12), scale=0.4, h_align='center', color=(0.7, 0.7, 1))
-        
-        s.status = tw(parent=s.w, text='Ready', position=(160, 198), h_align='center', scale=0.5, color=(0.8, 0.8, 1))
-        
+
+        s.w = AR.cw(source=source, size=(320, 290), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(290, 250))
+        tw(parent=s.w, text='Server Manager', scale=0.95, position=(160, 245), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(160, 230), h_align='center', color=(0.6, 0.6, 0.8))
+
+        s.ip_text = tw(parent=s.w, text=f'IP: {server_ip}', position=(160, 208), h_align='center', scale=0.55, color=(0.8, 0.8, 1))
+        s.port_text = tw(parent=s.w, text=f'Port: {server_port}', position=(160, 190), h_align='center', scale=0.55, color=(0.8, 0.8, 1))
+
+        # ✅ فقط Auto Reconnect
+        s.auto_btn = bw(parent=s.w, label='Auto Reconnect: ' + ('ON' if auto_reconnect_enabled else 'OFF'), size=(280, 36), position=(20, 145), on_activate_call=Call(s.toggle_auto), color=(0.2, 0.7, 0.2) if auto_reconnect_enabled else (0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.85)
+        tw(parent=s.w, text='Auto rejoin if disconnected', position=(160, 122), scale=0.4, h_align='center', color=(0.7, 0.7, 1))
+
+        tw(parent=s.w, text='Manual Connect:', scale=0.55, position=(160, 98), h_align='center', color=(1, 1, 1))
+        s.ip_input = tw(parent=s.w, text=server_ip, editable=True, scale=0.75, position=(30, 70), size=(120, 26), h_align='center', color=(0.9, 0.9, 0.9))
+        s.port_input = tw(parent=s.w, text=str(server_port), editable=True, scale=0.75, position=(170, 70), size=(120, 26), h_align='center', color=(0.9, 0.9, 0.9))
+
+        bw(parent=s.w, label='Connect', size=(130, 30), position=(95, 30), on_activate_call=Call(s.manual_connect), color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
+        bw(parent=s.w, label='Disconnect', size=(130, 30), position=(95, -5), on_activate_call=Call(s.disconnect), color=(0.7, 0.3, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
+
+        s.status = tw(parent=s.w, text='Ready', position=(160, 168), h_align='center', scale=0.5, color=(0.8, 0.8, 1))
+
         gs('swish').play()
 
-    def re_button(s):
-        global server_ip, server_port, reconnect_in_progress
-        # ✅ از config بخون
-        server_ip, server_port = get_saved_server()
-
-        try:
-            if not server_ip or server_ip == "127.0.0.1":
-                AR.err('No server saved!')
-                return
-
-            # ✅ جلوگیری از چند بار کلیک
-            if getattr(s, '_rejoining', False):
-                return
-            s._rejoining = True
-            reconnect_in_progress = True  # ✅ قفل کن تا check_chat IP رو عوض نکنه
-
-            # ✅ IP/Port هدف رو قفل کن
-            target_ip = server_ip
-            target_port = server_port
-
-            tw(s.status, text='Disconnecting...', color=(1, 1, 0))
-
-            # ✅ disconnect کن
-            try:
-                original_disconnect()
-            except:
-                pass
-
-            push(f'Disconnected. Reconnecting to {target_ip}:{target_port}', color=(1, 0.5, 0))
-
-            # ✅ دقیقاً مثل Auto Reconnect: تا وصل نشده ول نکن
-            def fast_reconnect(attempt=0):
-                global reconnect_in_progress
-                try:
-                    # ✅ اگه وصل شدیم به همون سرور، تموم
-                    conn = get_connection_info()
-                    if conn:
-                        cur_ip = getattr(conn, 'address', None)
-                        cur_port = getattr(conn, 'port', None)
-                        if cur_ip and cur_port:
-                            cur_ip = str(cur_ip)
-                            cur_port = int(cur_port)
-                            if cur_ip == target_ip and cur_port == target_port:
-                                bui.screenmessage(f'Rejoined {target_ip}:{target_port}', color=(0, 1, 0))
-                                tw(s.status, text='Connected', color=(0, 1, 0))
-                                s._rejoining = False
-                                reconnect_in_progress = False
-                                return
-                            else:
-                                # ✅ به سرور دیگه وصل شده، دوباره disconnect کن
-                                print(f"Wrong server {cur_ip}:{cur_port}, disconnecting...")
-                                try: original_disconnect()
-                                except: pass
-                                teck(0.5, lambda: fast_reconnect(attempt))
-                                return
-
-                    # ✅ زمان کافی گذشت، از اول شروع کن
-                    if attempt > 40:
-                        tw(s.status, text='Retrying...', color=(1, 0.5, 0))
-                        teck(0.5, lambda: fast_reconnect(0))
-                        return
-
-                    foreground = bascenev1.get_foreground_host_session()
-                    if isinstance(foreground, MainMenuSession):
-                        tw(s.status, text=f'Connecting... ({attempt})', color=(1, 1, 0))
-                        try:
-                            original_connect_to_party(target_ip, target_port)
-                        except Exception as e:
-                            print(f"Connect error: {e}")
-                        teck(0.5, lambda: fast_reconnect(attempt + 1))
-                    else:
-                        # هنوز تو صحنه قدیمیه
-                        tw(s.status, text=f'Leaving... ({attempt})', color=(1, 1, 0))
-                        teck(0.15, lambda: fast_reconnect(attempt + 1))
-                except Exception as e:
-                    print(f"Reconnect error: {e}")
-                    teck(0.3, lambda: fast_reconnect(attempt + 1))
-
-            # ✅ شروع فوری
-            teck(0.3, fast_reconnect)
-
-        except Exception as e:
-            s._rejoining = False
-            reconnect_in_progress = False
-            AR.err(f'RE failed: {e}')
-
     def disconnect(s):
-        global reconnect_in_progress
         try:
             conn = get_connection_info()
             if conn:
@@ -996,8 +901,6 @@ class ReconnectWindow:
                 AR.err('Not connected!')
         except Exception as e:
             AR.err(f'Failed: {e}')
-        finally:
-            reconnect_in_progress = False
 
     def manual_connect(s):
         global server_ip, server_port
@@ -1137,14 +1040,14 @@ class EditLimitsWindow:
 
 
 # ============================================
-# 🤖 Auto Buyer Logic
+# 🤖 Auto Buyer Logic (اصلاح‌شده - فقط Sell)
 # ============================================
 SELL_PATTERN = re.compile(r'💰Sell ID:\s*(\w+)')
 BUY_PATTERN = re.compile(r'(\w+):\s*💳Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s*>\s*for\s*([\d,]+)\s*coins(?:\?.*)?')
-BID_PATTERN = re.compile(r'\bb\s+(s\d+)\b', re.IGNORECASE)
 
 
 def process_sell(item_id):
+    """✅ فقط یک بار برای هر item_id ارسال می‌کنه"""
     if item_id in processed_sell_ids: return
     processed_sell_ids.add(item_id)
     if len(processed_sell_ids) > 100: processed_sell_ids.clear()
@@ -1167,14 +1070,7 @@ def process_buy(item_id, count, item_name, total_price):
         safe_chat_send("0 ")
 
 
-def process_bid(item_id):
-    if not auto_buyer_enabled: return
-    try:
-        key = f"bid_{item_id}"
-        if key in processed_bids: return
-        processed_bids.add(key)
-        safe_chat_send(f"b {item_id}"); gs('dingSmall').play()
-    except Exception as e: print(f"Bid error: {e}")
+# ❌ process_bid حذف شد چون باعث تکرار می‌شد
 
 
 # ============================================
@@ -1219,7 +1115,7 @@ def check_reaction(msg):
 
 
 # ============================================
-# 🎯 Check Chat (IP/Port رو همیشه آپدیت می‌کنه)
+# 🎯 Check Chat (سریع‌تر: هر 0.03 ثانیه)
 # ============================================
 last_saved_ip = None
 last_saved_port = None
@@ -1227,29 +1123,27 @@ last_saved_port = None
 
 def check_chat():
     global last_msg_count, server_ip, server_port, last_saved_ip, last_saved_port
-    global reconnect_in_progress
     try:
-        # ✅ اگه داریم rejoin می‌کنیم، IP رو آپدیت نکن
-        if not reconnect_in_progress:
-            try:
-                conn = get_connection_info()
-                if conn:
-                    new_ip = getattr(conn, 'address', None)
-                    new_port = getattr(conn, 'port', None)
+        # ✅ گرفتن IP و Port از connection info
+        try:
+            conn = get_connection_info()
+            if conn:
+                new_ip = getattr(conn, 'address', None)
+                new_port = getattr(conn, 'port', None)
 
-                    if new_ip and new_port:
-                        new_ip = str(new_ip)
-                        new_port = int(new_port)
-                        if new_ip != last_saved_ip or new_port != last_saved_port:
-                            server_ip = new_ip
-                            server_port = new_port
-                            last_saved_ip = new_ip
-                            last_saved_port = new_port
-                            save_server(server_ip, server_port)
-                            push(f'Server saved: {server_ip}:{server_port}', color=(0, 1, 1))
-                            print(f"✅ Saved server: {server_ip}:{server_port}")
-            except Exception as e:
-                print(f"Error saving server: {e}")
+                if new_ip and new_port:
+                    new_ip = str(new_ip)
+                    new_port = int(new_port)
+                    if new_ip != last_saved_ip or new_port != last_saved_port:
+                        server_ip = new_ip
+                        server_port = new_port
+                        last_saved_ip = new_ip
+                        last_saved_port = new_port
+                        save_server(server_ip, server_port)
+                        push(f'Server saved: {server_ip}:{server_port}', color=(0, 1, 1))
+                        print(f"✅ Saved server: {server_ip}:{server_port}")
+        except Exception as e:
+            print(f"Error saving server: {e}")
 
         messages = GCM()
         if messages:
@@ -1262,22 +1156,18 @@ def check_chat():
                     if check_auto_reply(msg): continue
                     check_reaction(msg)
                     if not auto_buyer_enabled: continue
+
+                    # ✅ فقط SELL و BUY چک کن (نه BID)
                     m = SELL_PATTERN.search(msg)
                     if m: process_sell(m.group(1)); continue
-                    is_mine = False
-                    if my_own_name:
-                        if msg.startswith(f"{my_own_name}:") or msg.startswith(f"{my_own_name} :"): is_mine = True
-                    if not is_mine:
-                        m2 = BID_PATTERN.search(msg)
-                        if m2:
-                            item_id = m2.group(1); process_bid(item_id); continue
+
                     m = BUY_PATTERN.search(msg)
                     if m:
                         process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
                         continue
                 last_msg_count = current_count
     except Exception as e: print(f"Chat error: {e}")
-    teck(0.05, check_chat)
+    teck(0.03, check_chat)  # ✅ سریع‌تر (قبلاً 0.05 بود)
 
 
 # ============================================
@@ -1423,7 +1313,7 @@ class byMahyar(Plugin):
         party.PartyWindow.__init__ = e
 
         teck(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
-        teck(0.05, check_chat)
+        teck(0.03, check_chat)
         teck(0.1, s.check_calc)
         teck(20.0, s.update_ids_loop)
 
