@@ -75,7 +75,7 @@ def save_limits(limits):
 
 def get_reactions():
     try:
-        saved = app.config.get('mahyar_reactions_v14', None)
+        saved = app.config.get('mahyar_reactions_v15', None)
         if saved:
             d = dict(DEFAULT_REACTIONS)
             d.update(saved)
@@ -87,7 +87,7 @@ def get_reactions():
 
 def save_reactions(reactions):
     try:
-        app.config['mahyar_reactions_v14'] = dict(reactions)
+        app.config['mahyar_reactions_v15'] = dict(reactions)
         app.config.commit()
     except:
         pass
@@ -95,7 +95,7 @@ def save_reactions(reactions):
 
 def get_cooldowns():
     try:
-        saved = app.config.get('mahyar_cooldowns_v14', None)
+        saved = app.config.get('mahyar_cooldowns_v15', None)
         if saved:
             d = dict(DEFAULT_COOLDOWNS)
             d.update(saved)
@@ -107,7 +107,7 @@ def get_cooldowns():
 
 def save_cooldowns(cooldowns):
     try:
-        app.config['mahyar_cooldowns_v14'] = dict(cooldowns)
+        app.config['mahyar_cooldowns_v15'] = dict(cooldowns)
         app.config.commit()
     except:
         pass
@@ -218,9 +218,6 @@ def safe_chat_send(message):
     CM(message)
 
 
-# ============================================
-# 🎯 Auto-Reply Logic
-# ============================================
 def check_auto_reply(msg):
     if not auto_reply_enabled:
         return False
@@ -256,9 +253,6 @@ def check_auto_reply(msg):
     return False
 
 
-# ============================================
-# 🎯 Spam Logic
-# ============================================
 def spam_send():
     global spam_active, spam_message, spam_delay, spam_timer
     if not spam_active:
