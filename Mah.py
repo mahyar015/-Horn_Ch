@@ -53,6 +53,9 @@ DEFAULT_REACTIONS = {
     'fl': 'fl',
 }
 
+# ✅ تنظیمات cooldown پیش‌فرض (ثانیه)
+DEFAULT_COOLDOWN = 5.0
+
 auto_react_enabled = True
 
 
@@ -78,7 +81,7 @@ def save_limits(limits):
 
 def get_reactions():
     try:
-        saved = app.config.get('mahyar_reactions_v3', None)
+        saved = app.config.get('mahyar_reactions_v4', None)
         if saved:
             d = dict(DEFAULT_REACTIONS)
             d.update(saved)
@@ -90,7 +93,25 @@ def get_reactions():
 
 def save_reactions(reactions):
     try:
-        app.config['mahyar_reactions_v3'] = dict(reactions)
+        app.config['mahyar_reactions_v4'] = dict(reactions)
+        app.config.commit()
+    except:
+        pass
+
+
+def get_cooldown():
+    try:
+        saved = app.config.get('mahyar_react_cooldown', None)
+        if saved is not None:
+            return float(saved)
+    except:
+        pass
+    return DEFAULT_COOLDOWN
+
+
+def save_cooldown(value):
+    try:
+        app.config['mahyar_react_cooldown'] = float(value)
         app.config.commit()
     except:
         pass
@@ -98,16 +119,15 @@ def save_reactions(reactions):
 
 LIMITS = get_limits()
 REACTIONS = get_reactions()
+REACT_COOLDOWN_TIME = get_cooldown()
 auto_buyer_enabled = True
 
 seen_messages = []
 seen_messages_set = set()
 processed_buy_ids = set()
 processed_bids = set()
-# ✅ cooldown بر اساس trigger (زمان آخرین پاسخ)
+# ✅ cooldown بر اساس trigger + item_id (هر کاربر جداگانه)
 react_cooldown = {}
-REACT_COOLDOWN_TIME = 0.5  # ✅ نیم ثانیه
-
 my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
@@ -183,6 +203,62 @@ def get_my_ids():
     except Exception as e:
         print(f"Error getting IDs: {e}")
         return None, None
+
+
+# ============================================
+# ⚙️ Cooldown Editor Window
+# ============================================
+class CooldownEditorWindow:
+    def __init__(s, source, parent_window=None):
+        s.parent_window = parent_window
+
+        s.w = AR.cw(source=source, size=(300, 200), ps=AR.UIS() * 0.4)
+        AR.add_close_button(s.w, position=(270, 160))
+
+        tw(parent=s.w, text='Reaction Cooldown', scale=0.9,
+           position=(150, 155), h_align='center', color=(1, 1, 0))
+
+        tw(parent=s.w, text='Time (seconds) between reactions:', scale=0.55,
+           position=(150, 130), h_align='center', color=(1, 1, 1))
+
+        s.input = tw(
+            parent=s.w, text=str(REACT_COOLDOWN_TIME), editable=True, scale=1.0,
+            position=(50, 80), size=(200, 40), h_align='center',
+            color=(0.9, 0.9, 0.9)
+        )
+
+        tw(parent=s.w, text='(e.g. 5 = 5 seconds)',
+           position=(150, 55), scale=0.5,
+           h_align='center', color=(0.7, 0.7, 1))
+
+        bw(parent=s.w, label='Save', size=(120, 35),
+           position=(90, 10), on_activate_call=Call(s.save),
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
+
+        gs('swish').play()
+
+    def save(s):
+        global REACT_COOLDOWN_TIME
+        try:
+            value = float(tw(query=s.input).strip())
+            if value < 0:
+                value = 0
+        except:
+            AR.err('Invalid number!')
+            return
+
+        REACT_COOLDOWN_TIME = value
+        save_cooldown(value)
+        bui.screenmessage(f'Cooldown = {value}s', color=(0, 1, 0))
+        gs('dingSmallHigh').play()
+
+        if s.parent_window:
+            try:
+                s.parent_window.refresh_cooldown()
+            except:
+                pass
+
+        AR.swish(s.w)
 
 
 # ============================================
@@ -659,49 +735,63 @@ class AddReactionWindow:
 class ReactionEditorWindow:
     def __init__(s, source, parent_window=None):
         s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(340, 420), ps=AR.UIS() * 0.35)
-        AR.add_close_button(s.w, position=(310, 380))
+        s.w = AR.cw(source=source, size=(340, 440), ps=AR.UIS() * 0.35)
+        AR.add_close_button(s.w, position=(310, 400))
 
         tw(parent=s.w, text='Auto React', scale=1.0,
-           position=(170, 375), h_align='center', color=(0, 1, 1))
+           position=(170, 395), h_align='center', color=(0, 1, 1))
 
         tw(parent=s.w, text=SIGNATURE, scale=0.45,
-           position=(170, 358), h_align='center', color=(0.6, 0.6, 0.8))
+           position=(170, 378), h_align='center', color=(0.6, 0.6, 0.8))
 
         s.id_text = tw(parent=s.w, text=f'cid={my_own_client_id or "?"} num={my_own_display_num or "?"}',
-                       position=(170, 340), scale=0.45,
+                       position=(170, 360), scale=0.45,
                        h_align='center', color=(0, 1, 1))
 
-        s.scroll = sw(parent=s.w, size=(300, 170), position=(20, 145))
+        # ✅ نمایش cooldown فعلی
+        s.cd_text = tw(parent=s.w, text=f'Cooldown: {REACT_COOLDOWN_TIME}s',
+                       position=(170, 343), scale=0.45,
+                       h_align='center', color=(1, 1, 0.8))
+
+        s.scroll = sw(parent=s.w, size=(300, 150), position=(20, 180))
         s.container = cw(parent=s.scroll, size=(280, 300), background=False)
         s.item_buttons = {}
 
         s.build_grid()
 
         bw(parent=s.w, label='+ Add', size=(85, 32),
-           position=(20, 100), on_activate_call=Call(s.add_new),
+           position=(20, 140), on_activate_call=Call(s.add_new),
            color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.65)
 
         bw(parent=s.w, label='Reset', size=(85, 32),
-           position=(115, 100), on_activate_call=Call(s.reset_all),
+           position=(115, 140), on_activate_call=Call(s.reset_all),
            color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.65)
 
         bw(parent=s.w, label='Refresh IDs', size=(85, 32),
-           position=(210, 100), on_activate_call=Call(s.refresh_ids),
+           position=(210, 140), on_activate_call=Call(s.refresh_ids),
            color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.65)
 
+        # ✅ دکمه تنظیم cooldown
+        bw(parent=s.w, label='Set Cooldown', size=(150, 32),
+           position=(20, 100), on_activate_call=Call(s.set_cooldown),
+           color=(0.5, 0.4, 0.8), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.7)
+
         s.toggle_btn = bw(parent=s.w,
                           label='ON' if auto_react_enabled else 'OFF',
-                          size=(150, 35), position=(95, 55),
+                          size=(150, 32), position=(180, 100),
                           on_activate_call=Call(s.toggle),
                           color=(0.2, 0.7, 0.2) if auto_react_enabled else (0.7, 0.2, 0.2),
                           textcolor=(1, 1, 1), button_type='square', text_scale=0.8)
 
         s.status_label = tw(parent=s.w, text='Auto React is ' + ('ON' if auto_react_enabled else 'OFF'),
-                            position=(170, 30), scale=0.5, h_align='center', color=(1, 1, 0.8))
+                            position=(170, 75), scale=0.5, h_align='center', color=(1, 1, 0.8))
+
+        tw(parent=s.w, text='Cooldown = زمان بین هر پاسخ (ثانیه)',
+           position=(170, 50), scale=0.45, h_align='center', color=(0.7, 0.7, 1))
 
         gs('swish').play()
 
@@ -731,6 +821,12 @@ class ReactionEditorWindow:
                button_type='square', text_scale=0.7)
 
         cw(s.container, size=(280, total_h))
+
+    def refresh_cooldown(s):
+        tw(s.cd_text, text=f'Cooldown: {REACT_COOLDOWN_TIME}s', color=(0, 1, 0))
+
+    def set_cooldown(s):
+        CooldownEditorWindow(s.w, parent_window=s)
 
     def refresh_ids(s):
         cid, num = get_my_ids()
@@ -953,10 +1049,10 @@ def process_bid(item_id):
 
 
 # ============================================
-# 🎯 Auto-React Logic (با cooldown 0.5 ثانیه)
+# 🎯 Auto-React Logic (با cooldown متغیر)
 # ============================================
 def check_reaction(msg):
-    global my_own_client_id, my_own_display_num
+    global my_own_client_id, my_own_display_num, REACT_COOLDOWN_TIME
 
     if not auto_react_enabled:
         return
@@ -965,43 +1061,55 @@ def check_reaction(msg):
         get_my_ids()
 
     try:
+        # استخراج اسم فرستنده
+        sender = None
         content = msg
         if ': ' in msg:
-            _, content = msg.split(': ', 1)
-        content = content.strip()
+            parts = msg.split(': ', 1)
+            sender = parts[0].strip()
+            content = parts[1].strip()
+
         content_lower = content.lower()
 
         for trigger, response in REACTIONS.items():
             trigger_lower = trigger.lower()
 
             is_target_me = False
+            matched_id = None  # ✅ شماره‌ای که پیدا شد
 
             # روش ۱: %fr 151
             if my_own_client_id:
-                pattern1 = rf'%\s*{re.escape(trigger_lower)}\s+{my_own_client_id}\b'
-                if re.search(pattern1, content_lower):
-                    is_target_me = True
+                pattern1 = rf'%\s*{re.escape(trigger_lower)}\s+(\d+)'
+                m1 = re.search(pattern1, content_lower)
+                if m1:
+                    if int(m1.group(1)) == my_own_client_id:
+                        is_target_me = True
+                        matched_id = my_own_client_id
 
             # روش ۲: fr 0
             if not is_target_me and my_own_display_num is not None:
-                pattern2 = rf'\b{re.escape(trigger_lower)}\s+{my_own_display_num}\b'
-                if re.search(pattern2, content_lower):
-                    is_target_me = True
+                pattern2 = rf'\b{re.escape(trigger_lower)}\s+(\d+)'
+                m2 = re.search(pattern2, content_lower)
+                if m2:
+                    if int(m2.group(1)) == my_own_display_num:
+                        is_target_me = True
+                        matched_id = my_own_display_num
 
             if is_target_me:
-                # ✅ cooldown نیم ثانیه‌ای بر اساس trigger
+                # ✅ cooldown بر اساس trigger + sender (هر کی جداگانه)
                 current_time = time.time()
-                last_time = react_cooldown.get(trigger_lower, 0)
+                cd_key = f"{trigger_lower}_{sender or 'unknown'}"
+                last_time = react_cooldown.get(cd_key, 0)
 
                 if current_time - last_time < REACT_COOLDOWN_TIME:
-                    return  # کمتر از 0.5 ثانیه، نادیده بگیر
+                    return  # کمتر از cooldown، نادیده بگیر
 
-                react_cooldown[trigger_lower] = current_time
+                react_cooldown[cd_key] = current_time
 
                 # پاکسازی دوره‌ای
-                if len(react_cooldown) > 20:
+                if len(react_cooldown) > 50:
                     now = time.time()
-                    to_del = [k for k, v in react_cooldown.items() if now - v > 60]
+                    to_del = [k for k, v in react_cooldown.items() if now - v > 300]
                     for k in to_del:
                         del react_cooldown[k]
 
@@ -1169,7 +1277,6 @@ class byMahyar(Plugin):
 
         party.PartyWindow.__init__ = e
 
-        # ✅ پیام Creator
         teck(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
 
         teck(0.05, check_chat)
