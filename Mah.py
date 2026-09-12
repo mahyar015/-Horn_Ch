@@ -186,6 +186,9 @@ server_ip, server_port = get_saved_server()
 auto_reconnect_enabled = False
 auto_reconnect_timer = None
 
+# ✅ فلگ سراسری: وقتی True باشه، check_chat اجازه نداره IP رو آپدیت کنه
+reconnect_in_progress = False
+
 my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
@@ -862,7 +865,7 @@ class SpamWindow:
 
 
 # ============================================
-# 🔄 Reconnect Window (Rejoin اصلاح شده)
+# 🔄 Reconnect Window (دقیقاً مثل Auto Reconnect + قفل IP)
 # ============================================
 class ReconnectWindow:
     def __init__(s, source):
@@ -896,8 +899,8 @@ class ReconnectWindow:
         gs('swish').play()
 
     def re_button(s):
-        global server_ip, server_port
-        # ✅ از config بخون تا جدیدترین IP/Port
+        global server_ip, server_port, reconnect_in_progress
+        # ✅ از config بخون
         server_ip, server_port = get_saved_server()
 
         try:
@@ -909,74 +912,80 @@ class ReconnectWindow:
             if getattr(s, '_rejoining', False):
                 return
             s._rejoining = True
+            reconnect_in_progress = True  # ✅ قفل کن تا check_chat IP رو عوض نکنه
+
+            # ✅ IP/Port هدف رو قفل کن
+            target_ip = server_ip
+            target_port = server_port
 
             tw(s.status, text='Disconnecting...', color=(1, 1, 0))
 
-            # ✅ اول disconnect کن
+            # ✅ disconnect کن
             try:
                 original_disconnect()
             except:
                 pass
 
-            push('Disconnected, reconnecting...', color=(1, 0.5, 0))
+            push(f'Disconnected. Reconnecting to {target_ip}:{target_port}', color=(1, 0.5, 0))
 
-            # ✅ شروع فرآیند
-            def start_reconnect():
-                push('Now connecting...', color=(0, 1, 1))
+            # ✅ دقیقاً مثل Auto Reconnect: تا وصل نشده ول نکن
+            def fast_reconnect(attempt=0):
+                global reconnect_in_progress
+                try:
+                    # ✅ اگه وصل شدیم به همون سرور، تموم
+                    conn = get_connection_info()
+                    if conn:
+                        cur_ip = getattr(conn, 'address', None)
+                        cur_port = getattr(conn, 'port', None)
+                        if cur_ip and cur_port:
+                            cur_ip = str(cur_ip)
+                            cur_port = int(cur_port)
+                            if cur_ip == target_ip and cur_port == target_port:
+                                bui.screenmessage(f'Rejoined {target_ip}:{target_port}', color=(0, 1, 0))
+                                tw(s.status, text='Connected', color=(0, 1, 0))
+                                s._rejoining = False
+                                reconnect_in_progress = False
+                                return
+                            else:
+                                # ✅ به سرور دیگه وصل شده، دوباره disconnect کن
+                                print(f"Wrong server {cur_ip}:{cur_port}, disconnecting...")
+                                try: original_disconnect()
+                                except: pass
+                                teck(0.5, lambda: fast_reconnect(attempt))
+                                return
 
-                def fast_reconnect(attempt=0):
-                    try:
-                        # ✅ اگه وصل شدیم، تموم
-                        if get_connection_info():
-                            bui.screenmessage(f'Rejoined {server_ip}:{server_port}', color=(0, 1, 0))
-                            tw(s.status, text='Connected', color=(0, 1, 0))
-                            s._rejoining = False
-                            return
+                    # ✅ زمان کافی گذشت، از اول شروع کن
+                    if attempt > 40:
+                        tw(s.status, text='Retrying...', color=(1, 0.5, 0))
+                        teck(0.5, lambda: fast_reconnect(0))
+                        return
 
-                        # ✅ بعد از تعداد زیاد تلاش، از اول شروع کن
-                        if attempt > 60:
-                            tw(s.status, text='Retrying...', color=(1, 0.5, 0))
-                            teck(0.5, lambda: fast_reconnect(0))
-                            return
+                    foreground = bascenev1.get_foreground_host_session()
+                    if isinstance(foreground, MainMenuSession):
+                        tw(s.status, text=f'Connecting... ({attempt})', color=(1, 1, 0))
+                        try:
+                            original_connect_to_party(target_ip, target_port)
+                        except Exception as e:
+                            print(f"Connect error: {e}")
+                        teck(0.5, lambda: fast_reconnect(attempt + 1))
+                    else:
+                        # هنوز تو صحنه قدیمیه
+                        tw(s.status, text=f'Leaving... ({attempt})', color=(1, 1, 0))
+                        teck(0.15, lambda: fast_reconnect(attempt + 1))
+                except Exception as e:
+                    print(f"Reconnect error: {e}")
+                    teck(0.3, lambda: fast_reconnect(attempt + 1))
 
-                        foreground = bascenev1.get_foreground_host_session()
-                        if isinstance(foreground, MainMenuSession):
-                            tw(s.status, text=f'Connecting... ({attempt})', color=(1, 1, 0))
-                            try:
-                                original_connect_to_party(server_ip, server_port)
-                            except Exception as e:
-                                print(f"Connect error: {e}")
-                            teck(0.5, lambda: fast_reconnect(attempt + 1))
-                        else:
-                            # هنوز تو صحنه قدیمیه
-                            tw(s.status, text=f'Leaving... ({attempt})', color=(1, 1, 0))
-                            teck(0.15, lambda: fast_reconnect(attempt + 1))
-                    except Exception as e:
-                        print(f"Reconnect error: {e}")
-                        teck(0.3, lambda: fast_reconnect(attempt + 1))
-
-                # ✅ شروع
-                teck(0.2, fast_reconnect)
-
-            # ✅ صبر کن تا disconnect کامل بشه (تا 3 ثانیه)
-            def wait_for_disconnect(wait_count=0):
-                # ✅ اگه دیگه وصل نیستیم یا timeout شده، شروع کن
-                if not get_connection_info():
-                    start_reconnect()
-                    return
-                if wait_count >= 20:  # 3 ثانیه timeout
-                    start_reconnect()
-                    return
-                # هنوز وصل‌ایم، صبر کن
-                teck(0.15, lambda: wait_for_disconnect(wait_count + 1))
-
-            teck(0.2, wait_for_disconnect)
+            # ✅ شروع فوری
+            teck(0.3, fast_reconnect)
 
         except Exception as e:
             s._rejoining = False
+            reconnect_in_progress = False
             AR.err(f'RE failed: {e}')
 
     def disconnect(s):
+        global reconnect_in_progress
         try:
             conn = get_connection_info()
             if conn:
@@ -987,6 +996,8 @@ class ReconnectWindow:
                 AR.err('Not connected!')
         except Exception as e:
             AR.err(f'Failed: {e}')
+        finally:
+            reconnect_in_progress = False
 
     def manual_connect(s):
         global server_ip, server_port
@@ -1216,28 +1227,29 @@ last_saved_port = None
 
 def check_chat():
     global last_msg_count, server_ip, server_port, last_saved_ip, last_saved_port
+    global reconnect_in_progress
     try:
-        # ✅ گرفتن IP و Port از connection info (جدا از هم)
-        try:
-            conn = get_connection_info()
-            if conn:
-                new_ip = getattr(conn, 'address', None)
-                new_port = getattr(conn, 'port', None)
+        # ✅ اگه داریم rejoin می‌کنیم، IP رو آپدیت نکن
+        if not reconnect_in_progress:
+            try:
+                conn = get_connection_info()
+                if conn:
+                    new_ip = getattr(conn, 'address', None)
+                    new_port = getattr(conn, 'port', None)
 
-                if new_ip and new_port:
-                    new_ip = str(new_ip)
-                    new_port = int(new_port)
-                    # ✅ اگه IP/Port جدید با قبلی فرق داشت، ذخیره کن
-                    if new_ip != last_saved_ip or new_port != last_saved_port:
-                        server_ip = new_ip
-                        server_port = new_port
-                        last_saved_ip = new_ip
-                        last_saved_port = new_port
-                        save_server(server_ip, server_port)
-                        push(f'Server saved: {server_ip}:{server_port}', color=(0, 1, 1))
-                        print(f"✅ Saved server: {server_ip}:{server_port}")
-        except Exception as e:
-            print(f"Error saving server: {e}")
+                    if new_ip and new_port:
+                        new_ip = str(new_ip)
+                        new_port = int(new_port)
+                        if new_ip != last_saved_ip or new_port != last_saved_port:
+                            server_ip = new_ip
+                            server_port = new_port
+                            last_saved_ip = new_ip
+                            last_saved_port = new_port
+                            save_server(server_ip, server_port)
+                            push(f'Server saved: {server_ip}:{server_port}', color=(0, 1, 1))
+                            print(f"✅ Saved server: {server_ip}:{server_port}")
+            except Exception as e:
+                print(f"Error saving server: {e}")
 
         messages = GCM()
         if messages:
