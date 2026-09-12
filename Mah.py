@@ -16,7 +16,9 @@ from bascenev1 import (
     chatmessage as CM,
     screenmessage as push,
     get_chat_messages as GCM,
-    get_game_roster as get_roster
+    get_game_roster as get_roster,
+    connect_to_party as original_connect,
+    disconnect_from_host as original_disconnect
 )
 import math
 import re
@@ -28,7 +30,7 @@ SIGNATURE = "By Mahyar"
 CREATOR = "Creat By Mahyar\nTEL: @Mahyar015"
 
 # ============================================
-# ⚙️ قیمت‌های پیش‌فرض Auto Buyer
+# ⚙️ تنظیمات پیش‌فرض
 # ============================================
 DEFAULT_LIMITS = {
     'vip': 2000.0, 'cbb': 3000.0, 'cba': 50.0, 'h': 1.0,
@@ -41,8 +43,6 @@ DEFAULT_LIMITS = {
     'fish': 100.0, 'sol': 10.0, 'plasma': 500.0, 'hat': 50.0,
     'tag': 20.0, 'sig': 1000.0,
 }
-
-DEFAULT_UNKNOWN = 999999
 
 DEFAULT_REACTIONS = {
     'fr': 'u',
@@ -57,7 +57,11 @@ DEFAULT_COOLDOWNS = {
 }
 DEFAULT_COOLDOWN = 5.0
 
+# ✅ Auto-Reply پیش‌فرض
+DEFAULT_AUTO_REPLIES = {}
+
 auto_react_enabled = True
+auto_reply_enabled = True
 
 
 def get_limits():
@@ -82,7 +86,7 @@ def save_limits(limits):
 
 def get_reactions():
     try:
-        saved = app.config.get('mahyar_reactions_v13', None)
+        saved = app.config.get('mahyar_reactions_v14', None)
         if saved:
             d = dict(DEFAULT_REACTIONS)
             d.update(saved)
@@ -94,7 +98,7 @@ def get_reactions():
 
 def save_reactions(reactions):
     try:
-        app.config['mahyar_reactions_v13'] = dict(reactions)
+        app.config['mahyar_reactions_v14'] = dict(reactions)
         app.config.commit()
     except:
         pass
@@ -102,7 +106,7 @@ def save_reactions(reactions):
 
 def get_cooldowns():
     try:
-        saved = app.config.get('mahyar_cooldowns_v13', None)
+        saved = app.config.get('mahyar_cooldowns_v14', None)
         if saved:
             d = dict(DEFAULT_COOLDOWNS)
             d.update(saved)
@@ -114,7 +118,27 @@ def get_cooldowns():
 
 def save_cooldowns(cooldowns):
     try:
-        app.config['mahyar_cooldowns_v13'] = dict(cooldowns)
+        app.config['mahyar_cooldowns_v14'] = dict(cooldowns)
+        app.config.commit()
+    except:
+        pass
+
+
+def get_auto_replies():
+    try:
+        saved = app.config.get('mahyar_auto_replies', None)
+        if saved:
+            d = dict(DEFAULT_AUTO_REPLIES)
+            d.update(saved)
+            return d
+    except:
+        pass
+    return dict(DEFAULT_AUTO_REPLIES)
+
+
+def save_auto_replies(replies):
+    try:
+        app.config['mahyar_auto_replies'] = dict(replies)
         app.config.commit()
     except:
         pass
@@ -123,18 +147,31 @@ def save_cooldowns(cooldowns):
 LIMITS = get_limits()
 REACTIONS = get_reactions()
 COOLDOWNS = get_cooldowns()
+AUTO_REPLIES = get_auto_replies()
 auto_buyer_enabled = True
 
-# ✅ ردیابی پیام‌ها با index
+# ✅ ردیابی پیام‌ها
 last_msg_count = 0
 
-# ✅ برای جلوگیری از پردازش تکراری sell/buy
-processed_sell_ids = set()  # ← جدید
+processed_sell_ids = set()
 processed_buy_ids = set()
 processed_bids = set()
 
-# ✅ cooldown storage
+# ✅ cooldown برای react
 react_cooldown = {}
+
+# ✅ cooldown برای auto-reply (per keyword + sender)
+auto_reply_cooldown = {}
+
+# ✅ Spam state
+spam_active = False
+spam_message = ""
+spam_delay = 2.0
+spam_timer = None
+
+# ✅ Reconnect state
+server_ip = "127.0.0.1"
+server_port = 43210
 
 my_own_name = None
 my_own_client_id = None
@@ -215,6 +252,102 @@ def get_my_ids():
 
 def safe_chat_send(message):
     CM(message)
+
+
+# ============================================
+# 🎯 Auto-Reply Logic
+# ============================================
+def check_auto_reply(msg):
+    if not auto_reply_enabled:
+        return False
+
+    try:
+        sender = None
+        content = msg
+        if ': ' in msg:
+            parts = msg.split(': ', 1)
+            sender = parts[0].strip()
+            content = parts[1].strip()
+
+        # اگه پیام از خودمون باشه، ignore
+        if sender and my_own_name:
+            if sender == my_own_name:
+                return False
+
+        content_lower = content.lower()
+
+        # چک هر keyword
+        for keyword, response in AUTO_REPLIES.items():
+            if keyword.lower() in content_lower:
+                # cooldown برای هر keyword + sender
+                cd_key = f"{keyword}_{sender or 'unknown'}"
+                current_time = time.time()
+                last_time = auto_reply_cooldown.get(cd_key, 0)
+
+                if current_time - last_time < 2.0:
+                    continue
+
+                auto_reply_cooldown[cd_key] = current_time
+
+                # پاکسازی
+                if len(auto_reply_cooldown) > 50:
+                    now = time.time()
+                    to_del = [k for k, v in auto_reply_cooldown.items() if now - v > 60]
+                    for k in to_del:
+                        del auto_reply_cooldown[k]
+
+                safe_chat_send(response)
+                gs('dingSmall').play()
+                return True
+
+    except Exception as e:
+        print(f"Auto-Reply error: {e}")
+
+    return False
+
+
+# ============================================
+# 🎯 Spam Logic
+# ============================================
+def spam_send():
+    global spam_active, spam_message, spam_delay, spam_timer
+
+    if not spam_active:
+        return
+
+    try:
+        safe_chat_send(spam_message)
+        spam_timer = teck(spam_delay, spam_send)
+    except:
+        spam_active = False
+
+
+def start_spam(message, delay=2.0):
+    global spam_active, spam_message, spam_delay, spam_timer
+
+    if spam_active:
+        return
+
+    spam_active = True
+    spam_message = message
+    spam_delay = float(delay)
+
+    spam_send()
+    push(f"Spam Started: {message}", color=(0, 1, 0))
+
+
+def stop_spam():
+    global spam_active, spam_timer
+
+    if spam_timer:
+        try:
+            spam_timer.cancel()
+        except:
+            pass
+        spam_timer = None
+
+    spam_active = False
+    push("Spam Stopped", color=(1, 0.5, 0))
 
 
 # ============================================
@@ -732,9 +865,6 @@ class ReactionEditorWindow:
         tw(parent=s.w, text='Auto React is ' + ('ON' if auto_react_enabled else 'OFF'),
            position=(170, 60), scale=0.5, h_align='center', color=(1, 1, 0.8))
 
-        tw(parent=s.w, text='روی هر trigger بزن تا cooldownش رو تنظیم کنی',
-           position=(170, 35), scale=0.45, h_align='center', color=(0.7, 0.7, 1))
-
         gs('swish').play()
 
     def build_grid(s):
@@ -815,49 +945,170 @@ class ReactionEditorWindow:
 
 
 # ============================================
-# 🤖 Auto Buyer Window
+# ⚙️ Auto-Reply Editor
 # ============================================
-class AutoBuyerWindow:
-    def __init__(s, source):
-        s.source = source
+class EditAutoReplyWindow:
+    def __init__(s, source, keyword, parent_window=None):
+        s.keyword = keyword
+        s.parent_window = parent_window
+
+        s.w = AR.cw(source=source, size=(320, 200), ps=AR.UIS() * 0.4)
+        AR.add_close_button(s.w, position=(290, 160))
+
+        current = AUTO_REPLIES.get(keyword, '')
+
+        tw(parent=s.w, text=f'Edit "{keyword}"', scale=0.85,
+           position=(160, 155), h_align='center', color=(1, 1, 0))
+
+        tw(parent=s.w, text='Reply with:', scale=0.6,
+           position=(160, 130), h_align='center', color=(0.8, 0.8, 1))
+
+        s.input = tw(
+            parent=s.w, text=current, editable=True, scale=0.9,
+            position=(40, 85), size=(240, 32), h_align='center',
+            color=(0.9, 0.9, 0.9)
+        )
+
+        bw(parent=s.w, label='Save', size=(100, 35),
+           position=(50, 20), on_activate_call=Call(s.save),
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
+
+        bw(parent=s.w, label='Delete', size=(100, 35),
+           position=(170, 20), on_activate_call=Call(s.delete),
+           color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square')
+
+        gs('swish').play()
+
+    def save(s):
+        value = tw(query=s.input).strip()
+
+        if not value:
+            AR.err('Field required!')
+            return
+
+        AUTO_REPLIES[s.keyword] = value
+        save_auto_replies(AUTO_REPLIES)
+        bui.screenmessage(f'"{s.keyword}" → {value}', color=(0, 1, 0))
+        gs('dingSmallHigh').play()
+
+        if s.parent_window:
+            try:
+                s.parent_window.build_grid()
+            except:
+                pass
+
+        AR.swish(s.w)
+
+    def delete(s):
+        if s.keyword in AUTO_REPLIES:
+            del AUTO_REPLIES[s.keyword]
+            save_auto_replies(AUTO_REPLIES)
+            bui.screenmessage(f'Deleted: {s.keyword}', color=(1, 0.5, 0))
+            gs('dingSmallLow').play()
+
+        if s.parent_window:
+            try:
+                s.parent_window.build_grid()
+            except:
+                pass
+
+        AR.swish(s.w)
+
+
+class AddAutoReplyWindow:
+    def __init__(s, source, parent_window=None):
+        s.parent_window = parent_window
+
+        s.w = AR.cw(source=source, size=(320, 220), ps=AR.UIS() * 0.4)
+        AR.add_close_button(s.w, position=(290, 180))
+
+        tw(parent=s.w, text='Add Auto Reply', scale=0.9,
+           position=(160, 175), h_align='center', color=(1, 1, 0))
+
+        tw(parent=s.w, text='When message contains:', scale=0.6,
+           position=(160, 145), h_align='center', color=(1, 1, 1))
+        s.keyword_input = tw(
+            parent=s.w, text='', editable=True, scale=0.9,
+            position=(40, 110), size=(240, 32), h_align='center',
+            color=(0.9, 0.9, 0.9)
+        )
+
+        tw(parent=s.w, text='Reply with:', scale=0.6,
+           position=(160, 80), h_align='center', color=(1, 1, 1))
+        s.response_input = tw(
+            parent=s.w, text='', editable=True, scale=0.9,
+            position=(40, 45), size=(240, 32), h_align='center',
+            color=(0.9, 0.9, 0.9)
+        )
+
+        bw(parent=s.w, label='Add', size=(100, 30),
+           position=(110, 5), on_activate_call=Call(s.save),
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
+
+        gs('swish').play()
+
+    def save(s):
+        keyword = tw(query=s.keyword_input).strip()
+        response = tw(query=s.response_input).strip()
+
+        if not keyword or not response:
+            AR.err('Both fields required!')
+            return
+
+        AUTO_REPLIES[keyword] = response
+        save_auto_replies(AUTO_REPLIES)
+        bui.screenmessage(f'"{keyword}" → {response}', color=(0, 1, 0))
+        gs('dingSmallHigh').play()
+
+        if s.parent_window:
+            try:
+                s.parent_window.build_grid()
+            except:
+                pass
+
+        AR.swish(s.w)
+
+
+class AutoReplyEditorWindow:
+    def __init__(s, source, parent_window=None):
+        s.parent_window = parent_window
+        s.w = AR.cw(source=source, size=(340, 440), ps=AR.UIS() * 0.35)
+        AR.add_close_button(s.w, position=(310, 400))
+
+        tw(parent=s.w, text='Auto Reply', scale=1.0,
+           position=(170, 395), h_align='center', color=(0, 1, 1))
+
+        tw(parent=s.w, text=SIGNATURE, scale=0.45,
+           position=(170, 378), h_align='center', color=(0.6, 0.6, 0.8))
+
+        s.scroll = sw(parent=s.w, size=(300, 180), position=(20, 170))
+        s.container = cw(parent=s.scroll, size=(280, 300), background=False)
         s.item_buttons = {}
 
-        s.w = AR.cw(source=source, size=(380, 480), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(350, 440))
+        s.build_grid()
 
-        tw(parent=s.w, text='Auto Buyer', scale=1.1,
-           position=(190, 435), h_align='center', color=(0, 1, 1))
+        bw(parent=s.w, label='+ Add', size=(85, 32),
+           position=(20, 130), on_activate_call=Call(s.add_new),
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.65)
 
-        tw(parent=s.w, text=SIGNATURE, scale=0.5,
-           position=(190, 415), h_align='center', color=(0.6, 0.6, 0.8))
-
-        status = "ON" if auto_buyer_enabled else "OFF"
-        status_color = (0, 1, 0) if auto_buyer_enabled else (1, 0, 0)
-
-        s.status_text = tw(parent=s.w, text=f'Status: {status}',
-                           position=(190, 385), h_align='center',
-                           scale=0.8, color=status_color)
+        bw(parent=s.w, label='Clear All', size=(85, 32),
+           position=(115, 130), on_activate_call=Call(s.clear_all),
+           color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.65)
 
         s.toggle_btn = bw(parent=s.w,
-                          label='Turn OFF' if auto_buyer_enabled else 'Turn ON',
-                          size=(140, 30), position=(20, 345),
+                          label='ON' if auto_reply_enabled else 'OFF',
+                          size=(85, 32), position=(210, 130),
                           on_activate_call=Call(s.toggle),
-                          color=(0.7, 0.2, 0.2) if auto_buyer_enabled else (0.2, 0.7, 0.2),
-                          textcolor=(1, 1, 1), button_type='square')
+                          color=(0.2, 0.7, 0.2) if auto_reply_enabled else (0.7, 0.2, 0.2),
+                          textcolor=(1, 1, 1), button_type='square', text_scale=0.8)
 
-        bw(parent=s.w, label='Reset All', size=(140, 30),
-           position=(180, 345), on_activate_call=Call(s.reset_all),
-           color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
+        tw(parent=s.w, text='Auto Reply is ' + ('ON' if auto_reply_enabled else 'OFF'),
+           position=(170, 100), scale=0.5, h_align='center', color=(1, 1, 0.8))
 
-        tw(parent=s.w, text='─── Item Limits ───',
-           position=(190, 310), h_align='center',
-           scale=0.6, color=(1, 1, 0.8))
-
-        s.scroll = sw(parent=s.w, size=(340, 240), position=(20, 40))
-        s.container = cw(parent=s.scroll, size=(320, 700), background=False)
-
-        s.build_grid()
+        tw(parent=s.w, text='هرکجا کلمه بود، پاسخ بفرست',
+           position=(170, 75), scale=0.45, h_align='center', color=(0.7, 0.7, 1))
 
         gs('swish').play()
 
@@ -867,125 +1118,424 @@ class AutoBuyerWindow:
 
         s.item_buttons.clear()
 
-        items = list(LIMITS.items())
-        col_width = 160
+        items = list(AUTO_REPLIES.items())
         row_height = 34
+        total_h = len(items) * row_height + 20
 
-        num_rows = (len(items) + 1) // 2
-        total_h = num_rows * row_height + 80
+        for i, (keyword, response) in enumerate(items):
+            y = total_h - (i + 1) * row_height
 
-        for i, (name, limit) in enumerate(items):
-            col = i % 2
-            row = i // 2
+            label_text = f'{keyword} → {response}'
 
-            x = 5 + col * col_width
-            y = total_h - (row + 1) * row_height
-
-            if limit == int(limit):
-                limit_str = str(int(limit))
-            else:
-                limit_str = f"{limit:.2f}".rstrip('0').rstrip('.')
-
-            btn = bw(parent=s.container, label=f'{name}: {limit_str}',
-                     size=(150, 30), position=(x, y),
-                     on_activate_call=Call(s.edit_item, name),
+            btn = bw(parent=s.container, label=label_text,
+                     size=(185, 28), position=(5, y),
+                     on_activate_call=Call(s.edit_item, keyword),
                      color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1),
-                     button_type='square', text_scale=0.6)
+                     button_type='square', text_scale=0.55)
+            s.item_buttons[keyword] = btn
 
-            s.item_buttons[name] = btn
+            bw(parent=s.container, label='X', size=(30, 28), position=(195, y),
+               on_activate_call=Call(s.delete_item, keyword),
+               color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1),
+               button_type='square', text_scale=0.7)
 
-        cw(s.container, size=(320, total_h))
+        cw(s.container, size=(280, total_h))
 
-    def refresh_list(s):
-        for name, btn in s.item_buttons.items():
-            try:
-                if btn and btn.exists():
-                    limit = LIMITS.get(name, 0)
-                    if limit == int(limit):
-                        limit_str = str(int(limit))
-                    else:
-                        limit_str = f"{limit:.2f}".rstrip('0').rstrip('.')
-                    bw(btn, label=f'{name}: {limit_str}')
-            except:
-                pass
+    def add_new(s):
+        AddAutoReplyWindow(s.w, parent_window=s)
+
+    def edit_item(s, keyword):
+        EditAutoReplyWindow(s.w, keyword=keyword, parent_window=s)
+
+    def delete_item(s, keyword):
+        if keyword in AUTO_REPLIES:
+            del AUTO_REPLIES[keyword]
+        save_auto_replies(AUTO_REPLIES)
+        bui.screenmessage(f'Deleted: {keyword}', color=(1, 0.5, 0))
+        gs('dingSmallLow').play()
+        s.build_grid()
+
+    def clear_all(s):
+        global AUTO_REPLIES
+        AUTO_REPLIES = {}
+        save_auto_replies(AUTO_REPLIES)
+        bui.screenmessage('All auto replies cleared!', color=(1, 0.5, 0))
+        gs('dingSmallLow').play()
+        s.build_grid()
 
     def toggle(s):
-        global auto_buyer_enabled
-        auto_buyer_enabled = not auto_buyer_enabled
+        global auto_reply_enabled
+        auto_reply_enabled = not auto_reply_enabled
 
-        if auto_buyer_enabled:
-            bw(s.toggle_btn, label='Turn OFF', color=(0.7, 0.2, 0.2))
-            tw(s.status_text, text='Status: ON', color=(0, 1, 0))
-            bui.screenmessage('Auto Buyer ON', color=(0, 1, 0))
+        if auto_reply_enabled:
+            bw(s.toggle_btn, label='ON', color=(0.2, 0.7, 0.2))
+            bui.screenmessage('Auto Reply ON', color=(0, 1, 0))
         else:
-            bw(s.toggle_btn, label='Turn ON', color=(0.2, 0.7, 0.2))
-            tw(s.status_text, text='Status: OFF', color=(1, 0, 0))
-            bui.screenmessage('Auto Buyer OFF', color=(1, 0.5, 0))
+            bw(s.toggle_btn, label='OFF', color=(0.7, 0.2, 0.2))
+            bui.screenmessage('Auto Reply OFF', color=(1, 0.5, 0))
         gs('dingSmall').play()
 
-    def edit_item(s, name):
-        EditLimitsWindow(s.w, item_name=name, parent_window=s)
-
-    def reset_all(s):
-        global LIMITS
-        LIMITS = dict(DEFAULT_LIMITS)
-        save_limits(LIMITS)
-        bui.screenmessage('Reset to defaults!', color=(0, 1, 1))
-        gs('dingSmallHigh').play()
-        s.refresh_list()
-
 
 # ============================================
-# ⚙️ Edit Limits Window
+# 🤖 Spam Window
 # ============================================
-class EditLimitsWindow:
-    def __init__(s, source, item_name, parent_window=None):
-        s.item_name = item_name
-        s.parent_window = parent_window
+class SpamWindow:
+    def __init__(s, source):
+        s.w = AR.cw(source=source, size=(320, 300), ps=AR.UIS() * 0.4)
+        AR.add_close_button(s.w, position=(290, 260))
 
-        s.w = AR.cw(source=source, size=(300, 180), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(270, 140))
+        tw(parent=s.w, text='Spam', scale=1.0,
+           position=(160, 255), h_align='center', color=(1, 0.5, 0.5))
 
-        current = str(LIMITS.get(item_name, 0))
+        tw(parent=s.w, text=SIGNATURE, scale=0.45,
+           position=(160, 238), h_align='center', color=(0.6, 0.6, 0.8))
 
-        tw(parent=s.w, text=f'Set _ {item_name}', scale=0.9,
-           position=(150, 135), h_align='center', color=(1, 1, 0))
+        # وضعیت
+        s.status = tw(parent=s.w, text='Not Spamming',
+                      position=(160, 215), h_align='center',
+                      scale=0.7, color=(1, 1, 0))
 
-        s.input = tw(
-            parent=s.w, text=current, editable=True, scale=1.0,
-            position=(50, 85), size=(200, 35), h_align='center',
+        # Message
+        tw(parent=s.w, text='Message:', scale=0.6,
+           position=(160, 190), h_align='center', color=(1, 1, 1))
+        s.msg_input = tw(
+            parent=s.w, text='', editable=True, scale=0.9,
+            position=(40, 155), size=(240, 32), h_align='center',
             color=(0.9, 0.9, 0.9)
         )
 
-        tw(parent=s.w, text='(decimal allowed: e.g. 3.5)',
-           position=(150, 60), scale=0.5,
-           h_align='center', color=(0.7, 0.7, 1))
+        # Delay
+        tw(parent=s.w, text='Delay (seconds):', scale=0.6,
+           position=(160, 125), h_align='center', color=(1, 1, 1))
+        s.delay_input = tw(
+            parent=s.w, text='2', editable=True, scale=0.9,
+            position=(40, 90), size=(240, 32), h_align='center',
+            color=(0.9, 0.9, 0.9)
+        )
 
-        bw(parent=s.w, label='Save', size=(120, 35),
-           position=(90, 15), on_activate_call=Call(s.save),
-           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
+        bw(parent=s.w, label='START', size=(120, 35),
+           position=(20, 40), on_activate_call=Call(s.start),
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square',
+           text_scale=0.8)
+
+        bw(parent=s.w, label='STOP', size=(120, 35),
+           position=(180, 40), on_activate_call=Call(s.stop),
+           color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square',
+           text_scale=0.8)
+
+        tw(parent=s.w, text='یا توی چت بنویس: اسپم سلام ۲',
+           position=(160, 15), scale=0.45, h_align='center', color=(0.7, 0.7, 1))
 
         gs('swish').play()
 
-    def save(s):
-        try:
-            value = float(tw(query=s.input).strip())
-        except:
-            AR.err('Invalid number!')
+    def start(s):
+        global spam_active
+
+        if spam_active:
+            AR.err('Already spamming!')
             return
 
-        LIMITS[s.item_name] = value
-        save_limits(LIMITS)
-        bui.screenmessage(f'_{s.item_name} = {value}', color=(0, 1, 0))
-        gs('dingSmallHigh').play()
+        msg = tw(query=s.msg_input).strip()
+        if not msg:
+            AR.err('Enter a message!')
+            return
 
-        if s.parent_window:
+        try:
+            delay = float(tw(query=s.delay_input).strip())
+            if delay <= 0:
+                raise ValueError
+        except:
+            AR.err('Invalid delay!')
+            return
+
+        start_spam(msg, delay)
+        tw(s.status, text=f'Spamming: {msg}', color=(0, 1, 0))
+
+    def stop(s):
+        stop_spam()
+        tw(s.status, text='Not Spamming', color=(1, 1, 0))
+
+
+# ============================================
+# 🔄 Reconnect Window
+# ============================================
+class ReconnectWindow:
+    def __init__(s, source):
+        s.w = AR.cw(source=source, size=(340, 280), ps=AR.UIS() * 0.4)
+        AR.add_close_button(s.w, position=(310, 240))
+
+        tw(parent=s.w, text='Server Manager', scale=1.0,
+           position=(170, 235), h_align='center', color=(0, 1, 1))
+
+        tw(parent=s.w, text=SIGNATURE, scale=0.45,
+           position=(170, 218), h_align='center', color=(0.6, 0.6, 0.8))
+
+        tw(parent=s.w, text=f'IP: {server_ip}', position=(170, 195),
+           h_align='center', scale=0.6, color=(0.8, 0.8, 1))
+        tw(parent=s.w, text=f'Port: {server_port}', position=(170, 175),
+           h_align='center', scale=0.6, color=(0.8, 0.8, 1))
+
+        bw(parent=s.w, label='Reconnect', size=(140, 35),
+           position=(20, 125), on_activate_call=Call(s.reconnect),
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.75)
+
+        bw(parent=s.w, label='Disconnect', size=(140, 35),
+           position=(180, 125), on_activate_call=Call(s.disconnect),
+           color=(0.7, 0.3, 0.3), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.75)
+
+        # Manual IP
+        tw(parent=s.w, text='Manual Connect:', scale=0.6,
+           position=(170, 95), h_align='center', color=(1, 1, 1))
+
+        s.ip_input = tw(
+            parent=s.w, text=server_ip, editable=True, scale=0.8,
+            position=(40, 65), size=(120, 28), h_align='center',
+            color=(0.9, 0.9, 0.9)
+        )
+
+        s.port_input = tw(
+            parent=s.w, text=str(server_port), editable=True, scale=0.8,
+            position=(180, 65), size=(120, 28), h_align='center',
+            color=(0.9, 0.9, 0.9)
+        )
+
+        bw(parent=s.w, label='Connect', size=(140, 32),
+           position=(100, 20), on_activate_call=Call(s.manual_connect),
+           color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.7)
+
+        gs('swish').play()
+
+    def reconnect(s):
+        global server_ip, server_port
+
+        if server_ip == "127.0.0.1":
+            AR.err('No server saved!')
+            return
+
+        try:
+            conn = get_connection_info()
+            if conn:
+                original_disconnect()
+                time.sleep(1)
+
+            original_connect(server_ip, server_port)
+            bui.screenmessage(f'Reconnecting to {server_ip}:{server_port}', color=(0, 1, 0))
+        except Exception as e:
+            AR.err(f'Reconnect failed: {e}')
+
+    def disconnect(s):
+        try:
+            conn = get_connection_info()
+            if conn:
+                original_disconnect()
+                bui.screenmessage('Disconnected', color=(1, 0.5, 0))
+            else:
+                AR.err('Not connected!')
+        except Exception as e:
+            AR.err(f'Disconnect failed: {e}')
+
+    def manual_connect(s):
+        global server_ip, server_port
+
+        try:
+            ip = tw(query=s.ip_input).strip()
+            port = int(tw(query=s.port_input).strip())
+
+            server_ip = ip
+            server_port = port
+
+            conn = get_connection_info()
+            if conn:
+                original_disconnect()
+                time.sleep(1)
+
+            original_connect(ip, port)
+            bui.screenmessage(f'Connected to {ip}:{port}', color=(0, 1, 0))
+        except Exception as e:
+            AR.err(f'Connect failed: {e}')
+
+
+# ============================================
+# 🎯 Mods Menu (همه مودها اینجا)
+# ============================================
+class ModsMenu:
+    def __init__(s, source):
+        s.w = AR.cw(source=source, size=(360, 500), ps=AR.UIS() * 0.4)
+        AR.add_close_button(s.w, position=(330, 460))
+
+        tw(parent=s.w, text='🎮 Mods Menu', scale=1.2,
+           position=(180, 455), h_align='center', color=(0, 1, 1))
+
+        tw(parent=s.w, text=SIGNATURE, scale=0.5,
+           position=(180, 435), h_align='center', color=(0.6, 0.6, 0.8))
+
+        # دکمه‌ها
+        buttons = [
+            ('🔤 Calculator', Calculator, (20, 380), (150, 45), (0.3, 0.5, 0.8)),
+            ('🤖 Auto Buyer', AutoBuyerWindow, (190, 380), (150, 45), (0.2, 0.6, 0.8)),
+            ('⚡ Auto React', ReactionEditorWindow, (20, 325), (150, 45), (0.8, 0.5, 0.2)),
+            ('💬 Auto Reply', AutoReplyEditorWindow, (190, 325), (150, 45), (0.3, 0.7, 0.4)),
+            ('📢 Spam', SpamWindow, (20, 270), (150, 45), (0.8, 0.3, 0.3)),
+            ('🔄 Reconnect', ReconnectWindow, (190, 270), (150, 45), (0.4, 0.6, 0.4)),
+        ]
+
+        for label, cls, pos, size, color in buttons:
+            btn = bw(
+                parent=s.w, label=label, size=size, position=pos,
+                on_activate_call=Call(cls, s.w),
+                color=color, textcolor=(1, 1, 1), button_type='square',
+                text_scale=0.7
+            )
+
+        # اطلاعات
+        tw(parent=s.w, text='─ Server Info ─', scale=0.6,
+           position=(180, 230), h_align='center', color=(1, 1, 0))
+        tw(parent=s.w, text=f'IP: {server_ip}', scale=0.55,
+           position=(180, 210), h_align='center', color=(0.8, 0.8, 1))
+        tw(parent=s.w, text=f'Port: {server_port}', scale=0.55,
+           position=(180, 195), h_align='center', color=(0.8, 0.8, 1))
+        tw(parent=s.w, text=f'My cid: {my_own_client_id or "?"} | num: {my_own_display_num if my_own_display_num is not None else "?"}',
+           scale=0.5, position=(180, 178), h_align='center', color=(0, 1, 1))
+
+        tw(parent=s.w, text='─ Spam Command ─', scale=0.6,
+           position=(180, 150), h_align='center', color=(1, 1, 0))
+        tw(parent=s.w, text='توی چت بنویس: "اسپم سلام ۲"',
+           scale=0.5, position=(180, 130), h_align='center', color=(0.8, 1, 0.8))
+
+        gs('swish').play()
+
+
+# ============================================
+# 🧮 Chat Commands (اسپم)
+# ============================================
+def check_spam_command(msg):
+    """چک میکنه آیا پیام 'اسپم X Y' هست"""
+    global spam_active
+
+    try:
+        # استخراج محتوا
+        content = msg
+        if ': ' in msg:
+            _, content = msg.split(': ', 1)
+        content = content.strip()
+
+        content_lower = content.lower()
+
+        # پترن: "اسپم <message> <delay>"
+        match = re.match(r'^اسپم\s+(.+?)\s+([\d.]+)\s*$', content_lower)
+
+        if match:
+            message = match.group(1).strip()
             try:
-                s.parent_window.refresh_list()
+                delay = float(match.group(2))
             except:
-                pass
+                return False
 
-        AR.swish(s.w)
+            if delay <= 0:
+                delay = 2.0
+
+            # ✅ اگه اسپم فعاله، stop کن
+            if spam_active:
+                stop_spam()
+
+            start_spam(message, delay)
+            return True
+
+        # دستور "توقف اسپم" یا "stop spam"
+        if content_lower in ('توقف اسپم', 'stop spam', 'اسپم توقف'):
+            stop_spam()
+            return True
+
+    except Exception as e:
+        print(f"Spam command error: {e}")
+
+    return False
+
+
+# ============================================
+# 🎯 Main Plugin
+# ============================================
+# ba_meta require api 9
+# ba_meta export babase.Plugin
+class byMahyar(Plugin):
+    def __init__(s):
+        global my_own_name, my_own_client_id, my_own_display_num, last_msg_count
+        s.seen_calc = []
+        s.seen_calc_set = set()
+
+        try:
+            my_own_name = APP.plus.get_v1_account_name()
+        except:
+            my_own_name = None
+
+        try:
+            initial_messages = GCM()
+            last_msg_count = len(initial_messages) if initial_messages else 0
+        except:
+            last_msg_count = 0
+
+        from bauiv1lib import party
+        o = party.PartyWindow.__init__
+
+        def e(self, *a, **k):
+            r = o(self, *a, **k)
+
+            teck(0.5, get_my_ids)
+
+            # ✅ فقط یه دکمه: Mods
+            b_mods = AR.bw(
+                position=(self._width - 100, self._height - 100),
+                parent=self._root_widget,
+                size=(80, 25),
+                label='Mods',
+                color=(0.8, 0.2, 0.7)
+            )
+            bw(b_mods, on_activate_call=Call(ModsMenu, b_mods))
+
+            return r
+
+        party.PartyWindow.__init__ = e
+
+        teck(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
+
+        teck(0.05, check_chat)
+        teck(0.1, s.check_calc)
+        teck(20.0, s.update_ids_loop)
+
+    def update_ids_loop(s):
+        get_my_ids()
+        teck(20.0, s.update_ids_loop)
+
+    def check_calc(s):
+        try:
+            messages = GCM()
+            if messages:
+                for msg in messages[-5:]:
+                    if msg in s.seen_calc_set:
+                        continue
+                    s.seen_calc_set.add(msg)
+                    s.seen_calc.append(msg)
+
+                    if ': ' in msg:
+                        _, content = msg.split(': ', 1)
+                        content = content.strip()
+
+                        result = detect_calculation(content)
+                        if result:
+                            safe_chat_send(result)
+
+                if len(s.seen_calc) > 50:
+                    old = s.seen_calc[:-50]
+                    for o in old:
+                        s.seen_calc_set.discard(o)
+                    s.seen_calc[:] = s.seen_calc[-50:]
+        except Exception:
+            pass
+
+        teck(0.1, s.check_calc)
 
 
 # ============================================
@@ -1001,15 +1551,13 @@ BID_PATTERN = re.compile(r'\bb\s+(s\d+)\b', re.IGNORECASE)
 
 
 def process_sell(item_id):
-    # ✅ چک کن که قبلاً پردازش نشده باشه
     if item_id in processed_sell_ids:
         return
     processed_sell_ids.add(item_id)
-    
-    # پاکسازی
+
     if len(processed_sell_ids) > 100:
         processed_sell_ids.clear()
-    
+
     safe_chat_send(f"b {item_id}")
 
 
@@ -1121,7 +1669,7 @@ def check_reaction(msg):
 
 
 # ============================================
-# 🎯 Check Chat (index-based)
+# 🎯 Check Chat
 # ============================================
 def check_chat():
     global last_msg_count
@@ -1132,27 +1680,34 @@ def check_chat():
         if messages:
             current_count = len(messages)
 
-            # ✅ اگه تعداد کم شد (چت ریست شد)
             if current_count < last_msg_count:
                 last_msg_count = current_count
 
-            # ✅ پیام‌های جدید از index
             if current_count > last_msg_count:
                 new_messages = messages[last_msg_count:current_count]
 
                 for msg in new_messages:
+                    # 1. چک اسپم command
+                    if check_spam_command(msg):
+                        continue
+
+                    # 2. چک Auto-Reply
+                    if check_auto_reply(msg):
+                        continue
+
+                    # 3. چک Auto-React
                     check_reaction(msg)
 
                     if not auto_buyer_enabled:
                         continue
 
-                    # چک پیام فروش
+                    # 4. چک پیام فروش
                     m = SELL_PATTERN.search(msg)
                     if m:
                         process_sell(m.group(1))
                         continue
 
-                    # چک b sXXX
+                    # 5. چک b sXXX
                     is_mine = False
                     if my_own_name:
                         if msg.startswith(f"{my_own_name}:") or msg.startswith(f"{my_own_name} :"):
@@ -1165,7 +1720,7 @@ def check_chat():
                             process_bid(item_id)
                             continue
 
-                    # چک پیام خرید
+                    # 6. چک پیام خرید
                     m = BUY_PATTERN.search(msg)
                     if m:
                         process_buy(
@@ -1182,147 +1737,3 @@ def check_chat():
         print(f"Chat error: {e}")
 
     teck(0.05, check_chat)
-
-
-# ============================================
-# 🧮 Calculator Chat Detection
-# ============================================
-CALC_PATTERN = re.compile(
-    r'^(\d+(?:\.\d+)?)\s*([\+\-\*\/\^×÷xX])\s*(\d+(?:\.\d+)?)$'
-)
-
-
-def detect_calculation(message):
-    expression = message.replace('×', '*').replace('÷', '/')
-    expression = expression.replace('x', '*').replace('X', '*')
-
-    match = CALC_PATTERN.match(expression.strip())
-    if not match:
-        return None
-
-    num1 = float(match.group(1))
-    op = match.group(2)
-    num2 = float(match.group(3))
-
-    try:
-        if op == '+':
-            result = num1 + num2
-        elif op == '-':
-            result = num1 - num2
-        elif op == '*':
-            result = num1 * num2
-        elif op == '/':
-            if num2 == 0:
-                return None
-            result = num1 / num2
-        elif op == '^':
-            result = num1 ** num2
-        else:
-            return None
-
-        result_str = str(int(result)) if result == int(result) else str(round(result, 10))
-        op_display = {'+': '+', '-': '-', '*': '×', '/': '÷', '^': '^'}.get(op, op)
-        return f"⚖️ {match.group(1)} {op_display} {match.group(3)} = {result_str}"
-    except:
-        return None
-
-
-# ============================================
-# 🎯 Main Plugin
-# ============================================
-# ba_meta require api 9
-# ba_meta export babase.Plugin
-class byMahyar(Plugin):
-    def __init__(s):
-        global my_own_name, my_own_client_id, my_own_display_num, last_msg_count
-        s.seen_calc = []
-        s.seen_calc_set = set()
-
-        try:
-            my_own_name = APP.plus.get_v1_account_name()
-        except:
-            my_own_name = None
-
-        # ✅ index اولیه
-        try:
-            initial_messages = GCM()
-            last_msg_count = len(initial_messages) if initial_messages else 0
-        except:
-            last_msg_count = 0
-
-        from bauiv1lib import party
-        o = party.PartyWindow.__init__
-
-        def e(self, *a, **k):
-            r = o(self, *a, **k)
-
-            teck(0.5, get_my_ids)
-
-            b_react = AR.bw(
-                position=(self._width - 100, self._height - 100),
-                parent=self._root_widget,
-                size=(80, 25),
-                label='React',
-                color=(0.8, 0.5, 0.2)
-            )
-            bw(b_react, on_activate_call=Call(ReactionEditorWindow, b_react))
-
-            b_calc = AR.bw(
-                position=(self._width - 100, self._height - 140),
-                parent=self._root_widget,
-                size=(80, 25),
-                label='Math',
-                color=(0.8, 0.2, 0.7)
-            )
-            bw(b_calc, on_activate_call=Call(Calculator, b_calc))
-
-            b_auto = AR.bw(
-                position=(self._width - 100, self._height - 180),
-                parent=self._root_widget,
-                size=(80, 25),
-                label='AutoBuy',
-                color=(0.2, 0.6, 0.8)
-            )
-            bw(b_auto, on_activate_call=Call(AutoBuyerWindow, b_auto))
-
-            return r
-
-        party.PartyWindow.__init__ = e
-
-        teck(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
-
-        teck(0.05, check_chat)
-        teck(0.1, s.check_calc)
-        teck(20.0, s.update_ids_loop)
-
-    def update_ids_loop(s):
-        get_my_ids()
-        teck(20.0, s.update_ids_loop)
-
-    def check_calc(s):
-        try:
-            messages = GCM()
-            if messages:
-                for msg in messages[-5:]:
-                    if msg in s.seen_calc_set:
-                        continue
-                    s.seen_calc_set.add(msg)
-                    s.seen_calc.append(msg)
-
-                    if ': ' in msg:
-                        _, content = msg.split(': ', 1)
-                        content = content.strip()
-
-                        result = detect_calculation(content)
-                        if result:
-                            safe_chat_send(result)
-
-                if len(s.seen_calc) > 50:
-                    old = s.seen_calc[:-50]
-                    for o in old:
-                        s.seen_calc_set.discard(o)
-                    s.seen_calc[:] = s.seen_calc[-50:]
-        except Exception:
-            pass
-
-        teck(0.1, s.check_calc)
