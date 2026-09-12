@@ -43,9 +43,6 @@ DEFAULT_LIMITS = {
 DEFAULT_UNKNOWN = 999999
 
 
-# ============================================
-# ⚙️ ذخیره/بازیابی مکان دکمه‌ها
-# ============================================
 def get_pos(key, default):
     try:
         return app.config.get(f'mahyar_btn_{key}', default)
@@ -88,9 +85,6 @@ auto_buyer_enabled = True
 seen_messages = []
 seen_messages_set = set()
 processed_buy_ids = set()
-
-# رفرنس دکمه‌های اصلی برای جابجایی لحظه‌ای
-LIVE_BUTTONS = {}  # {'math': widget, 'auto': widget}
 
 
 class AR:
@@ -147,8 +141,8 @@ class PositionEditor:
         tw(parent=s.w, text=f'Move: {btn_name}', scale=1.0,
            position=(170, 335), h_align='center', color=(1, 1, 0))
 
-        tw(parent=s.w, text='Use arrows to move - live update',
-           position=(170, 310), scale=0.55,
+        tw(parent=s.w, text='Save & re-open party menu to see',
+           position=(170, 310), scale=0.5,
            h_align='center', color=(0.8, 0.8, 1))
 
         s.pos_x, s.pos_y = get_pos(btn_key, (-100, -80))
@@ -208,18 +202,6 @@ class PositionEditor:
 
         gs('swish').play()
 
-    def update_live_button(s):
-        """آپدیت لحظه‌ای مکان دکمه اصلی"""
-        global LIVE_BUTTONS
-        try:
-            if s.btn_key in LIVE_BUTTONS:
-                btn = LIVE_BUTTONS[s.btn_key]
-                if btn and btn.exists():
-                    # ریفرش موقعیت
-                    pass  # دکمه‌های اصلی رو با تابع refresh استفاده میکنیم
-        except:
-            pass
-
     def move(s, direction):
         step = s.step
 
@@ -234,10 +216,7 @@ class PositionEditor:
 
         save_pos(s.btn_key, (s.pos_x, s.pos_y))
         tw(s.pos_text, text=f'X: {s.pos_x}   Y: {s.pos_y}')
-
-        # آپدیت لحظه‌ای دکمه‌های اصلی
-        refresh_main_buttons()
-
+        push(f'{s.btn_name}: X={s.pos_x}, Y={s.pos_y}', color=(0, 1, 1))
         gs('click01').play()
 
     def set_step(s, value):
@@ -253,29 +232,8 @@ class PositionEditor:
         s.pos_x, s.pos_y = default
         save_pos(s.btn_key, default)
         tw(s.pos_text, text=f'X: {s.pos_x}   Y: {s.pos_y}')
-        refresh_main_buttons()
         push('Position reset!', color=(0, 1, 1))
         gs('dingSmallHigh').play()
-
-
-# ============================================
-# 🔄 تابع ریفرش دکمه‌های اصلی
-# ============================================
-def refresh_main_buttons():
-    """دکمه‌های اصلی رو جابجا میکنه (لحظه‌ای)"""
-    global LIVE_BUTTONS
-    try:
-        for key, btn in LIVE_BUTTONS.items():
-            if btn and btn.exists():
-                pos_x, pos_y = get_pos(key, (-100, -80))
-                # تلاش برای جابجایی
-                try:
-                    bw(btn, position=(btn.get_parent_window()._width + pos_x,
-                                      btn.get_parent_window()._height + pos_y))
-                except:
-                    pass
-    except Exception as e:
-        print(f"Refresh error: {e}")
 
 
 # ============================================
@@ -313,11 +271,7 @@ class Calculator:
            position=(175, 295), on_activate_call=Call(s.send_to_chat),
            color=(0.7, 0.4, 0.2), textcolor=(1, 1, 1), button_type='square')
 
-        bw(parent=s.w, label='Edit Position', size=(150, 28),
-           position=(95, 260), on_activate_call=Call(PositionEditor, s.w, 'math', 'Math Button'),
-           color=(0.5, 0.3, 0.7), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-
-        row_y = 220
+        row_y = 255
         row_gap = 36
         btn_h = 30
 
@@ -669,7 +623,7 @@ class AutoBuyerWindow:
            position=(190, 310), h_align='center',
            scale=0.6, color=(1, 1, 0.8))
 
-        # ✅ اسکرول‌ویجت با اندازه مناسب
+        # اسکرول
         s.scroll = sw(parent=s.w, size=(340, 240), position=(20, 40))
         s.container = cw(parent=s.scroll, size=(320, 700), background=False)
 
@@ -686,8 +640,8 @@ class AutoBuyerWindow:
         row_height = 34
 
         num_rows = (len(items) + 1) // 2
-        # ✅ ارتفاع بیشتر برای جلوگیری از قطع شدن
-        total_h = num_rows * row_height + 40
+        # ✅ ارتفاع بیشتر تا sig/tag بالاتر بیان
+        total_h = num_rows * row_height + 80
 
         for i, (name, limit) in enumerate(items):
             col = i % 2
@@ -707,7 +661,6 @@ class AutoBuyerWindow:
                color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1),
                button_type='square', text_scale=0.6)
 
-        # ✅ تنظیم اندازه کانتینر با ارتفاع بیشتر
         cw(s.container, size=(320, total_h))
 
     def toggle(s):
@@ -880,12 +833,11 @@ class byMahyar(Plugin):
         def e(self, *a, **k):
             r = o(self, *a, **k)
 
-            math_x, math_y = get_pos('math', (-100, -80))
-            auto_x, auto_y = get_pos('auto', (-100, -48))
-
-            # دکمه Math
+            # ✅ مکان ثابت: Math بالای AutoBuy
+            # Math در (width-100, height-80)
+            # AutoBuy دقیقاً زیرش در (width-100, height-48)
             b_calc = AR.bw(
-                position=(self._width + math_x, self._height + math_y),
+                position=(self._width - 100, self._height - 80),
                 parent=self._root_widget,
                 size=(85, 25),
                 label='Math',
@@ -893,20 +845,14 @@ class byMahyar(Plugin):
             )
             bw(b_calc, on_activate_call=Call(Calculator, b_calc))
 
-            # دکمه AutoBuy
             b_auto = AR.bw(
-                position=(self._width + auto_x, self._height + auto_y),
+                position=(self._width - 100, self._height - 48),
                 parent=self._root_widget,
                 size=(85, 25),
                 label='AutoBuy',
                 color=(0.2, 0.6, 0.8)
             )
             bw(b_auto, on_activate_call=Call(AutoBuyerWindow, b_auto))
-
-            # ✅ ذخیره رفرنس‌ها برای جابجایی لحظه‌ای
-            global LIVE_BUTTONS
-            LIVE_BUTTONS['math'] = b_calc
-            LIVE_BUTTONS['auto'] = b_auto
 
             return r
 
