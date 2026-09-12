@@ -864,7 +864,7 @@ class SpamWindow:
 
 
 # ============================================
-# 🔄 Reconnect Window (فقط Auto Reconnect)
+# 🔄 Reconnect Window
 # ============================================
 class ReconnectWindow:
     def __init__(s, source):
@@ -1043,7 +1043,7 @@ class EditLimitsWindow:
 
 
 # ============================================
-# 🤖 Auto Buyer Logic (فقط Sell)
+# 🤖 Auto Buyer Logic
 # ============================================
 SELL_PATTERN = re.compile(r'💰Sell ID:\s*(\w+)')
 BUY_PATTERN = re.compile(r'(\w+):\s*💳Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s*>\s*for\s*([\d,]+)\s*coins(?:\?.*)?')
@@ -1114,17 +1114,15 @@ def check_reaction(msg):
 
 
 # ============================================
-# 🎯 Check Chat (بدون تایمر - فقط کد اصلی)
+# 🎯 Check Chat (فقط یه بار)
 # ============================================
 last_saved_ip = None
 last_saved_port = None
 
 
 def check_chat_once():
-    """فقط یک بار چت رو چک می‌کنه (بدون تایمر)"""
     global last_msg_count, server_ip, server_port, last_saved_ip, last_saved_port
     try:
-        # ✅ گرفتن IP و Port از connection info
         try:
             conn = get_connection_info()
             if conn:
@@ -1226,43 +1224,59 @@ def check_spam_command(msg):
 
 
 # ============================================
-# 🔄 PERSISTENT LOOP (همیشه روشن - مثل SelfTaha)
+# 🔄 PERSISTENT LOOP (با try/finally - تضمینی)
 # ============================================
-_persistent_running = True
-_persistent_timer = None
+_calc_seen = []
+_calc_seen_set = set()
 
 
-def persistent_loop():
-    """حلقه پایدار که همیشه اجرا میشه و هیچوقت متوقف نمیشه"""
-    global _persistent_running, _persistent_timer
-    
-    if not _persistent_running:
-        return
-    
+def check_calc_once():
+    global _calc_seen, _calc_seen_set
+    try:
+        messages = GCM()
+        if messages:
+            for msg in messages[-5:]:
+                if msg in _calc_seen_set: continue
+                _calc_seen_set.add(msg)
+                _calc_seen.append(msg)
+                if ': ' in msg:
+                    _, content = msg.split(': ', 1)
+                    content = content.strip()
+                    result = detect_calculation(content)
+                    if result: safe_chat_send(result)
+            if len(_calc_seen) > 50:
+                old = _calc_seen[:-50]
+                for o in old: _calc_seen_set.discard(o)
+                _calc_seen[:] = _calc_seen[-50:]
+    except Exception as e:
+        print(f"Calc error: {e}")
+
+
+def chat_loop():
+    """حلقه چت - با try/finally تضمین می‌کنه تایمر بعدی ساخته بشه"""
     try:
         check_chat_once()
     except Exception as e:
-        print(f"Persistent loop error: {e}")
-    
-    # ✅ همیشه دوباره راه‌اندازی کن
+        print(f"Chat loop inner error: {e}")
+    finally:
+        # ✅ این خط همیشه اجرا می‌شه، حتی اگه check_chat_once خطا بده
+        try:
+            teck(0.03, chat_loop)
+        except Exception as e:
+            print(f"Chat timer restart failed: {e}")
+
+
+def calc_loop():
+    """حلقه ماشین حساب - با try/finally"""
     try:
-        _persistent_timer = teck(0.03, persistent_loop)
+        check_calc_once()
     except Exception as e:
-        print(f"Timer restart error: {e}")
-        # اگه teck خطا داد، از یه راه دیگه تلاش کن
-        import threading
-        def delayed_restart():
-            import time
-            time.sleep(0.1)
-            try:
-                from bauiv1 import apptimer as teck2
-                global _persistent_timer
-                _persistent_timer = teck2(0.03, persistent_loop)
-            except:
-                pass
-        t = threading.Thread(target=delayed_restart)
-        t.daemon = True
-        t.start()
+        print(f"Calc loop inner error: {e}")
+    finally:
+        try:
+            teck(0.3, calc_loop)
+        except Exception as e:
+            print(f"Calc timer restart failed: {e}")
 
 
 # ============================================
@@ -1273,8 +1287,6 @@ def persistent_loop():
 class byMahyar(Plugin):
     def __init__(s):
         global my_own_name, my_own_client_id, my_own_display_num, last_msg_count
-        s.seen_calc = []
-        s.seen_calc_set = set()
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
         try:
@@ -1348,59 +1360,11 @@ class byMahyar(Plugin):
 
         party.PartyWindow.__init__ = e
 
-        # ✅ شروع حلقه پایدار (همیشه روشن)
-        teck(0.5, persistent_loop)
-
-        # ✅ یه watchdog thread که هر 5 ثانیه چک کنه حلقه زنده‌ست
-        s.start_watchdog()
+        # ✅ شروع حلقه‌های پایدار (هرگز خاموش نمی‌شن)
+        teck(0.5, chat_loop)
+        teck(0.5, calc_loop)
 
         teck(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
-        teck(0.1, s.check_calc)
-        teck(20.0, s.update_ids_loop)
-
-    def start_watchdog(s):
-        """watchdog thread که چک می‌کنه حلقه اصلی زنده‌ست"""
-        def watchdog():
-            import time as _time
-            while _persistent_running:
-                _time.sleep(5)
-                # اگه تایمر مرده یا None شد، دوباره راه‌اندازی کن
-                global _persistent_timer
-                if _persistent_timer is None:
-                    print("⚠️ Watchdog: restarting persistent loop")
-                    try:
-                        from bauiv1 import apptimer as teck2
-                        _persistent_timer = teck2(0.1, persistent_loop)
-                    except:
-                        pass
-        
-        t = threading.Thread(target=watchdog)
-        t.daemon = True
-        t.start()
 
     def delayed_open(s, cls, btn):
         teck(0.05, lambda: cls(btn))
-
-    def update_ids_loop(s):
-        get_my_ids()
-        teck(20.0, s.update_ids_loop)
-
-    def check_calc(s):
-        try:
-            messages = GCM()
-            if messages:
-                for msg in messages[-5:]:
-                    if msg in s.seen_calc_set: continue
-                    s.seen_calc_set.add(msg)
-                    s.seen_calc.append(msg)
-                    if ': ' in msg:
-                        _, content = msg.split(': ', 1)
-                        content = content.strip()
-                        result = detect_calculation(content)
-                        if result: safe_chat_send(result)
-                if len(s.seen_calc) > 50:
-                    old = s.seen_calc[:-50]
-                    for o in old: s.seen_calc_set.discard(o)
-                    s.seen_calc[:] = s.seen_calc[-50:]
-        except Exception: pass
-        teck(0.1, s.check_calc)
