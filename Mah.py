@@ -15,7 +15,8 @@ from bauiv1 import (
 from bascenev1 import (
     chatmessage as CM,
     screenmessage as push,
-    get_chat_messages as GCM
+    get_chat_messages as GCM,
+    get_game_roster as get_roster
 )
 import math
 import re
@@ -76,7 +77,7 @@ def save_limits(limits):
 
 def get_reactions():
     try:
-        saved = app.config.get('mahyar_reactions_v2', None)
+        saved = app.config.get('mahyar_reactions_v3', None)
         if saved:
             d = dict(DEFAULT_REACTIONS)
             d.update(saved)
@@ -88,7 +89,7 @@ def get_reactions():
 
 def save_reactions(reactions):
     try:
-        app.config['mahyar_reactions_v2'] = dict(reactions)
+        app.config['mahyar_reactions_v3'] = dict(reactions)
         app.config.commit()
     except:
         pass
@@ -102,8 +103,10 @@ seen_messages = []
 seen_messages_set = set()
 processed_buy_ids = set()
 processed_bids = set()
-processed_reacts = set()  # جلوگیری از واکنش تکراری
+processed_reacts = set()
 my_own_name = None
+my_own_client_id = None      # مثلا 151
+my_own_display_num = None    # مثلا 0 (عدد کنار اسم: "0 Mahyar")
 
 
 class AR:
@@ -144,6 +147,43 @@ class AR:
 
     swish = lambda c=0, t=0: (gs('swish').play(), cw(t, transition='out_scale') if t else t)
     err = lambda t: (gs('block').play(), push(t, color=(1, 1, 0)))
+
+
+# ============================================
+# 🎯 گرفتن client_id و display_num خودمون
+# ============================================
+def get_my_ids():
+    """گرفتن client_id و شماره‌ی نمایشی خودمون از roster"""
+    global my_own_client_id, my_own_display_num, my_own_name
+    try:
+        roster = get_roster()
+
+        if not my_own_name:
+            return None, None
+
+        for entry in roster:
+            display = entry.get('display_string', '')
+            # چک: آیا این entry مال من هست؟
+            if display.endswith(my_own_name):
+                my_own_client_id = entry.get('client_id')
+
+                # شماره‌ی نمایشی از name_full
+                players = entry.get('players', [])
+                if players:
+                    name_full = players[0].get('name_full', '')
+                    # name_full = "0 Mahyar" → عدد اول
+                    if name_full and ' ' in name_full:
+                        try:
+                            my_own_display_num = int(name_full.split(' ')[0])
+                        except:
+                            my_own_display_num = None
+
+                return my_own_client_id, my_own_display_num
+
+        return None, None
+    except Exception as e:
+        print(f"Error getting IDs: {e}")
+        return None, None
 
 
 # ============================================
@@ -512,7 +552,7 @@ class EditReactionWindow:
 
         current = REACTIONS.get(trigger_code, '')
 
-        tw(parent=s.w, text=f'When "{trigger_code}" on me →', scale=0.8,
+        tw(parent=s.w, text=f'When "%{trigger_code}" on me →', scale=0.7,
            position=(150, 135), h_align='center', color=(1, 1, 0))
 
         tw(parent=s.w, text='I reply with:', scale=0.6,
@@ -539,12 +579,11 @@ class EditReactionWindow:
 
         if value:
             REACTIONS[s.trigger_code] = value
-            push(f'{s.trigger_code} → {value}', color=(0, 1, 0))
+            push(f'%{s.trigger_code} → {value}', color=(0, 1, 0))
         else:
-            # اگه خالی بود، حذف کن
             if s.trigger_code in REACTIONS:
                 del REACTIONS[s.trigger_code]
-            push(f'{s.trigger_code} disabled', color=(1, 0.5, 0))
+            push(f'%{s.trigger_code} disabled', color=(1, 0.5, 0))
 
         save_reactions(REACTIONS)
         gs('dingSmallHigh').play()
@@ -571,16 +610,16 @@ class AddReactionWindow:
         tw(parent=s.w, text='Add New Reaction', scale=0.9,
            position=(150, 175), h_align='center', color=(1, 1, 0))
 
-        tw(parent=s.w, text='When someone:', scale=0.6,
-           position=(70, 140), h_align='center', color=(1, 1, 1))
+        tw(parent=s.w, text='When someone uses %:', scale=0.6,
+           position=(150, 140), h_align='center', color=(1, 1, 1))
         s.trigger_input = tw(
             parent=s.w, text='', editable=True, scale=0.9,
             position=(40, 105), size=(220, 32), h_align='center',
             color=(0.9, 0.9, 0.9)
         )
 
-        tw(parent=s.w, text='I reply:', scale=0.6,
-           position=(70, 75), h_align='center', color=(1, 1, 1))
+        tw(parent=s.w, text='I reply with:', scale=0.6,
+           position=(150, 75), h_align='center', color=(1, 1, 1))
         s.response_input = tw(
             parent=s.w, text='', editable=True, scale=0.9,
             position=(40, 40), size=(220, 32), h_align='center',
@@ -603,7 +642,7 @@ class AddReactionWindow:
 
         REACTIONS[trigger] = response
         save_reactions(REACTIONS)
-        push(f'{trigger} → {response}', color=(0, 1, 0))
+        push(f'%{trigger} → {response}', color=(0, 1, 0))
         gs('dingSmallHigh').play()
 
         if s.parent_window:
@@ -631,11 +670,16 @@ class ReactionEditorWindow:
            position=(180, 435), h_align='center', color=(0.6, 0.6, 0.8))
 
         tw(parent=s.w, text='When someone X on me → I do Y',
-           position=(180, 410), scale=0.55,
+           position=(180, 410), scale=0.5,
            h_align='center', color=(1, 1, 0.8))
 
+        # نمایش client_id و شماره نمایشی ما
+        s.id_text = tw(parent=s.w, text=f'My IDs: cid={my_own_client_id or "?"} num={my_own_display_num or "?"}',
+                       position=(180, 388), scale=0.5,
+                       h_align='center', color=(0, 1, 1))
+
         # اسکرول
-        s.scroll = sw(parent=s.w, size=(320, 260), position=(20, 140))
+        s.scroll = sw(parent=s.w, size=(320, 250), position=(20, 130))
         s.container = cw(parent=s.scroll, size=(300, 400), background=False)
         s.item_buttons = {}
 
@@ -643,23 +687,29 @@ class ReactionEditorWindow:
 
         # دکمه Add New
         bw(parent=s.w, label='+ Add New', size=(140, 35),
-           position=(20, 95), on_activate_call=Call(s.add_new),
+           position=(20, 90), on_activate_call=Call(s.add_new),
            color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.7)
 
         # دکمه Reset
         bw(parent=s.w, label='Reset', size=(140, 35),
-           position=(180, 95), on_activate_call=Call(s.reset_all),
+           position=(180, 90), on_activate_call=Call(s.reset_all),
            color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.7)
 
         # دکمه روشن/خاموش
         s.toggle_btn = bw(parent=s.w,
                           label='Auto React: ON' if auto_react_enabled else 'Auto React: OFF',
-                          size=(300, 35), position=(20, 50),
+                          size=(300, 35), position=(20, 45),
                           on_activate_call=Call(s.toggle),
                           color=(0.2, 0.7, 0.2) if auto_react_enabled else (0.7, 0.2, 0.2),
                           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+
+        # دکمه آپدیت ID
+        bw(parent=s.w, label='Refresh My IDs', size=(300, 30),
+           position=(20, 8), on_activate_call=Call(s.refresh_ids),
+           color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.6)
 
         gs('swish').play()
 
@@ -676,21 +726,25 @@ class ReactionEditorWindow:
         for i, (trigger, response) in enumerate(items):
             y = total_h - (i + 1) * row_height
 
-            # دکمه اصلی
-            btn = bw(parent=s.container, label=f'{trigger} → {response}',
+            btn = bw(parent=s.container, label=f'%{trigger} → {response}',
                      size=(200, 32), position=(5, y),
                      on_activate_call=Call(s.edit_item, trigger),
                      color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1),
                      button_type='square', text_scale=0.7)
             s.item_buttons[trigger] = btn
 
-            # دکمه حذف
             bw(parent=s.container, label='X', size=(35, 32), position=(215, y),
                on_activate_call=Call(s.delete_item, trigger),
                color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1),
                button_type='square', text_scale=0.8)
 
         cw(s.container, size=(300, total_h))
+
+    def refresh_ids(s):
+        cid, num = get_my_ids()
+        tw(s.id_text, text=f'My IDs: cid={cid or "?"} num={num or "?"}', color=(0, 1, 0))
+        push(f'cid={cid}, num={num}', color=(0, 1, 0))
+        gs('dingSmallHigh').play()
 
     def add_new(s):
         AddReactionWindow(s.w, parent_window=s)
@@ -702,7 +756,7 @@ class ReactionEditorWindow:
         if trigger in REACTIONS:
             del REACTIONS[trigger]
             save_reactions(REACTIONS)
-            push(f'Deleted: {trigger}', color=(1, 0.5, 0))
+            push(f'Deleted: %{trigger}', color=(1, 0.5, 0))
             gs('dingSmallLow').play()
             s.build_grid()
 
@@ -722,7 +776,7 @@ class ReactionEditorWindow:
             bw(s.toggle_btn, label='Auto React: ON', color=(0.2, 0.7, 0.2))
             push('Auto React ON', color=(0, 1, 0))
         else:
-            bw(s.toggle_btn, label='Auto React: OFF', color=(0.7, 0.2, 0.2))
+            bw(s.toggle_btn, label='Auto React OFF', color=(0.7, 0.2, 0.2))
             push('Auto React OFF', color=(1, 0.5, 0))
         gs('dingSmall').play()
 
@@ -909,85 +963,61 @@ def process_bid(item_id):
 
 
 # ============================================
-# 🎯 Auto-React Logic (وقتی رو ما X زدن)
+# 🎯 Auto-React Logic (با client_id + display_num)
 # ============================================
-def is_me(text):
-    """چک میکنه آیا متن به من اشاره داره"""
-    global my_own_name
-    if not my_own_name:
-        return False
-    
-    text_lower = text.lower()
-    name_lower = my_own_name.lower()
-    
-    # حالت ۱: اسم من توی متن باشه
-    if name_lower in text_lower:
-        return True
-    
-    return False
-
-
 def check_reaction(msg):
-    """چک میکنه آیا رو ما کد زدن"""
+    """چک میکنه آیا رو ما کد زدن (هم client_id هم شماره نمایشی)"""
+    global my_own_client_id, my_own_display_num
+
     if not auto_react_enabled:
         return
-    
+
+    # اگه هنوز IDs رو نگرفتیم، بگیر
+    if my_own_client_id is None or my_own_display_num is None:
+        get_my_ids()
+
     try:
-        # پیام معمولاً این شکلیه: 
-        # "PlayerName: %sh 198" 
-        # یا "%sh 198"
-        # یا "fr 2"
-        
-        # باید چک کنیم:
-        # ۱. آیا هدف من هستم؟
-        # ۲. آیا کد trigger توش هست؟
-        
-        # استخراج بخش پیام
+        # استخراج محتوا
         content = msg
         if ': ' in msg:
             _, content = msg.split(': ', 1)
         content = content.strip()
-        
         content_lower = content.lower()
-        
+
         # چک همه trigger های تنظیم شده
         for trigger, response in REACTIONS.items():
             trigger_lower = trigger.lower()
-            
-            # چک: آیا trigger توی پیام هست؟
-            if trigger_lower in content_lower:
-                # حالا چک کن آیا هدف من هستم
-                # حالت ۱: اسمم توی پیام هست
-                # حالت ۲: شماره من توی پیام هست (مثل fr 2)
-                
-                is_target_me = False
-                
-                # چک اسم
-                if my_own_name and my_own_name.lower() in content_lower:
+
+            is_target_me = False
+
+            # ✅ حالت ۱: چک %fr 144 (با client_id)
+            if my_own_client_id:
+                pattern1 = rf'%\s*{re.escape(trigger_lower)}\s+{my_own_client_id}\b'
+                if re.search(pattern1, content_lower):
                     is_target_me = True
-                
-                # چک شماره/آی دی من
-                # (نمیتونیم دقیق چک کنیم، پس اگه trigger هست و کد عددی داره، احتمالا ما هستیم)
-                
-                # اگه trigger + عدد بود و اسم کسی دیگه نبود → احتمالا ما هستیم
-                # ولی چک دقیق‌تر: اگه اسم من توی پیامه
-                
-                if is_target_me:
-                    # ✅ رو من زدن!
-                    react_key = f"{msg}_{trigger}"
-                    if react_key in processed_reacts:
-                        continue
-                    processed_reacts.add(react_key)
-                    
-                    if len(processed_reacts) > 200:
-                        processed_reacts.clear()
-                    
-                    # پاسخ رو بفرست
-                    teck(0.1, lambda r=response: CM(r))
-                    push(f"⚡ React: {trigger} → {r}", color=(0, 1, 1))
-                    gs('dingSmall').play()
-                    return
-    
+
+            # ✅ حالت ۲: چک fr 1 (با شماره نمایشی)
+            if not is_target_me and my_own_display_num is not None:
+                pattern2 = rf'\b{re.escape(trigger_lower)}\s+{my_own_display_num}\b'
+                if re.search(pattern2, content_lower):
+                    is_target_me = True
+
+            if is_target_me:
+                # ✅ رو ما زدن!
+                react_key = f"{msg}_{trigger}"
+                if react_key in processed_reacts:
+                    continue
+                processed_reacts.add(react_key)
+
+                if len(processed_reacts) > 200:
+                    processed_reacts.clear()
+
+                # پاسخ رو بفرست
+                teck(0.1, lambda r=response: CM(r))
+                push(f"⚡ React: {trigger} → {response}", color=(0, 1, 1))
+                gs('dingSmall').play()
+                return
+
     except Exception as e:
         print(f"React error: {e}")
 
@@ -1103,7 +1133,7 @@ def detect_calculation(message):
 # ba_meta export babase.Plugin
 class byMahyar(Plugin):
     def __init__(s):
-        global my_own_name
+        global my_own_name, my_own_client_id, my_own_display_num
         s.seen_calc = []
         s.seen_calc_set = set()
 
@@ -1118,7 +1148,9 @@ class byMahyar(Plugin):
         def e(self, *a, **k):
             r = o(self, *a, **k)
 
-            # ✅ دکمه‌ها سمت راست‌تر
+            # ✅ هر بار پنجره مهمانی باز شد، IDs رو بگیر
+            teck(0.5, get_my_ids)
+
             b_calc = AR.bw(
                 position=(self._width - 50, self._height - 100),
                 parent=self._root_widget,
@@ -1155,6 +1187,13 @@ class byMahyar(Plugin):
 
         teck(0.05, check_chat)
         teck(0.1, s.check_calc)
+        # ✅ آپدیت IDs هر 20 ثانیه
+        teck(20.0, s.update_ids_loop)
+
+    def update_ids_loop(s):
+        """هر 20 ثانیه IDs رو آپدیت کن"""
+        get_my_ids()
+        teck(20.0, s.update_ids_loop)
 
     def check_calc(s):
         try:
