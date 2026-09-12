@@ -27,9 +27,7 @@ import bauiv1 as bui
 import bascenev1
 from babase import app
 
-# ✅✅✅ دو تا تایمر جدا:
-# teck_scene: برای UI (به صحنه گره می‌خوره)
-# teck: برای loop های پایدار (مستقل از صحنه - هرگز نمی‌میره)
+# ✅ دو تا تایمر جدا
 from babase import apptimer as teck_scene
 
 try:
@@ -180,7 +178,6 @@ auto_react_enabled = get_enabled_state('react', True)
 auto_reply_enabled = get_enabled_state('reply', True)
 auto_buyer_enabled = get_enabled_state('buyer', True)
 
-last_msg_count = 0
 processed_sell_ids = set()
 processed_buy_ids = set()
 react_cooldown = {}
@@ -358,7 +355,6 @@ def stop_spam():
 # 🔄 Auto Reconnect Logic
 # ============================================
 def auto_reconnect_check():
-    """فقط یه بار چک می‌کنه - loop بالا صداش می‌زنه"""
     global auto_reconnect_enabled, server_ip, server_port, auto_reconnect_busy
 
     if not auto_reconnect_enabled:
@@ -1101,21 +1097,37 @@ def check_reaction(msg):
 
 
 # ============================================
-# 🎯 Check Chat (فقط یه بار)
+# 🎯 Hash-based Message Processing (ضد مرگ قطعی)
 # ============================================
 last_saved_ip = None
 last_saved_port = None
 
+_processed_msg_hashes = set()
+_MAX_HASHES = 500
+
+_calc_processed_hashes = set()
+_MAX_CALC_HASHES = 200
+
+
+def _msg_hash(msg):
+    """hash یکتا برای هر پیام"""
+    try:
+        return f"{len(msg)}|{msg[:80]}|{msg[-20:] if len(msg) > 80 else ''}"
+    except:
+        return f"{len(msg)}|{msg[:50]}"
+
 
 def check_chat_once():
-    global last_msg_count, server_ip, server_port, last_saved_ip, last_saved_port
+    global server_ip, server_port, last_saved_ip, last_saved_port
+    global _processed_msg_hashes
+
     try:
+        # ✅ IP/Port
         try:
             conn = get_connection_info()
             if conn:
                 new_ip = getattr(conn, 'address', None)
                 new_port = getattr(conn, 'port', None)
-
                 if new_ip and new_port:
                     new_ip = str(new_ip)
                     new_port = int(new_port)
@@ -1126,29 +1138,87 @@ def check_chat_once():
                         last_saved_port = new_port
                         save_server(server_ip, server_port)
                         push(f'Server saved: {server_ip}:{server_port}', color=(0, 1, 1))
-                        print(f"✅ Saved server: {server_ip}:{server_port}")
         except Exception as e:
             print(f"Error saving server: {e}")
 
+        # ✅ پیام‌ها
         messages = GCM()
-        if messages:
-            current_count = len(messages)
-            if current_count < last_msg_count: last_msg_count = current_count
-            if current_count > last_msg_count:
-                new_messages = messages[last_msg_count:current_count]
-                for msg in new_messages:
-                    if check_spam_command(msg): continue
-                    if check_auto_reply(msg): continue
-                    check_reaction(msg)
-                    if not auto_buyer_enabled: continue
-                    m = SELL_PATTERN.search(msg)
-                    if m: process_sell(m.group(1)); continue
-                    m = BUY_PATTERN.search(msg)
-                    if m:
-                        process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
-                        continue
-                last_msg_count = current_count
-    except Exception as e: print(f"Chat error: {e}")
+        if not messages:
+            return
+
+        # ✅ فقط 20 پیام آخر
+        recent = messages[-20:] if len(messages) > 20 else messages[:]
+
+        # ✅ پیام‌های جدید
+        new_msgs = []
+        for msg in recent:
+            h = _msg_hash(msg)
+            if h not in _processed_msg_hashes:
+                new_msgs.append(msg)
+                _processed_msg_hashes.add(h)
+
+        # ✅ پاکسازی hash ها
+        if len(_processed_msg_hashes) > _MAX_HASHES:
+            hashes_to_remove = list(_processed_msg_hashes)[:_MAX_HASHES // 2]
+            for h in hashes_to_remove:
+                _processed_msg_hashes.discard(h)
+
+        # ✅ پردازش
+        for msg in new_msgs:
+            try:
+                if check_spam_command(msg): continue
+                if check_auto_reply(msg): continue
+                check_reaction(msg)
+                if not auto_buyer_enabled: continue
+                m = SELL_PATTERN.search(msg)
+                if m:
+                    process_sell(m.group(1))
+                    continue
+                m = BUY_PATTERN.search(msg)
+                if m:
+                    process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
+                    continue
+            except Exception as e:
+                print(f"[Mahyar] msg error: {e}")
+                continue
+
+    except Exception as e:
+        print(f"Chat error: {e}")
+
+
+def check_calc_once():
+    global _calc_processed_hashes
+    try:
+        messages = GCM()
+        if not messages:
+            return
+
+        recent = messages[-15:] if len(messages) > 15 else messages[:]
+
+        for msg in recent:
+            h = _msg_hash(msg)
+            if h in _calc_processed_hashes:
+                continue
+            _calc_processed_hashes.add(h)
+
+            try:
+                content = msg
+                if ': ' in msg:
+                    _, content = msg.split(': ', 1)
+                content = content.strip()
+                result = detect_calculation(content)
+                if result:
+                    safe_chat_send(result)
+            except:
+                pass
+
+        if len(_calc_processed_hashes) > _MAX_CALC_HASHES:
+            hashes_to_remove = list(_calc_processed_hashes)[:_MAX_CALC_HASHES // 2]
+            for h in hashes_to_remove:
+                _calc_processed_hashes.discard(h)
+
+    except Exception as e:
+        print(f"Calc error: {e}")
 
 
 # ============================================
@@ -1211,72 +1281,57 @@ def check_spam_command(msg):
 
 
 # ============================================
-# 🔄 PERSISTENT LOOPS (مستقل از صحنه - هرگز خاموش نمی‌شن)
+# 🔄 PERSISTENT LOOPS (مستقل از صحنه - ضد مرگ)
 # ============================================
-_calc_seen = []
-_calc_seen_set = set()
 _loops_started = False
 
 
-def check_calc_once():
-    global _calc_seen, _calc_seen_set
-    try:
-        messages = GCM()
-        if messages:
-            for msg in messages[-5:]:
-                if msg in _calc_seen_set: continue
-                _calc_seen_set.add(msg)
-                _calc_seen.append(msg)
-                if ': ' in msg:
-                    _, content = msg.split(': ', 1)
-                    content = content.strip()
-                    result = detect_calculation(content)
-                    if result: safe_chat_send(result)
-            if len(_calc_seen) > 50:
-                old = _calc_seen[:-50]
-                for o in old: _calc_seen_set.discard(o)
-                _calc_seen[:] = _calc_seen[-50:]
-    except Exception as e:
-        print(f"Calc error: {e}")
-
-
 def chat_loop():
-    """حلقه چت - با teck مستقل از صحنه"""
     try:
         check_chat_once()
-    except Exception as e:
-        print(f"Chat loop error: {e}")
+    except BaseException as e:
+        try:
+            print(f"[Mahyar] chat_loop error: {type(e).__name__}: {e}")
+        except: pass
     finally:
         try:
-            teck(0.05, chat_loop)
-        except Exception as e:
-            print(f"Chat timer restart failed: {e}")
+            teck(0.1, chat_loop)
+        except BaseException as e:
+            try:
+                print(f"[Mahyar] chat_loop restart FAILED: {e}")
+            except: pass
 
 
 def calc_loop():
-    """حلقه ماشین حساب - مستقل از صحنه"""
     try:
         check_calc_once()
-    except Exception as e:
-        print(f"Calc loop error: {e}")
+    except BaseException as e:
+        try:
+            print(f"[Mahyar] calc_loop error: {type(e).__name__}: {e}")
+        except: pass
     finally:
         try:
             teck(0.3, calc_loop)
-        except Exception as e:
-            print(f"Calc timer restart failed: {e}")
+        except BaseException as e:
+            try:
+                print(f"[Mahyar] calc_loop restart FAILED: {e}")
+            except: pass
 
 
 def auto_reconnect_loop():
-    """حلقه Auto Reconnect - مستقل از صحنه"""
     try:
         auto_reconnect_check()
-    except Exception as e:
-        print(f"AutoReconnect loop error: {e}")
+    except BaseException as e:
+        try:
+            print(f"[Mahyar] autoreconnect_loop error: {type(e).__name__}: {e}")
+        except: pass
     finally:
         try:
             teck(2.0, auto_reconnect_loop)
-        except Exception as e:
-            print(f"AutoReconnect timer restart failed: {e}")
+        except BaseException as e:
+            try:
+                print(f"[Mahyar] autoreconnect_loop restart FAILED: {e}")
+            except: pass
 
 
 def start_all_loops():
@@ -1310,13 +1365,9 @@ def start_all_loops():
 # ba_meta export babase.Plugin
 class byMahyar(Plugin):
     def __init__(s):
-        global my_own_name, last_msg_count
+        global my_own_name
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
-        try:
-            initial_messages = GCM()
-            last_msg_count = len(initial_messages) if initial_messages else 0
-        except: last_msg_count = 0
 
         from bauiv1lib import party
         o = party.PartyWindow.__init__
@@ -1353,7 +1404,7 @@ class byMahyar(Plugin):
 
         party.PartyWindow.__init__ = e
 
-        # ✅ شروع همه حلقه‌های پایدار (فقط یک بار در طول عمر بازی)
+        # ✅ شروع همه حلقه‌های پایدار
         start_all_loops()
 
         teck_scene(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
