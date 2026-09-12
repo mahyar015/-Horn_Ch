@@ -26,7 +26,7 @@ from babase import app
 SIGNATURE = "By Mahyar"
 
 # ============================================
-# ⚙️ قیمت‌های پیش‌فرض
+# ⚙️ قیمت‌های پیش‌فرض Auto Buyer
 # ============================================
 DEFAULT_LIMITS = {
     'vip': 2000.0, 'cbb': 3000.0, 'cba': 50.0, 'h': 1.0,
@@ -41,6 +41,17 @@ DEFAULT_LIMITS = {
 }
 
 DEFAULT_UNKNOWN = 999999
+
+# ============================================
+# ⚙️ تنظیمات Auto-React (پیش‌فرض)
+# ============================================
+DEFAULT_REACTIONS = {
+    'fr': 'u',      # freeze خوردم → unfreeze بزن
+    'cu': 'h',      # curse خوردم → heal بزن
+    'fl': 'fl',     # fly2d خوردم → fly2d بزن
+}
+
+auto_react_enabled = True
 
 
 def get_limits():
@@ -63,13 +74,35 @@ def save_limits(limits):
         pass
 
 
+def get_reactions():
+    try:
+        saved = app.config.get('mahyar_reactions_v2', None)
+        if saved:
+            d = dict(DEFAULT_REACTIONS)
+            d.update(saved)
+            return d
+    except:
+        pass
+    return dict(DEFAULT_REACTIONS)
+
+
+def save_reactions(reactions):
+    try:
+        app.config['mahyar_reactions_v2'] = dict(reactions)
+        app.config.commit()
+    except:
+        pass
+
+
 LIMITS = get_limits()
+REACTIONS = get_reactions()
 auto_buyer_enabled = True
 
 seen_messages = []
 seen_messages_set = set()
 processed_buy_ids = set()
 processed_bids = set()
+processed_reacts = set()  # جلوگیری از واکنش تکراری
 my_own_name = None
 
 
@@ -467,6 +500,234 @@ class EditLimitsWindow:
 
 
 # ============================================
+# ⚙️ Edit Reaction Window
+# ============================================
+class EditReactionWindow:
+    def __init__(s, source, trigger_code, parent_window=None):
+        s.trigger_code = trigger_code
+        s.parent_window = parent_window
+
+        s.w = AR.cw(source=source, size=(300, 180), ps=AR.UIS() * 0.4)
+        AR.add_close_button(s.w, position=(270, 140))
+
+        current = REACTIONS.get(trigger_code, '')
+
+        tw(parent=s.w, text=f'When "{trigger_code}" on me →', scale=0.8,
+           position=(150, 135), h_align='center', color=(1, 1, 0))
+
+        tw(parent=s.w, text='I reply with:', scale=0.6,
+           position=(150, 115), h_align='center', color=(0.8, 0.8, 1))
+
+        s.input = tw(
+            parent=s.w, text=current, editable=True, scale=1.0,
+            position=(50, 70), size=(200, 35), h_align='center',
+            color=(0.9, 0.9, 0.9)
+        )
+
+        tw(parent=s.w, text='(leave empty to disable)',
+           position=(150, 50), scale=0.5,
+           h_align='center', color=(0.7, 0.7, 1))
+
+        bw(parent=s.w, label='Save', size=(120, 35),
+           position=(90, 10), on_activate_call=Call(s.save),
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
+
+        gs('swish').play()
+
+    def save(s):
+        value = tw(query=s.input).strip().lower()
+
+        if value:
+            REACTIONS[s.trigger_code] = value
+            push(f'{s.trigger_code} → {value}', color=(0, 1, 0))
+        else:
+            # اگه خالی بود، حذف کن
+            if s.trigger_code in REACTIONS:
+                del REACTIONS[s.trigger_code]
+            push(f'{s.trigger_code} disabled', color=(1, 0.5, 0))
+
+        save_reactions(REACTIONS)
+        gs('dingSmallHigh').play()
+
+        if s.parent_window:
+            try:
+                s.parent_window.build_grid()
+            except:
+                pass
+
+        AR.swish(s.w)
+
+
+# ============================================
+# ⚙️ Add New Reaction Window
+# ============================================
+class AddReactionWindow:
+    def __init__(s, source, parent_window=None):
+        s.parent_window = parent_window
+
+        s.w = AR.cw(source=source, size=(300, 220), ps=AR.UIS() * 0.4)
+        AR.add_close_button(s.w, position=(270, 180))
+
+        tw(parent=s.w, text='Add New Reaction', scale=0.9,
+           position=(150, 175), h_align='center', color=(1, 1, 0))
+
+        tw(parent=s.w, text='When someone:', scale=0.6,
+           position=(70, 140), h_align='center', color=(1, 1, 1))
+        s.trigger_input = tw(
+            parent=s.w, text='', editable=True, scale=0.9,
+            position=(40, 105), size=(220, 32), h_align='center',
+            color=(0.9, 0.9, 0.9)
+        )
+
+        tw(parent=s.w, text='I reply:', scale=0.6,
+           position=(70, 75), h_align='center', color=(1, 1, 1))
+        s.response_input = tw(
+            parent=s.w, text='', editable=True, scale=0.9,
+            position=(40, 40), size=(220, 32), h_align='center',
+            color=(0.9, 0.9, 0.9)
+        )
+
+        bw(parent=s.w, label='Add', size=(120, 30),
+           position=(90, 5), on_activate_call=Call(s.save),
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
+
+        gs('swish').play()
+
+    def save(s):
+        trigger = tw(query=s.trigger_input).strip().lower()
+        response = tw(query=s.response_input).strip().lower()
+
+        if not trigger or not response:
+            AR.err('Both fields required!')
+            return
+
+        REACTIONS[trigger] = response
+        save_reactions(REACTIONS)
+        push(f'{trigger} → {response}', color=(0, 1, 0))
+        gs('dingSmallHigh').play()
+
+        if s.parent_window:
+            try:
+                s.parent_window.build_grid()
+            except:
+                pass
+
+        AR.swish(s.w)
+
+
+# ============================================
+# ⚙️ Reaction Editor Window
+# ============================================
+class ReactionEditorWindow:
+    def __init__(s, source, parent_window=None):
+        s.parent_window = parent_window
+        s.w = AR.cw(source=source, size=(360, 500), ps=AR.UIS() * 0.4)
+        AR.add_close_button(s.w, position=(330, 460))
+
+        tw(parent=s.w, text='Auto React', scale=1.1,
+           position=(180, 455), h_align='center', color=(0, 1, 1))
+
+        tw(parent=s.w, text=SIGNATURE, scale=0.5,
+           position=(180, 435), h_align='center', color=(0.6, 0.6, 0.8))
+
+        tw(parent=s.w, text='When someone X on me → I do Y',
+           position=(180, 410), scale=0.55,
+           h_align='center', color=(1, 1, 0.8))
+
+        # اسکرول
+        s.scroll = sw(parent=s.w, size=(320, 260), position=(20, 140))
+        s.container = cw(parent=s.scroll, size=(300, 400), background=False)
+        s.item_buttons = {}
+
+        s.build_grid()
+
+        # دکمه Add New
+        bw(parent=s.w, label='+ Add New', size=(140, 35),
+           position=(20, 95), on_activate_call=Call(s.add_new),
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.7)
+
+        # دکمه Reset
+        bw(parent=s.w, label='Reset', size=(140, 35),
+           position=(180, 95), on_activate_call=Call(s.reset_all),
+           color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.7)
+
+        # دکمه روشن/خاموش
+        s.toggle_btn = bw(parent=s.w,
+                          label='Auto React: ON' if auto_react_enabled else 'Auto React: OFF',
+                          size=(300, 35), position=(20, 50),
+                          on_activate_call=Call(s.toggle),
+                          color=(0.2, 0.7, 0.2) if auto_react_enabled else (0.7, 0.2, 0.2),
+                          textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+
+        gs('swish').play()
+
+    def build_grid(s):
+        for child in s.container.get_children():
+            child.delete()
+
+        s.item_buttons.clear()
+
+        items = list(REACTIONS.items())
+        row_height = 40
+        total_h = len(items) * row_height + 30
+
+        for i, (trigger, response) in enumerate(items):
+            y = total_h - (i + 1) * row_height
+
+            # دکمه اصلی
+            btn = bw(parent=s.container, label=f'{trigger} → {response}',
+                     size=(200, 32), position=(5, y),
+                     on_activate_call=Call(s.edit_item, trigger),
+                     color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1),
+                     button_type='square', text_scale=0.7)
+            s.item_buttons[trigger] = btn
+
+            # دکمه حذف
+            bw(parent=s.container, label='X', size=(35, 32), position=(215, y),
+               on_activate_call=Call(s.delete_item, trigger),
+               color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1),
+               button_type='square', text_scale=0.8)
+
+        cw(s.container, size=(300, total_h))
+
+    def add_new(s):
+        AddReactionWindow(s.w, parent_window=s)
+
+    def edit_item(s, trigger):
+        EditReactionWindow(s.w, trigger_code=trigger, parent_window=s)
+
+    def delete_item(s, trigger):
+        if trigger in REACTIONS:
+            del REACTIONS[trigger]
+            save_reactions(REACTIONS)
+            push(f'Deleted: {trigger}', color=(1, 0.5, 0))
+            gs('dingSmallLow').play()
+            s.build_grid()
+
+    def reset_all(s):
+        global REACTIONS
+        REACTIONS = dict(DEFAULT_REACTIONS)
+        save_reactions(REACTIONS)
+        push('Reset to defaults!', color=(0, 1, 1))
+        gs('dingSmallHigh').play()
+        s.build_grid()
+
+    def toggle(s):
+        global auto_react_enabled
+        auto_react_enabled = not auto_react_enabled
+
+        if auto_react_enabled:
+            bw(s.toggle_btn, label='Auto React: ON', color=(0.2, 0.7, 0.2))
+            push('Auto React ON', color=(0, 1, 0))
+        else:
+            bw(s.toggle_btn, label='Auto React: OFF', color=(0.7, 0.2, 0.2))
+            push('Auto React OFF', color=(1, 0.5, 0))
+        gs('dingSmall').play()
+
+
+# ============================================
 # 🤖 Auto Buyer Window
 # ============================================
 class AutoBuyerWindow:
@@ -594,7 +855,6 @@ SELL_PATTERN = re.compile(r'💰Sell ID:\s*(\w+)')
 BUY_PATTERN = re.compile(
     r'(\w+):\s*💳Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s*>\s*for\s*([\d,]+)\s*coins'
 )
-# ✅ الگو برای پیدا کردن b sXXX در هر جایی از پیام
 BID_PATTERN = re.compile(r'\bb\s+(s\d+)\b', re.IGNORECASE)
 
 
@@ -632,7 +892,6 @@ def process_buy(item_id, count, item_name, total_price):
 
 
 def process_bid(item_id):
-    """وقتی کسی b sXXX زد → سریع بزن b sXXX"""
     if not auto_buyer_enabled:
         return
 
@@ -649,8 +908,92 @@ def process_bid(item_id):
         print(f"Bid error: {e}")
 
 
+# ============================================
+# 🎯 Auto-React Logic (وقتی رو ما X زدن)
+# ============================================
+def is_me(text):
+    """چک میکنه آیا متن به من اشاره داره"""
+    global my_own_name
+    if not my_own_name:
+        return False
+    
+    text_lower = text.lower()
+    name_lower = my_own_name.lower()
+    
+    # حالت ۱: اسم من توی متن باشه
+    if name_lower in text_lower:
+        return True
+    
+    return False
+
+
+def check_reaction(msg):
+    """چک میکنه آیا رو ما کد زدن"""
+    if not auto_react_enabled:
+        return
+    
+    try:
+        # پیام معمولاً این شکلیه: 
+        # "PlayerName: %sh 198" 
+        # یا "%sh 198"
+        # یا "fr 2"
+        
+        # باید چک کنیم:
+        # ۱. آیا هدف من هستم؟
+        # ۲. آیا کد trigger توش هست؟
+        
+        # استخراج بخش پیام
+        content = msg
+        if ': ' in msg:
+            _, content = msg.split(': ', 1)
+        content = content.strip()
+        
+        content_lower = content.lower()
+        
+        # چک همه trigger های تنظیم شده
+        for trigger, response in REACTIONS.items():
+            trigger_lower = trigger.lower()
+            
+            # چک: آیا trigger توی پیام هست؟
+            if trigger_lower in content_lower:
+                # حالا چک کن آیا هدف من هستم
+                # حالت ۱: اسمم توی پیام هست
+                # حالت ۲: شماره من توی پیام هست (مثل fr 2)
+                
+                is_target_me = False
+                
+                # چک اسم
+                if my_own_name and my_own_name.lower() in content_lower:
+                    is_target_me = True
+                
+                # چک شماره/آی دی من
+                # (نمیتونیم دقیق چک کنیم، پس اگه trigger هست و کد عددی داره، احتمالا ما هستیم)
+                
+                # اگه trigger + عدد بود و اسم کسی دیگه نبود → احتمالا ما هستیم
+                # ولی چک دقیق‌تر: اگه اسم من توی پیامه
+                
+                if is_target_me:
+                    # ✅ رو من زدن!
+                    react_key = f"{msg}_{trigger}"
+                    if react_key in processed_reacts:
+                        continue
+                    processed_reacts.add(react_key)
+                    
+                    if len(processed_reacts) > 200:
+                        processed_reacts.clear()
+                    
+                    # پاسخ رو بفرست
+                    teck(0.1, lambda r=response: CM(r))
+                    push(f"⚡ React: {trigger} → {r}", color=(0, 1, 1))
+                    gs('dingSmall').play()
+                    return
+    
+    except Exception as e:
+        print(f"React error: {e}")
+
+
 def check_chat():
-    if not auto_buyer_enabled:
+    if not auto_buyer_enabled and not auto_react_enabled:
         teck(0.05, check_chat)
         return
 
@@ -663,20 +1006,24 @@ def check_chat():
                 seen_messages_set.add(msg)
                 seen_messages.append(msg)
 
+                # چک واکنش خودکار (وقتی رو من زدن)
+                check_reaction(msg)
+
+                if not auto_buyer_enabled:
+                    continue
+
                 # چک پیام فروش
                 m = SELL_PATTERN.search(msg)
                 if m:
                     process_sell(m.group(1))
                     continue
 
-                # ✅ چک b sXXX هر جایی توی پیام (نه فقط ابتدا)
-                # اگه مال خودمون نباشه
+                # چک b sXXX
                 is_mine = False
                 if my_own_name:
-                    # چک: آیا پیام با "اسم من:" شروع میشه؟
                     if msg.startswith(f"{my_own_name}:") or msg.startswith(f"{my_own_name} :"):
                         is_mine = True
-                
+
                 if not is_mine:
                     m2 = BID_PATTERN.search(msg)
                     if m2:
@@ -773,29 +1120,38 @@ class byMahyar(Plugin):
 
             # ✅ دکمه‌ها سمت راست‌تر
             b_calc = AR.bw(
-                position=(self._width - 70, self._height - 100),
+                position=(self._width - 50, self._height - 100),
                 parent=self._root_widget,
-                size=(85, 25),
+                size=(80, 25),
                 label='Math',
                 color=(0.8, 0.2, 0.7)
             )
             bw(b_calc, on_activate_call=Call(Calculator, b_calc))
 
             b_auto = AR.bw(
-                position=(self._width - 70, self._height - 140),
+                position=(self._width - 50, self._height - 140),
                 parent=self._root_widget,
-                size=(85, 25),
+                size=(80, 25),
                 label='AutoBuy',
                 color=(0.2, 0.6, 0.8)
             )
             bw(b_auto, on_activate_call=Call(AutoBuyerWindow, b_auto))
+
+            b_react = AR.bw(
+                position=(self._width - 50, self._height - 180),
+                parent=self._root_widget,
+                size=(80, 25),
+                label='React',
+                color=(0.8, 0.5, 0.2)
+            )
+            bw(b_react, on_activate_call=Call(ReactionEditorWindow, b_react))
 
             return r
 
         party.PartyWindow.__init__ = e
 
         teck(3.0, lambda: push(SIGNATURE, color=(1, 0.1, 0.1)))
-        teck(5.0, lambda: push("Math + AutoBuy", color=(0, 1, 1)))
+        teck(5.0, lambda: push("Math + AutoBuy + React", color=(0, 1, 1)))
 
         teck(0.05, check_chat)
         teck(0.1, s.check_calc)
