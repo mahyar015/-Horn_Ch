@@ -82,7 +82,7 @@ def save_limits(limits):
 
 def get_reactions():
     try:
-        saved = app.config.get('mahyar_reactions_v12', None)
+        saved = app.config.get('mahyar_reactions_v13', None)
         if saved:
             d = dict(DEFAULT_REACTIONS)
             d.update(saved)
@@ -94,7 +94,7 @@ def get_reactions():
 
 def save_reactions(reactions):
     try:
-        app.config['mahyar_reactions_v12'] = dict(reactions)
+        app.config['mahyar_reactions_v13'] = dict(reactions)
         app.config.commit()
     except:
         pass
@@ -102,7 +102,7 @@ def save_reactions(reactions):
 
 def get_cooldowns():
     try:
-        saved = app.config.get('mahyar_cooldowns_v12', None)
+        saved = app.config.get('mahyar_cooldowns_v13', None)
         if saved:
             d = dict(DEFAULT_COOLDOWNS)
             d.update(saved)
@@ -114,7 +114,7 @@ def get_cooldowns():
 
 def save_cooldowns(cooldowns):
     try:
-        app.config['mahyar_cooldowns_v12'] = dict(cooldowns)
+        app.config['mahyar_cooldowns_v13'] = dict(cooldowns)
         app.config.commit()
     except:
         pass
@@ -125,10 +125,11 @@ REACTIONS = get_reactions()
 COOLDOWNS = get_cooldowns()
 auto_buyer_enabled = True
 
-# ✅ ردیابی پیام‌ها با زمان
-seen_messages = []
-seen_messages_time = {}
+# ✅ ردیابی پیام‌ها با index
+last_msg_count = 0
 
+# ✅ برای جلوگیری از پردازش تکراری sell/buy
+processed_sell_ids = set()  # ← جدید
 processed_buy_ids = set()
 processed_bids = set()
 
@@ -212,9 +213,6 @@ def get_my_ids():
         return None, None
 
 
-# ============================================
-# 🎯 ارسال امن به چت
-# ============================================
 def safe_chat_send(message):
     CM(message)
 
@@ -995,7 +993,6 @@ class EditLimitsWindow:
 # ============================================
 SELL_PATTERN = re.compile(r'💰Sell ID:\s*(\w+)')
 
-# ✅ پترن اصلاح شده (با پشتیبانی از ? Ok=1)
 BUY_PATTERN = re.compile(
     r'(\w+):\s*💳Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s*>\s*for\s*([\d,]+)\s*coins(?:\?.*)?'
 )
@@ -1004,11 +1001,19 @@ BID_PATTERN = re.compile(r'\bb\s+(s\d+)\b', re.IGNORECASE)
 
 
 def process_sell(item_id):
+    # ✅ چک کن که قبلاً پردازش نشده باشه
+    if item_id in processed_sell_ids:
+        return
+    processed_sell_ids.add(item_id)
+    
+    # پاکسازی
+    if len(processed_sell_ids) > 100:
+        processed_sell_ids.clear()
+    
     safe_chat_send(f"b {item_id}")
 
 
 def process_buy(item_id, count, item_name, total_price):
-    # ✅ اگه آیتم ناشناخته بود، 0 بفرست
     if item_name not in LIMITS:
         safe_chat_send("0 ")
         return
@@ -1116,66 +1121,62 @@ def check_reaction(msg):
 
 
 # ============================================
-# 🎯 Check Chat
+# 🎯 Check Chat (index-based)
 # ============================================
 def check_chat():
+    global last_msg_count
+
     try:
         messages = GCM()
 
         if messages:
-            # ✅ 5 پیام آخر
-            for msg in messages[-5:]:
-                if msg in seen_messages_time:
-                    continue
+            current_count = len(messages)
 
-                seen_messages.append(msg)
-                seen_messages_time[msg] = time.time()
+            # ✅ اگه تعداد کم شد (چت ریست شد)
+            if current_count < last_msg_count:
+                last_msg_count = current_count
 
-                # چک واکنش
-                check_reaction(msg)
+            # ✅ پیام‌های جدید از index
+            if current_count > last_msg_count:
+                new_messages = messages[last_msg_count:current_count]
 
-                if not auto_buyer_enabled:
-                    continue
+                for msg in new_messages:
+                    check_reaction(msg)
 
-                # چک پیام فروش
-                m = SELL_PATTERN.search(msg)
-                if m:
-                    process_sell(m.group(1))
-                    continue
-
-                # چک b sXXX
-                is_mine = False
-                if my_own_name:
-                    if msg.startswith(f"{my_own_name}:") or msg.startswith(f"{my_own_name} :"):
-                        is_mine = True
-
-                if not is_mine:
-                    m2 = BID_PATTERN.search(msg)
-                    if m2:
-                        item_id = m2.group(1)
-                        process_bid(item_id)
+                    if not auto_buyer_enabled:
                         continue
 
-                # چک پیام خرید
-                m = BUY_PATTERN.search(msg)
-                if m:
-                    process_buy(
-                        m.group(1),
-                        int(m.group(2).replace(',', '')),
-                        m.group(3).lower(),
-                        int(m.group(4).replace(',', ''))
-                    )
-                    continue
+                    # چک پیام فروش
+                    m = SELL_PATTERN.search(msg)
+                    if m:
+                        process_sell(m.group(1))
+                        continue
 
-            # ✅ پاکسازی پیام‌های قدیمی (بیشتر از 30 ثانیه)
-            now = time.time()
-            to_del = [m for m, t in seen_messages_time.items() if now - t > 30]
-            for m in to_del:
-                del seen_messages_time[m]
-                try:
-                    seen_messages.remove(m)
-                except:
-                    pass
+                    # چک b sXXX
+                    is_mine = False
+                    if my_own_name:
+                        if msg.startswith(f"{my_own_name}:") or msg.startswith(f"{my_own_name} :"):
+                            is_mine = True
+
+                    if not is_mine:
+                        m2 = BID_PATTERN.search(msg)
+                        if m2:
+                            item_id = m2.group(1)
+                            process_bid(item_id)
+                            continue
+
+                    # چک پیام خرید
+                    m = BUY_PATTERN.search(msg)
+                    if m:
+                        process_buy(
+                            m.group(1),
+                            int(m.group(2).replace(',', '')),
+                            m.group(3).lower(),
+                            int(m.group(4).replace(',', ''))
+                        )
+                        continue
+
+                last_msg_count = current_count
 
     except Exception as e:
         print(f"Chat error: {e}")
@@ -1233,7 +1234,7 @@ def detect_calculation(message):
 # ba_meta export babase.Plugin
 class byMahyar(Plugin):
     def __init__(s):
-        global my_own_name, my_own_client_id, my_own_display_num
+        global my_own_name, my_own_client_id, my_own_display_num, last_msg_count
         s.seen_calc = []
         s.seen_calc_set = set()
 
@@ -1241,6 +1242,13 @@ class byMahyar(Plugin):
             my_own_name = APP.plus.get_v1_account_name()
         except:
             my_own_name = None
+
+        # ✅ index اولیه
+        try:
+            initial_messages = GCM()
+            last_msg_count = len(initial_messages) if initial_messages else 0
+        except:
+            last_msg_count = 0
 
         from bauiv1lib import party
         o = party.PartyWindow.__init__
