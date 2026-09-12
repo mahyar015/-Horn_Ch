@@ -862,12 +862,13 @@ class SpamWindow:
 
 
 # ============================================
-# 🔄 Reconnect Window (سریع + Rejoin قوی)
+# 🔄 Reconnect Window (Rejoin اصلاح شده)
 # ============================================
 class ReconnectWindow:
     def __init__(s, source):
         global server_ip, server_port
         server_ip, server_port = get_saved_server()
+        s._rejoining = False
         
         s.w = AR.cw(source=source, size=(320, 320), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(290, 280))
@@ -904,6 +905,11 @@ class ReconnectWindow:
                 AR.err('No server saved!')
                 return
 
+            # ✅ جلوگیری از چند بار کلیک
+            if getattr(s, '_rejoining', False):
+                return
+            s._rejoining = True
+
             tw(s.status, text='Disconnecting...', color=(1, 1, 0))
 
             # ✅ اول disconnect کن
@@ -914,42 +920,60 @@ class ReconnectWindow:
 
             push('Disconnected, reconnecting...', color=(1, 0.5, 0))
 
-            # ✅ Reconnect: تا وصل نشده ول نکن
-            def fast_reconnect(attempt=0):
-                try:
-                    # ✅ اگه وصل شدیم، تموم
-                    if get_connection_info():
-                        bui.screenmessage(f'Rejoined {server_ip}:{server_port}', color=(0, 1, 0))
-                        tw(s.status, text='Connected', color=(0, 1, 0))
-                        return
+            # ✅ شروع فرآیند
+            def start_reconnect():
+                push('Now connecting...', color=(0, 1, 1))
 
-                    # ✅ بعد از تعداد زیاد تلاش، از اول شروع کن (نه اینکه رها کنی)
-                    if attempt > 60:
-                        tw(s.status, text='Retrying...', color=(1, 0.5, 0))
-                        teck(0.5, lambda: fast_reconnect(0))
-                        return
+                def fast_reconnect(attempt=0):
+                    try:
+                        # ✅ اگه وصل شدیم، تموم
+                        if get_connection_info():
+                            bui.screenmessage(f'Rejoined {server_ip}:{server_port}', color=(0, 1, 0))
+                            tw(s.status, text='Connected', color=(0, 1, 0))
+                            s._rejoining = False
+                            return
 
-                    foreground = bascenev1.get_foreground_host_session()
-                    if isinstance(foreground, MainMenuSession):
-                        tw(s.status, text=f'Connecting... ({attempt})', color=(1, 1, 0))
-                        try:
-                            original_connect_to_party(server_ip, server_port)
-                        except Exception as e:
-                            print(f"Connect error: {e}")
-                        # ✅ 0.3 ثانیه صبر کن و دوباره چک کن
+                        # ✅ بعد از تعداد زیاد تلاش، از اول شروع کن
+                        if attempt > 60:
+                            tw(s.status, text='Retrying...', color=(1, 0.5, 0))
+                            teck(0.5, lambda: fast_reconnect(0))
+                            return
+
+                        foreground = bascenev1.get_foreground_host_session()
+                        if isinstance(foreground, MainMenuSession):
+                            tw(s.status, text=f'Connecting... ({attempt})', color=(1, 1, 0))
+                            try:
+                                original_connect_to_party(server_ip, server_port)
+                            except Exception as e:
+                                print(f"Connect error: {e}")
+                            teck(0.5, lambda: fast_reconnect(attempt + 1))
+                        else:
+                            # هنوز تو صحنه قدیمیه
+                            tw(s.status, text=f'Leaving... ({attempt})', color=(1, 1, 0))
+                            teck(0.15, lambda: fast_reconnect(attempt + 1))
+                    except Exception as e:
+                        print(f"Reconnect error: {e}")
                         teck(0.3, lambda: fast_reconnect(attempt + 1))
-                    else:
-                        # ✅ هنوز تو صحنه قدیمیه، سریع دوباره چک کن
-                        tw(s.status, text=f'Leaving... ({attempt})', color=(1, 1, 0))
-                        teck(0.15, lambda: fast_reconnect(attempt + 1))
-                except Exception as e:
-                    print(f"Reconnect error: {e}")
-                    teck(0.3, lambda: fast_reconnect(attempt + 1))
 
-            # ✅ شروع فوری
-            teck(0.2, fast_reconnect)
+                # ✅ شروع
+                teck(0.2, fast_reconnect)
+
+            # ✅ صبر کن تا disconnect کامل بشه (تا 3 ثانیه)
+            def wait_for_disconnect(wait_count=0):
+                # ✅ اگه دیگه وصل نیستیم یا timeout شده، شروع کن
+                if not get_connection_info():
+                    start_reconnect()
+                    return
+                if wait_count >= 20:  # 3 ثانیه timeout
+                    start_reconnect()
+                    return
+                # هنوز وصل‌ایم، صبر کن
+                teck(0.15, lambda: wait_for_disconnect(wait_count + 1))
+
+            teck(0.2, wait_for_disconnect)
 
         except Exception as e:
+            s._rejoining = False
             AR.err(f'RE failed: {e}')
 
     def disconnect(s):
