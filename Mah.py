@@ -368,6 +368,11 @@ def auto_reconnect_check():
                         auto_reconnect_busy = False
                         return
 
+                    if get_connection_info():
+                        push("Reconnected!", color=(0, 1, 0))
+                        auto_reconnect_busy = False
+                        return
+
                     foreground = bascenev1.get_foreground_host_session()
                     if isinstance(foreground, MainMenuSession):
                         push(f"Connecting... (try {attempt+1})", color=(1, 1, 0))
@@ -376,13 +381,12 @@ def auto_reconnect_check():
                         except Exception as e:
                             print(f"Auto connect attempt {attempt} error: {e}")
 
-                        # ✅ چک کن وصل شد یا نه
                         def check_connected(inner=0):
                             global auto_reconnect_busy
                             if not auto_reconnect_enabled:
                                 auto_reconnect_busy = False
                                 return
-                            if inner > 15:  # 3 ثانیه صبر
+                            if inner > 15:
                                 push("Retrying...", color=(1, 0.5, 0))
                                 teck(0.5, lambda: try_connect(attempt + 1))
                                 return
@@ -394,7 +398,6 @@ def auto_reconnect_check():
 
                         teck(0.5, check_connected)
                     else:
-                        # هنوز تو صحنه‌ای، 0.3 ثانیه دیگه صبر کن
                         teck(0.3, lambda: try_connect(attempt))
                 except Exception as e:
                     print(f"Auto reconnect error: {e}")
@@ -404,7 +407,6 @@ def auto_reconnect_check():
     except Exception as e:
         print(f"Auto reconnect check error: {e}")
 
-    # ✅ هر 2 ثانیه چک کن (سریع‌تر از قبل)
     auto_reconnect_timer = teck(2.0, auto_reconnect_check)
 
 
@@ -904,6 +906,7 @@ class ReconnectWindow:
 
             tw(s.status, text='Disconnecting...', color=(1, 1, 0))
 
+            # ✅ اول disconnect کن
             try:
                 original_disconnect()
             except:
@@ -911,35 +914,37 @@ class ReconnectWindow:
 
             push('Disconnected, reconnecting...', color=(1, 0.5, 0))
 
-            # ✅ Reconnect سریع: هر 0.15 ثانیه تلاش
+            # ✅ Reconnect: تا وصل نشده ول نکن
             def fast_reconnect(attempt=0):
-                if attempt > 60:  # حداکثر 60 تلاش (~9 ثانیه)
-                    tw(s.status, text='Failed', color=(1, 0, 0))
-                    bui.screenmessage('Rejoin failed!', color=(1, 0, 0))
-                    return
                 try:
+                    # ✅ اگه وصل شدیم، تموم
+                    if get_connection_info():
+                        bui.screenmessage(f'Rejoined {server_ip}:{server_port}', color=(0, 1, 0))
+                        tw(s.status, text='Connected', color=(0, 1, 0))
+                        return
+
+                    # ✅ بعد از تعداد زیاد تلاش، از اول شروع کن (نه اینکه رها کنی)
+                    if attempt > 60:
+                        tw(s.status, text='Retrying...', color=(1, 0.5, 0))
+                        teck(0.5, lambda: fast_reconnect(0))
+                        return
+
                     foreground = bascenev1.get_foreground_host_session()
                     if isinstance(foreground, MainMenuSession):
                         tw(s.status, text=f'Connecting... ({attempt})', color=(1, 1, 0))
-                        original_connect_to_party(server_ip, server_port)
-
-                        # ✅ چک کن وصل شد یا نه
-                        def check_ok(inner=0):
-                            if inner > 20:  # 3 ثانیه صبر
-                                teck(0.2, lambda: fast_reconnect(attempt + 1))
-                                return
-                            if get_connection_info():
-                                bui.screenmessage(f'Rejoined {server_ip}:{server_port}', color=(0, 1, 0))
-                                tw(s.status, text='Connected', color=(0, 1, 0))
-                            else:
-                                teck(0.15, lambda: check_ok(inner + 1))
-
-                        teck(0.15, check_ok)
+                        try:
+                            original_connect_to_party(server_ip, server_port)
+                        except Exception as e:
+                            print(f"Connect error: {e}")
+                        # ✅ 0.3 ثانیه صبر کن و دوباره چک کن
+                        teck(0.3, lambda: fast_reconnect(attempt + 1))
                     else:
-                        tw(s.status, text=f'Waiting... ({attempt})', color=(1, 1, 0))
+                        # ✅ هنوز تو صحنه قدیمیه، سریع دوباره چک کن
+                        tw(s.status, text=f'Leaving... ({attempt})', color=(1, 1, 0))
                         teck(0.15, lambda: fast_reconnect(attempt + 1))
                 except Exception as e:
-                    teck(0.2, lambda: fast_reconnect(attempt + 1))
+                    print(f"Reconnect error: {e}")
+                    teck(0.3, lambda: fast_reconnect(attempt + 1))
 
             # ✅ شروع فوری
             teck(0.2, fast_reconnect)
