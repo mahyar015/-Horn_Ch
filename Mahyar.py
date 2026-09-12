@@ -1,4 +1,4 @@
-from babase import Plugin
+from babase import Plugin, AppTimer
 from bauiv1 import (
     containerwidget as cw,
     buttonwidget as bw,
@@ -27,15 +27,9 @@ import bauiv1 as bui
 import bascenev1
 from babase import app
 
-# ✅ دو تا تایمر جدا
-from babase import apptimer as teck_scene
-
-try:
-    from _babase import apptimer as teck
-    print("[Mahyar] ✅ Using _babase.apptimer (SCENE-INDEPENDENT)")
-except Exception as e:
-    from babase import apptimer as teck
-    print(f"[Mahyar] ⚠️ Fallback to babase.apptimer: {e}")
+# ✅ این دقیقاً همون چیزیه که رفیقت استفاده می‌کنه
+from babase import AppTimer
+from bauiv1 import apptimer as teck_scene
 
 from bascenev1lib.mainmenu import MainMenuSession
 
@@ -198,6 +192,12 @@ my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
 
+# hash-based
+_processed_msg_hashes = set()
+_MAX_HASHES = 500
+_calc_processed_hashes = set()
+_MAX_CALC_HASHES = 200
+
 
 class AR:
     @classmethod
@@ -324,7 +324,7 @@ def spam_send():
         spam_counter += 1
         if spam_counter >= 100: spam_counter = 0
         safe_chat_send(spam_message + suffix)
-        spam_timer = teck(spam_delay, spam_send)
+        spam_timer = teck_scene(spam_delay, spam_send)
     except:
         spam_active = False
 
@@ -391,12 +391,12 @@ def auto_reconnect_check():
                         except Exception as e:
                             print(f"Auto connect attempt {attempt} error: {e}")
 
-                        teck(0.5, lambda: try_connect(attempt + 1))
+                        teck_scene(0.5, lambda: try_connect(attempt + 1))
                     else:
-                        teck(0.3, lambda: try_connect(attempt))
+                        teck_scene(0.3, lambda: try_connect(attempt))
                 except Exception as e:
                     print(f"Auto reconnect error: {e}")
-                    teck(0.5, lambda: try_connect(attempt + 1))
+                    teck_scene(0.5, lambda: try_connect(attempt + 1))
 
             try_connect()
     except Exception as e:
@@ -916,11 +916,11 @@ class ReconnectWindow:
                             bui.screenmessage(f'Connected to {ip}:{port}', color=(0, 1, 0))
                             tw(s.status, text='Connected', color=(0, 1, 0))
                         else:
-                            teck(0.15, lambda: do_connect(attempt + 1))
+                            teck_scene(0.15, lambda: do_connect(attempt + 1))
                     except Exception as e:
-                        teck(0.2, lambda: do_connect(attempt + 1))
+                        teck_scene(0.2, lambda: do_connect(attempt + 1))
 
-                teck(0.2, do_connect)
+                teck_scene(0.2, do_connect)
             else:
                 original_connect_to_party(ip, port)
                 bui.screenmessage(f'Connected to {ip}:{port}', color=(0, 1, 0))
@@ -1097,20 +1097,13 @@ def check_reaction(msg):
 
 
 # ============================================
-# 🎯 Hash-based Message Processing (ضد مرگ قطعی)
+# 🎯 Hash-based Message Processing
 # ============================================
 last_saved_ip = None
 last_saved_port = None
 
-_processed_msg_hashes = set()
-_MAX_HASHES = 500
-
-_calc_processed_hashes = set()
-_MAX_CALC_HASHES = 200
-
 
 def _msg_hash(msg):
-    """hash یکتا برای هر پیام"""
     try:
         return f"{len(msg)}|{msg[:80]}|{msg[-20:] if len(msg) > 80 else ''}"
     except:
@@ -1122,7 +1115,6 @@ def check_chat_once():
     global _processed_msg_hashes
 
     try:
-        # ✅ IP/Port
         try:
             conn = get_connection_info()
             if conn:
@@ -1141,15 +1133,12 @@ def check_chat_once():
         except Exception as e:
             print(f"Error saving server: {e}")
 
-        # ✅ پیام‌ها
         messages = GCM()
         if not messages:
             return
 
-        # ✅ فقط 20 پیام آخر
         recent = messages[-20:] if len(messages) > 20 else messages[:]
 
-        # ✅ پیام‌های جدید
         new_msgs = []
         for msg in recent:
             h = _msg_hash(msg)
@@ -1157,13 +1146,11 @@ def check_chat_once():
                 new_msgs.append(msg)
                 _processed_msg_hashes.add(h)
 
-        # ✅ پاکسازی hash ها
         if len(_processed_msg_hashes) > _MAX_HASHES:
             hashes_to_remove = list(_processed_msg_hashes)[:_MAX_HASHES // 2]
             for h in hashes_to_remove:
                 _processed_msg_hashes.discard(h)
 
-        # ✅ پردازش
         for msg in new_msgs:
             try:
                 if check_spam_command(msg): continue
@@ -1281,84 +1268,6 @@ def check_spam_command(msg):
 
 
 # ============================================
-# 🔄 PERSISTENT LOOPS (مستقل از صحنه - ضد مرگ)
-# ============================================
-_loops_started = False
-
-
-def chat_loop():
-    try:
-        check_chat_once()
-    except BaseException as e:
-        try:
-            print(f"[Mahyar] chat_loop error: {type(e).__name__}: {e}")
-        except: pass
-    finally:
-        try:
-            teck(0.1, chat_loop)
-        except BaseException as e:
-            try:
-                print(f"[Mahyar] chat_loop restart FAILED: {e}")
-            except: pass
-
-
-def calc_loop():
-    try:
-        check_calc_once()
-    except BaseException as e:
-        try:
-            print(f"[Mahyar] calc_loop error: {type(e).__name__}: {e}")
-        except: pass
-    finally:
-        try:
-            teck(0.3, calc_loop)
-        except BaseException as e:
-            try:
-                print(f"[Mahyar] calc_loop restart FAILED: {e}")
-            except: pass
-
-
-def auto_reconnect_loop():
-    try:
-        auto_reconnect_check()
-    except BaseException as e:
-        try:
-            print(f"[Mahyar] autoreconnect_loop error: {type(e).__name__}: {e}")
-        except: pass
-    finally:
-        try:
-            teck(2.0, auto_reconnect_loop)
-        except BaseException as e:
-            try:
-                print(f"[Mahyar] autoreconnect_loop restart FAILED: {e}")
-            except: pass
-
-
-def start_all_loops():
-    """شروع همه حلقه‌های پایدار - فقط یک بار"""
-    global _loops_started
-    if _loops_started:
-        return
-    _loops_started = True
-    print("[Mahyar] 🚀 Starting persistent loops (scene-independent)...")
-    try:
-        teck(0.1, chat_loop)
-        print("[Mahyar] ✅ Chat loop started")
-    except Exception as e:
-        print(f"Failed to start chat_loop: {e}")
-    try:
-        teck(0.3, calc_loop)
-        print("[Mahyar] ✅ Calc loop started")
-    except Exception as e:
-        print(f"Failed to start calc_loop: {e}")
-    try:
-        teck(1.0, auto_reconnect_loop)
-        print("[Mahyar] ✅ AutoReconnect loop started")
-    except Exception as e:
-        print(f"Failed to start auto_reconnect_loop: {e}")
-
-
-# ============================================
 # 🎯 Main Plugin
 # ============================================
 # ba_meta require api 9
@@ -1368,6 +1277,13 @@ class byMahyar(Plugin):
         global my_own_name
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
+
+        # ✅✅✅ این کلید جادوییه! مثل مود رفیقت
+        # AppTimer با repeat=True خودش خودکار تکرار می‌شه و NEVER می‌میره
+        s._chat_timer = AppTimer(0.05, check_chat_once, repeat=True)
+        s._calc_timer = AppTimer(0.3, check_calc_once, repeat=True)
+        s._reconnect_timer = AppTimer(2.0, auto_reconnect_check, repeat=True)
+        print("[Mahyar] ✅ AppTimer (repeat=True) started - WILL NEVER STOP")
 
         from bauiv1lib import party
         o = party.PartyWindow.__init__
@@ -1403,9 +1319,6 @@ class byMahyar(Plugin):
             return r
 
         party.PartyWindow.__init__ = e
-
-        # ✅ شروع همه حلقه‌های پایدار
-        start_all_loops()
 
         teck_scene(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
 
