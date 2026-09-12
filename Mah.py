@@ -142,7 +142,6 @@ def save_enabled_state(key, value):
     except: pass
 
 
-# ✅ ذخیره IP/Port در config (دائمی)
 def get_saved_server():
     try:
         ip = app.config.get('mahyar_server_ip', '127.0.0.1')
@@ -182,7 +181,6 @@ spam_delay = 2.0
 spam_counter = 0
 spam_timer = None
 
-# ✅ IP/Port ذخیره شده
 server_ip, server_port = get_saved_server()
 
 auto_reconnect_enabled = False
@@ -258,15 +256,16 @@ def safe_chat_send(message):
 original_connect_to_party = original_connect
 
 def new_connect_to_party(address, port=43210, print_progress=False):
-    global server_ip, server_port
+    global server_ip, server_port, last_saved_ip, last_saved_port
     server_ip = address
     server_port = port
+    last_saved_ip = address
+    last_saved_port = port
     save_server(address, port)
     push(f'Saved server: {address}:{port}', color=(0, 1, 1))
     return original_connect_to_party(address, port, print_progress)
 
 
-# ✅ جایگزینی تابع
 bascenev1.connect_to_party = new_connect_to_party
 
 
@@ -342,45 +341,88 @@ def stop_spam():
 
 
 # ============================================
-# 🔄 Auto Reconnect Logic
+# 🔄 Auto Reconnect Logic (قوی + سریع)
 # ============================================
+auto_reconnect_busy = False
+
+
 def auto_reconnect_check():
     global auto_reconnect_enabled, auto_reconnect_timer, server_ip, server_port
-    
+    global auto_reconnect_busy
+
     if not auto_reconnect_enabled:
         return
-    
+
     try:
         conn = get_connection_info()
-        
-        if not conn:
-            if server_ip != "127.0.0.1":
-                push("Auto Reconnecting...", color=(1, 1, 0))
+
+        if not conn and server_ip and server_ip != "127.0.0.1" and not auto_reconnect_busy:
+            auto_reconnect_busy = True
+            push("Auto Reconnecting...", color=(1, 1, 0))
+
+            def try_connect(attempt=0):
+                global auto_reconnect_busy
+                # ✅ تا وقتی وصل نشده ول نکن
                 try:
+                    if not auto_reconnect_enabled:
+                        auto_reconnect_busy = False
+                        return
+
                     foreground = bascenev1.get_foreground_host_session()
                     if isinstance(foreground, MainMenuSession):
-                        original_connect_to_party(server_ip, server_port)
+                        push(f"Connecting... (try {attempt+1})", color=(1, 1, 0))
+                        try:
+                            original_connect_to_party(server_ip, server_port)
+                        except Exception as e:
+                            print(f"Auto connect attempt {attempt} error: {e}")
+
+                        # ✅ چک کن وصل شد یا نه
+                        def check_connected(inner=0):
+                            global auto_reconnect_busy
+                            if not auto_reconnect_enabled:
+                                auto_reconnect_busy = False
+                                return
+                            if inner > 15:  # 3 ثانیه صبر
+                                push("Retrying...", color=(1, 0.5, 0))
+                                teck(0.5, lambda: try_connect(attempt + 1))
+                                return
+                            if get_connection_info():
+                                push("Reconnected!", color=(0, 1, 0))
+                                auto_reconnect_busy = False
+                            else:
+                                teck(0.2, lambda: check_connected(inner + 1))
+
+                        teck(0.5, check_connected)
+                    else:
+                        # هنوز تو صحنه‌ای، 0.3 ثانیه دیگه صبر کن
+                        teck(0.3, lambda: try_connect(attempt))
                 except Exception as e:
-                    print(f"Auto reconnect failed: {e}")
+                    print(f"Auto reconnect error: {e}")
+                    teck(0.5, lambda: try_connect(attempt + 1))
+
+            try_connect()
     except Exception as e:
         print(f"Auto reconnect check error: {e}")
-    
-    auto_reconnect_timer = teck(3.0, auto_reconnect_check)
+
+    # ✅ هر 2 ثانیه چک کن (سریع‌تر از قبل)
+    auto_reconnect_timer = teck(2.0, auto_reconnect_check)
 
 
 def start_auto_reconnect():
-    global auto_reconnect_enabled, auto_reconnect_timer
+    global auto_reconnect_enabled, auto_reconnect_timer, auto_reconnect_busy
     auto_reconnect_enabled = True
+    auto_reconnect_busy = False
     if auto_reconnect_timer:
         try: auto_reconnect_timer.cancel()
         except: pass
-    auto_reconnect_timer = teck(3.0, auto_reconnect_check)
+    auto_reconnect_timer = teck(1.0, auto_reconnect_check)
     push("Auto Reconnect: ON", color=(0, 1, 0))
 
 
 def stop_auto_reconnect():
-    global auto_reconnect_enabled, auto_reconnect_timer
+    global auto_reconnect_enabled, auto_reconnect_timer, auto_reconnect_busy
     auto_reconnect_enabled = False
+    auto_reconnect_busy = False
     if auto_reconnect_timer:
         try: auto_reconnect_timer.cancel()
         except: pass
@@ -818,7 +860,7 @@ class SpamWindow:
 
 
 # ============================================
-# 🔄 Reconnect Window
+# 🔄 Reconnect Window (سریع + Rejoin قوی)
 # ============================================
 class ReconnectWindow:
     def __init__(s, source):
@@ -852,45 +894,56 @@ class ReconnectWindow:
 
     def re_button(s):
         global server_ip, server_port
+        # ✅ از config بخون تا جدیدترین IP/Port
         server_ip, server_port = get_saved_server()
-        
+
         try:
-            foreground = bascenev1.get_foreground_host_session()
-            if isinstance(foreground, MainMenuSession):
-                push('Not in a server!', color=(0, 1, 1))
-                return
-            
-            if server_ip == "127.0.0.1":
+            if not server_ip or server_ip == "127.0.0.1":
                 AR.err('No server saved!')
                 return
-            
+
             tw(s.status, text='Disconnecting...', color=(1, 1, 0))
-            
+
             try:
                 original_disconnect()
             except:
                 pass
-            
+
             push('Disconnected, reconnecting...', color=(1, 0.5, 0))
-            
-            def reconnect():
+
+            # ✅ Reconnect سریع: هر 0.15 ثانیه تلاش
+            def fast_reconnect(attempt=0):
+                if attempt > 60:  # حداکثر 60 تلاش (~9 ثانیه)
+                    tw(s.status, text='Failed', color=(1, 0, 0))
+                    bui.screenmessage('Rejoin failed!', color=(1, 0, 0))
+                    return
                 try:
                     foreground = bascenev1.get_foreground_host_session()
-                    
                     if isinstance(foreground, MainMenuSession):
-                        tw(s.status, text='Connecting...', color=(1, 1, 0))
+                        tw(s.status, text=f'Connecting... ({attempt})', color=(1, 1, 0))
                         original_connect_to_party(server_ip, server_port)
-                        bui.screenmessage(f'Rejoined {server_ip}:{server_port}', color=(0, 1, 0))
-                        tw(s.status, text='Connected', color=(0, 1, 0))
+
+                        # ✅ چک کن وصل شد یا نه
+                        def check_ok(inner=0):
+                            if inner > 20:  # 3 ثانیه صبر
+                                teck(0.2, lambda: fast_reconnect(attempt + 1))
+                                return
+                            if get_connection_info():
+                                bui.screenmessage(f'Rejoined {server_ip}:{server_port}', color=(0, 1, 0))
+                                tw(s.status, text='Connected', color=(0, 1, 0))
+                            else:
+                                teck(0.15, lambda: check_ok(inner + 1))
+
+                        teck(0.15, check_ok)
                     else:
-                        tw(s.status, text='Waiting...', color=(1, 1, 0))
-                        teck(1.5, reconnect)
+                        tw(s.status, text=f'Waiting... ({attempt})', color=(1, 1, 0))
+                        teck(0.15, lambda: fast_reconnect(attempt + 1))
                 except Exception as e:
-                    bui.screenmessage(f'Rejoin failed: {e}', color=(1, 0, 0))
-                    tw(s.status, text='Failed', color=(1, 0, 0))
-            
-            teck(3.0, reconnect)
-            
+                    teck(0.2, lambda: fast_reconnect(attempt + 1))
+
+            # ✅ شروع فوری
+            teck(0.2, fast_reconnect)
+
         except Exception as e:
             AR.err(f'RE failed: {e}')
 
@@ -916,13 +969,17 @@ class ReconnectWindow:
             save_server(ip, port)
             tw(s.ip_text, text=f'IP: {server_ip}')
             tw(s.port_text, text=f'Port: {server_port}')
-            
+
             conn = get_connection_info()
             if conn:
-                original_disconnect()
+                try: original_disconnect()
+                except: pass
                 tw(s.status, text='Disconnecting...', color=(1, 1, 0))
-                
-                def do_connect():
+
+                def do_connect(attempt=0):
+                    if attempt > 60:
+                        tw(s.status, text='Failed', color=(1, 0, 0))
+                        return
                     try:
                         foreground = bascenev1.get_foreground_host_session()
                         if isinstance(foreground, MainMenuSession):
@@ -930,11 +987,11 @@ class ReconnectWindow:
                             bui.screenmessage(f'Connected to {ip}:{port}', color=(0, 1, 0))
                             tw(s.status, text='Connected', color=(0, 1, 0))
                         else:
-                            teck(1.5, do_connect)
+                            teck(0.15, lambda: do_connect(attempt + 1))
                     except Exception as e:
-                        bui.screenmessage(f'Connect failed: {e}', color=(1, 0, 0))
-                
-                teck(3.0, do_connect)
+                        teck(0.2, lambda: do_connect(attempt + 1))
+
+                teck(0.2, do_connect)
             else:
                 original_connect_to_party(ip, port)
                 bui.screenmessage(f'Connected to {ip}:{port}', color=(0, 1, 0))
@@ -1122,10 +1179,14 @@ def check_reaction(msg):
 
 
 # ============================================
-# 🎯 Check Chat
+# 🎯 Check Chat (IP/Port رو همیشه آپدیت می‌کنه)
 # ============================================
+last_saved_ip = None
+last_saved_port = None
+
+
 def check_chat():
-    global last_msg_count, server_ip, server_port
+    global last_msg_count, server_ip, server_port, last_saved_ip, last_saved_port
     try:
         # ✅ گرفتن IP و Port از connection info (جدا از هم)
         try:
@@ -1137,9 +1198,12 @@ def check_chat():
                 if new_ip and new_port:
                     new_ip = str(new_ip)
                     new_port = int(new_port)
-                    if new_ip != server_ip or new_port != server_port:
+                    # ✅ اگه IP/Port جدید با قبلی فرق داشت، ذخیره کن
+                    if new_ip != last_saved_ip or new_port != last_saved_port:
                         server_ip = new_ip
                         server_port = new_port
+                        last_saved_ip = new_ip
+                        last_saved_port = new_port
                         save_server(server_ip, server_port)
                         push(f'Server saved: {server_ip}:{server_port}', color=(0, 1, 1))
                         print(f"✅ Saved server: {server_ip}:{server_port}")
