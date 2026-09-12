@@ -82,7 +82,7 @@ def save_limits(limits):
 
 def get_reactions():
     try:
-        saved = app.config.get('mahyar_reactions_v10', None)
+        saved = app.config.get('mahyar_reactions_v11', None)
         if saved:
             d = dict(DEFAULT_REACTIONS)
             d.update(saved)
@@ -94,7 +94,7 @@ def get_reactions():
 
 def save_reactions(reactions):
     try:
-        app.config['mahyar_reactions_v10'] = dict(reactions)
+        app.config['mahyar_reactions_v11'] = dict(reactions)
         app.config.commit()
     except:
         pass
@@ -102,7 +102,7 @@ def save_reactions(reactions):
 
 def get_cooldowns():
     try:
-        saved = app.config.get('mahyar_cooldowns_v10', None)
+        saved = app.config.get('mahyar_cooldowns_v11', None)
         if saved:
             d = dict(DEFAULT_COOLDOWNS)
             d.update(saved)
@@ -114,7 +114,7 @@ def get_cooldowns():
 
 def save_cooldowns(cooldowns):
     try:
-        app.config['mahyar_cooldowns_v10'] = dict(cooldowns)
+        app.config['mahyar_cooldowns_v11'] = dict(cooldowns)
         app.config.commit()
     except:
         pass
@@ -125,11 +125,12 @@ REACTIONS = get_reactions()
 COOLDOWNS = get_cooldowns()
 auto_buyer_enabled = True
 
-# ✅ ردیابی پیام‌های پردازش شده
-last_msg_count = 0
+# ✅ برگردیم به روش seen_messages که کار میکرد
+seen_messages = []        # فقط متن پیام‌ها
+seen_messages_time = {}   # {msg: time} برای پاکسازی خودکار
 
-# ✅ تعداد پیام‌های ارسالی توسط خودمون (که نباید پردازش بشن)
-our_sent_count = 0
+processed_buy_ids = set()
+processed_bids = set()
 
 # ✅ cooldown storage
 react_cooldown = {}
@@ -215,10 +216,7 @@ def get_my_ids():
 # 🎯 تابع امن برای ارسال به چت
 # ============================================
 def safe_chat_send(message):
-    """پیام رو به چت میفرسته و شمارنده خودمون رو آپدیت میکنه"""
-    global our_sent_count
     CM(message)
-    our_sent_count += 1
 
 
 # ============================================
@@ -1008,6 +1006,8 @@ def process_sell(item_id):
 
 def process_buy(item_id, count, item_name, total_price):
     if item_name not in LIMITS:
+        # ✅ اگه آیتم ناشناخته بود، 0 بفرست
+        safe_chat_send("0 ")
         return
 
     bid_key = f"{item_id}_{item_name}_{count}_{total_price}"
@@ -1030,6 +1030,22 @@ def process_buy(item_id, count, item_name, total_price):
         gs('dingSmallHigh').play()
     else:
         safe_chat_send("0 ")
+
+
+def process_bid(item_id):
+    if not auto_buyer_enabled:
+        return
+
+    try:
+        key = f"bid_{item_id}"
+        if key in processed_bids:
+            return
+        processed_bids.add(key)
+
+        safe_chat_send(f"b {item_id}")
+        gs('dingSmall').play()
+    except Exception as e:
+        print(f"Bid error: {e}")
 
 
 # ============================================
@@ -1088,7 +1104,6 @@ def check_reaction(msg):
                     for k in to_del:
                         del react_cooldown[k]
 
-                # ✅ ارسال فوری (بدون teck)
                 safe_chat_send(response)
                 gs('dingSmall').play()
                 break
@@ -1098,81 +1113,72 @@ def check_reaction(msg):
 
 
 # ============================================
-# 🎯 Check Chat (فقط پیام‌های جدید)
+# 🎯 Check Chat (برگشت به روش seen_messages)
 # ============================================
 def check_chat():
-    global last_msg_count
+    global seen_messages, seen_messages_time
 
     try:
         messages = GCM()
 
         if messages:
-            current_count = len(messages)
+            # ✅ فقط 5 پیام آخر
+            for msg in messages[-5:]:
+                # اگه قبلاً دیدیمش، برو بعدی
+                if msg in seen_messages_time:
+                    continue
 
-            # ✅ اگه تعداد پیام‌ها کم شد
-            if current_count < last_msg_count:
-                last_msg_count = current_count
+                # ✅ پیام جدید!
+                seen_messages.append(msg)
+                seen_messages_time[msg] = time.time()
 
-            # ✅ پیام‌های جدید
-            if current_count > last_msg_count:
-                new_messages = messages[last_msg_count:current_count]
+                # پردازش
+                check_reaction(msg)
 
-                for msg in new_messages:
-                    check_reaction(msg)
+                if not auto_buyer_enabled:
+                    continue
 
-                    if not auto_buyer_enabled:
+                m = SELL_PATTERN.search(msg)
+                if m:
+                    process_sell(m.group(1))
+                    continue
+
+                is_mine = False
+                if my_own_name:
+                    if msg.startswith(f"{my_own_name}:") or msg.startswith(f"{my_own_name} :"):
+                        is_mine = True
+
+                if not is_mine:
+                    m2 = BID_PATTERN.search(msg)
+                    if m2:
+                        item_id = m2.group(1)
+                        process_bid(item_id)
                         continue
 
-                    m = SELL_PATTERN.search(msg)
-                    if m:
-                        process_sell(m.group(1))
-                        continue
+                m = BUY_PATTERN.search(msg)
+                if m:
+                    process_buy(
+                        m.group(1),
+                        int(m.group(2).replace(',', '')),
+                        m.group(3).lower(),
+                        int(m.group(4).replace(',', ''))
+                    )
+                    continue
 
-                    is_mine = False
-                    if my_own_name:
-                        if msg.startswith(f"{my_own_name}:") or msg.startswith(f"{my_own_name} :"):
-                            is_mine = True
-
-                    if not is_mine:
-                        m2 = BID_PATTERN.search(msg)
-                        if m2:
-                            item_id = m2.group(1)
-                            process_bid(item_id)
-                            continue
-
-                    m = BUY_PATTERN.search(msg)
-                    if m:
-                        process_buy(
-                            m.group(1),
-                            int(m.group(2).replace(',', '')),
-                            m.group(3).lower(),
-                            int(m.group(4).replace(',', ''))
-                        )
-                        continue
-
-                # ✅ آپدیت index
-                last_msg_count = current_count
+            # ✅ پاکسازی پیام‌های قدیمی (بیشتر از 30 ثانیه)
+            now = time.time()
+            to_del = [m for m, t in seen_messages_time.items() if now - t > 30]
+            for m in to_del:
+                del seen_messages_time[m]
+                try:
+                    seen_messages.remove(m)
+                except:
+                    pass
 
     except Exception as e:
         print(f"Chat error: {e}")
 
     teck(0.05, check_chat)
-
-
-def process_bid(item_id):
-    if not auto_buyer_enabled:
-        return
-
-    try:
-        key = f"bid_{item_id}"
-        if key in processed_bids:
-            return
-        processed_bids.add(key)
-
-        safe_chat_send(f"b {item_id}")
-        gs('dingSmall').play()
-    except Exception as e:
-        print(f"Bid error: {e}")
 
 
 # ============================================
@@ -1225,7 +1231,7 @@ def detect_calculation(message):
 # ba_meta export babase.Plugin
 class byMahyar(Plugin):
     def __init__(s):
-        global my_own_name, my_own_client_id, my_own_display_num, last_msg_count, our_sent_count
+        global my_own_name, my_own_client_id, my_own_display_num
         s.seen_calc = []
         s.seen_calc_set = set()
 
@@ -1233,15 +1239,6 @@ class byMahyar(Plugin):
             my_own_name = APP.plus.get_v1_account_name()
         except:
             my_own_name = None
-
-        # ✅ index اولیه
-        try:
-            initial_messages = GCM()
-            last_msg_count = len(initial_messages) if initial_messages else 0
-        except:
-            last_msg_count = 0
-
-        our_sent_count = 0
 
         from bauiv1lib import party
         o = party.PartyWindow.__init__
