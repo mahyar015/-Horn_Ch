@@ -23,12 +23,10 @@ from bascenev1 import (
 import math
 import re
 import time
-import threading
 import bauiv1 as bui
 import bascenev1
 from babase import app
 
-from babase import AppTimer
 from bauiv1 import apptimer as teck_scene
 
 from bascenev1lib.mainmenu import MainMenuSession
@@ -295,9 +293,6 @@ def check_auto_reply(msg):
 
         for keyword, response in AUTO_REPLIES.items():
             kw_lower = keyword.lower()
-
-            # ✅ چک کن کلمه به تنهایی یا وسط جمله هست
-            # \b برای مرز کلمه: کلمه فقط اگه با فاصله/علائم جدا شده باشه
             pattern = r'\b' + re.escape(kw_lower) + r'\b'
             if re.search(pattern, content_lower, re.IGNORECASE):
                 cd_key = f"{keyword}_{sender or 'unknown'}"
@@ -473,12 +468,16 @@ class Calculator:
         else: current = '0'
         s.current_input = current; s.update_display(); gs('swish').play()
     def update_display(s):
-        if s.display.exists(): tw(s.display, text=s.current_input)
+        try:
+            if s.display.exists(): tw(s.display, text=s.current_input)
+        except: pass
     def set_operation(s, op):
         if s.operation and not s.reset_next_input: s.calculate()
         s.previous_input = s.current_input; s.operation = op; s.reset_next_input = True
         op_symbol = {'+': '+', '-': '-', '*': '×', '/': '/', '**': '^'}.get(op, op)
-        if s.expression.exists(): tw(s.expression, text=f"{s.current_input} {op_symbol}")
+        try:
+            if s.expression.exists(): tw(s.expression, text=f"{s.current_input} {op_symbol}")
+        except: pass
         gs('click01').play()
     def calculate(s):
         try:
@@ -496,13 +495,17 @@ class Calculator:
             else: return
             result_str = str(int(result)) if result == int(result) else str(round(result, 10))
             s.current_input = result_str; s.last_expression += f" = {result_str}"
-            if s.expression.exists(): tw(s.expression, text=s.last_expression)
+            try:
+                if s.expression.exists(): tw(s.expression, text=s.last_expression)
+            except: pass
             s.operation = None; s.reset_next_input = True; s.update_display(); gs('dingSmallHigh').play()
         except: s.current_input = 'Error'; s.update_display(); gs('error').play(); teck_scene(2.0, s.clear_all)
     def clear_all(s):
         s.current_input = '0'; s.previous_input = ''; s.operation = None; s.reset_next_input = False; s.last_expression = ''
         s.update_display()
-        if s.expression.exists(): tw(s.expression, text='')
+        try:
+            if s.expression.exists(): tw(s.expression, text='')
+        except: pass
         gs('swish').play()
     def toggle_sign(s):
         if s.current_input != '0':
@@ -1112,105 +1115,132 @@ def _msg_hash(msg):
     try:
         return f"{len(msg)}|{msg[:80]}|{msg[-20:] if len(msg) > 80 else ''}"
     except:
-        return f"{len(msg)}|{msg[:50]}"
+        try:
+            return f"{len(msg)}|{msg[:50]}"
+        except:
+            return "unknown"
 
 
 def check_chat_once():
     global server_ip, server_port, last_saved_ip, last_saved_port
     global _processed_msg_hashes
 
+    # ✅ IP/Port
     try:
-        try:
-            conn = get_connection_info()
-            if conn:
-                new_ip = getattr(conn, 'address', None)
-                new_port = getattr(conn, 'port', None)
-                if new_ip and new_port:
-                    new_ip = str(new_ip)
-                    new_port = int(new_port)
-                    if new_ip != last_saved_ip or new_port != last_saved_port:
-                        server_ip = new_ip
-                        server_port = new_port
-                        last_saved_ip = new_ip
-                        last_saved_port = new_port
-                        save_server(server_ip, server_port)
-                        push(f'Server saved: {server_ip}:{server_port}', color=(0, 1, 1))
-        except Exception as e:
-            print(f"Error saving server: {e}")
+        conn = get_connection_info()
+        if conn:
+            new_ip = getattr(conn, 'address', None)
+            new_port = getattr(conn, 'port', None)
+            if new_ip and new_port:
+                new_ip = str(new_ip)
+                new_port = int(new_port)
+                if new_ip != last_saved_ip or new_port != last_saved_port:
+                    server_ip = new_ip
+                    server_port = new_port
+                    last_saved_ip = new_ip
+                    last_saved_port = new_port
+                    save_server(server_ip, server_port)
+    except:
+        pass
 
+    # ✅ پیام‌ها
+    try:
         messages = GCM()
-        if not messages:
-            return
+    except:
+        return
+    if not messages:
+        return
 
+    try:
         recent = messages[-20:] if len(messages) > 20 else messages[:]
+    except:
+        return
 
-        new_msgs = []
-        for msg in recent:
+    # ✅ پیام‌های جدید
+    new_msgs = []
+    for msg in recent:
+        try:
             h = _msg_hash(msg)
             if h not in _processed_msg_hashes:
                 new_msgs.append(msg)
                 _processed_msg_hashes.add(h)
+        except:
+            continue
 
+    # ✅ پاکسازی
+    try:
         if len(_processed_msg_hashes) > _MAX_HASHES:
             hashes_to_remove = list(_processed_msg_hashes)[:_MAX_HASHES // 2]
             for h in hashes_to_remove:
                 _processed_msg_hashes.discard(h)
+    except:
+        pass
 
-        for msg in new_msgs:
-            try:
-                if check_spam_command(msg): continue
-                if check_auto_reply(msg): continue
-                check_reaction(msg)
-                if not auto_buyer_enabled: continue
-                m = SELL_PATTERN.search(msg)
-                if m:
-                    process_sell(m.group(1))
-                    continue
-                m = BUY_PATTERN.search(msg)
-                if m:
-                    process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
-                    continue
-            except Exception as e:
-                print(f"[Mahyar] msg error: {e}")
+    # ✅ پردازش هر پیام مستقل
+    for msg in new_msgs:
+        try:
+            if check_spam_command(msg): continue
+        except: pass
+        try:
+            if check_auto_reply(msg): continue
+        except: pass
+        try:
+            check_reaction(msg)
+        except: pass
+        try:
+            if not auto_buyer_enabled: continue
+            m = SELL_PATTERN.search(msg)
+            if m:
+                process_sell(m.group(1))
                 continue
-
-    except Exception as e:
-        print(f"Chat error: {e}")
+            m = BUY_PATTERN.search(msg)
+            if m:
+                process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
+                continue
+        except: pass
 
 
 def check_calc_once():
     global _calc_processed_hashes
     try:
         messages = GCM()
-        if not messages:
-            return
+    except:
+        return
+    if not messages:
+        return
 
+    try:
         recent = messages[-15:] if len(messages) > 15 else messages[:]
+    except:
+        return
 
-        for msg in recent:
+    for msg in recent:
+        try:
             h = _msg_hash(msg)
             if h in _calc_processed_hashes:
                 continue
             _calc_processed_hashes.add(h)
+        except:
+            continue
 
-            try:
-                content = msg
-                if ': ' in msg:
-                    _, content = msg.split(': ', 1)
-                content = content.strip()
-                result = detect_calculation(content)
-                if result:
-                    safe_chat_send(result)
-            except:
-                pass
+        try:
+            content = msg
+            if ': ' in msg:
+                _, content = msg.split(': ', 1)
+            content = content.strip()
+            result = detect_calculation(content)
+            if result:
+                safe_chat_send(result)
+        except:
+            pass
 
+    try:
         if len(_calc_processed_hashes) > _MAX_CALC_HASHES:
             hashes_to_remove = list(_calc_processed_hashes)[:_MAX_CALC_HASHES // 2]
             for h in hashes_to_remove:
                 _calc_processed_hashes.discard(h)
-
-    except Exception as e:
-        print(f"Calc error: {e}")
+    except:
+        pass
 
 
 # ============================================
@@ -1273,69 +1303,26 @@ def check_spam_command(msg):
 
 
 # ============================================
-# 🎯 WATCHDOG - ترکیب AppTimer + Thread
+# 🎯 Timer Setup (بدون watchdog)
 # ============================================
 _chat_timer = None
 _calc_timer = None
 _reconnect_timer = None
+_timers_started = False
 
 
 def _start_timers():
-    """تایمرها رو با AppTimer(repeat=True) راه‌اندازی می‌کنه"""
-    global _chat_timer, _calc_timer, _reconnect_timer
+    global _chat_timer, _calc_timer, _reconnect_timer, _timers_started
+    if _timers_started:
+        return
+    _timers_started = True
     try:
         _chat_timer = AppTimer(0.05, check_chat_once, repeat=True)
         _calc_timer = AppTimer(0.3, check_calc_once, repeat=True)
         _reconnect_timer = AppTimer(2.0, auto_reconnect_check, repeat=True)
         print("[Mahyar] ✅ Timers started (repeat=True)")
-        return True
     except Exception as e:
         print(f"[Mahyar] ❌ Timer start failed: {e}")
-        return False
-
-
-def _check_timers_alive():
-    """چک می‌کنه تایمرها زنده‌ان یا نه (از thread جدا)"""
-    global _chat_timer, _calc_timer, _reconnect_timer
-    try:
-        for name, timer in [('chat', _chat_timer), ('calc', _calc_timer), ('reconnect', _reconnect_timer)]:
-            if timer is None:
-                return False
-            # چک کن attribute exists رو
-            if not hasattr(timer, 'exists'):
-                continue
-            try:
-                if not timer.exists():
-                    print(f"[Mahyar] ⚠️ Timer {name} is dead!")
-                    return False
-            except:
-                pass
-        return True
-    except Exception as e:
-        print(f"[Mahyar] Timer check error: {e}")
-        return False
-
-
-def _watchdog_thread():
-    """thread جداگانه که هر 3 ثانیه تایمرها رو چک می‌کنه"""
-    import time as _time
-    print("[Mahyar] 👁️ Watchdog thread started")
-    _time.sleep(3)
-    while True:
-        try:
-            _time.sleep(3)
-            # چک کن تایمرها زنده‌ان
-            if not _check_timers_alive():
-                print("[Mahyar] 🔄 Restarting timers from watchdog...")
-                _start_timers()
-        except Exception as e:
-            print(f"[Mahyar] Watchdog error: {e}")
-
-
-def start_watchdog():
-    """watchdog رو شروع می‌کنه"""
-    t = threading.Thread(target=_watchdog_thread, daemon=True)
-    t.start()
 
 
 # ============================================
@@ -1349,11 +1336,7 @@ class byMahyar(Plugin):
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
 
-        # ✅ شروع تایمرها
         _start_timers()
-
-        # ✅ شروع watchdog
-        start_watchdog()
 
         from bauiv1lib import party
         o = party.PartyWindow.__init__
