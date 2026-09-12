@@ -50,7 +50,6 @@ DEFAULT_REACTIONS = {
     'fl': 'fl',
 }
 
-# ✅ cooldown پیش‌فرض برای هر trigger
 DEFAULT_COOLDOWNS = {
     'fr': 5.0,
     'cu': 5.0,
@@ -83,7 +82,7 @@ def save_limits(limits):
 
 def get_reactions():
     try:
-        saved = app.config.get('mahyar_reactions_v7', None)
+        saved = app.config.get('mahyar_reactions_v9', None)
         if saved:
             d = dict(DEFAULT_REACTIONS)
             d.update(saved)
@@ -95,7 +94,7 @@ def get_reactions():
 
 def save_reactions(reactions):
     try:
-        app.config['mahyar_reactions_v7'] = dict(reactions)
+        app.config['mahyar_reactions_v9'] = dict(reactions)
         app.config.commit()
     except:
         pass
@@ -103,7 +102,7 @@ def save_reactions(reactions):
 
 def get_cooldowns():
     try:
-        saved = app.config.get('mahyar_cooldowns_v7', None)
+        saved = app.config.get('mahyar_cooldowns_v9', None)
         if saved:
             d = dict(DEFAULT_COOLDOWNS)
             d.update(saved)
@@ -115,7 +114,7 @@ def get_cooldowns():
 
 def save_cooldowns(cooldowns):
     try:
-        app.config['mahyar_cooldowns_v7'] = dict(cooldowns)
+        app.config['mahyar_cooldowns_v9'] = dict(cooldowns)
         app.config.commit()
     except:
         pass
@@ -126,12 +125,10 @@ REACTIONS = get_reactions()
 COOLDOWNS = get_cooldowns()
 auto_buyer_enabled = True
 
-# ✅ ردیابی پیام‌های جدید
+# ✅ فقط یه شماره: آخرین index پیام پردازش شده
 last_msg_count = 0
-processed_buy_ids = set()
-processed_bids = set()
 
-# ✅ cooldown storage: {("trigger", "sender"): last_time}
+# ✅ cooldown storage: {"trigger_sender": last_time}
 react_cooldown = {}
 
 my_own_name = None
@@ -512,7 +509,7 @@ class Calculator:
 
 
 # ============================================
-# ⚙️ Edit Reaction Window (با cooldown)
+# ⚙️ Edit Reaction Window
 # ============================================
 class EditReactionWindow:
     def __init__(s, source, trigger_code, parent_window=None):
@@ -1022,24 +1019,8 @@ def process_buy(item_id, count, item_name, total_price):
         CM("0 ")
 
 
-def process_bid(item_id):
-    if not auto_buyer_enabled:
-        return
-
-    try:
-        key = f"bid_{item_id}"
-        if key in processed_bids:
-            return
-        processed_bids.add(key)
-
-        CM(f"b {item_id}")
-        gs('dingSmall').play()
-    except Exception as e:
-        print(f"Bid error: {e}")
-
-
 # ============================================
-# 🎯 Auto-React Logic (cooldown جداگانه برای هر trigger + sender)
+# 🎯 Auto-React Logic
 # ============================================
 def check_reaction(msg):
     global my_own_client_id, my_own_display_num
@@ -1051,7 +1032,6 @@ def check_reaction(msg):
         get_my_ids()
 
     try:
-        # استخراج اسم فرستنده
         sender = None
         content = msg
         if ': ' in msg:
@@ -1066,14 +1046,12 @@ def check_reaction(msg):
 
             is_target_me = False
 
-            # روش ۱: %fr 151 (client_id)
             if my_own_client_id:
                 pattern1 = rf'%\s*{re.escape(trigger_lower)}\s+(\d+)'
                 m1 = re.search(pattern1, content_lower)
                 if m1 and int(m1.group(1)) == my_own_client_id:
                     is_target_me = True
 
-            # روش ۲: fr 0 (display_num) - حتی اگه 0 باشه
             if not is_target_me and my_own_display_num is not None:
                 pattern2 = rf'\b{re.escape(trigger_lower)}\s+(\d+)'
                 m2 = re.search(pattern2, content_lower)
@@ -1081,28 +1059,22 @@ def check_reaction(msg):
                     is_target_me = True
 
             if is_target_me:
-                # ✅ cooldown مخصوص این trigger + sender
                 cd_time = COOLDOWNS.get(trigger, DEFAULT_COOLDOWN)
-
                 current_time = time.time()
                 cd_key = f"{trigger_lower}_{sender or 'unknown'}"
                 last_time = react_cooldown.get(cd_key, 0)
 
-                # اگه کمتر از cooldown گذشته → نادیده بگیر
                 if current_time - last_time < cd_time:
-                    break  # برو trigger بعدی
+                    break
 
-                # ✅ آپدیت زمان
                 react_cooldown[cd_key] = current_time
 
-                # پاکسازی دوره‌ای
                 if len(react_cooldown) > 50:
                     now = time.time()
                     to_del = [k for k, v in react_cooldown.items() if now - v > 300]
                     for k in to_del:
                         del react_cooldown[k]
 
-                # پاسخ رو بفرست
                 teck(0.1, lambda r=response: CM(r))
                 gs('dingSmall').play()
                 break
@@ -1112,7 +1084,7 @@ def check_reaction(msg):
 
 
 # ============================================
-# 🎯 Check Chat (فقط پیام‌های جدید)
+# 🎯 Check Chat (فقط پیام‌های جدید با index)
 # ============================================
 def check_chat():
     global last_msg_count
@@ -1123,10 +1095,16 @@ def check_chat():
         if messages:
             current_count = len(messages)
 
+            # ✅ اگه تعداد پیام‌ها کم شد (چت ریست شد)
+            if current_count < last_msg_count:
+                last_msg_count = current_count
+
+            # ✅ پیام‌های جدید از index قبلی به بعد
             if current_count > last_msg_count:
                 new_messages = messages[last_msg_count:current_count]
 
                 for msg in new_messages:
+                    # چک واکنش
                     check_reaction(msg)
 
                     if not auto_buyer_enabled:
@@ -1159,9 +1137,7 @@ def check_chat():
                         )
                         continue
 
-                last_msg_count = current_count
-
-            if current_count < last_msg_count:
+                # ✅ آپدیت index
                 last_msg_count = current_count
 
     except Exception as e:
@@ -1229,6 +1205,7 @@ class byMahyar(Plugin):
         except:
             my_own_name = None
 
+        # ✅ index اولیه رو از پیام‌های فعلی بگیر
         try:
             initial_messages = GCM()
             last_msg_count = len(initial_messages) if initial_messages else 0
