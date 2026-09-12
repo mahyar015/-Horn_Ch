@@ -104,7 +104,10 @@ seen_messages = []
 seen_messages_set = set()
 processed_buy_ids = set()
 processed_bids = set()
-processed_reacts = set()  # ✅ فقط این
+# ✅ cooldown بر اساس trigger (زمان آخرین پاسخ)
+react_cooldown = {}
+REACT_COOLDOWN_TIME = 0.5  # ✅ نیم ثانیه
+
 my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
@@ -651,7 +654,7 @@ class AddReactionWindow:
 
 
 # ============================================
-# ⚙️ Reaction Editor Window (کوچیک)
+# ⚙️ Reaction Editor Window
 # ============================================
 class ReactionEditorWindow:
     def __init__(s, source, parent_window=None):
@@ -950,7 +953,7 @@ def process_bid(item_id):
 
 
 # ============================================
-# 🎯 Auto-React Logic (بدون cooldown - فقط بسته به پیام)
+# 🎯 Auto-React Logic (با cooldown 0.5 ثانیه)
 # ============================================
 def check_reaction(msg):
     global my_own_client_id, my_own_display_num
@@ -986,16 +989,21 @@ def check_reaction(msg):
                     is_target_me = True
 
             if is_target_me:
-                # ✅ فقط بر اساس متن پیام (بدون cooldown)
-                react_key = f"{msg}_{trigger}"
-                if react_key in processed_reacts:
-                    return  # همین پیام قبلاً پردازش شده
+                # ✅ cooldown نیم ثانیه‌ای بر اساس trigger
+                current_time = time.time()
+                last_time = react_cooldown.get(trigger_lower, 0)
 
-                processed_reacts.add(react_key)
+                if current_time - last_time < REACT_COOLDOWN_TIME:
+                    return  # کمتر از 0.5 ثانیه، نادیده بگیر
+
+                react_cooldown[trigger_lower] = current_time
 
                 # پاکسازی دوره‌ای
-                if len(processed_reacts) > 300:
-                    processed_reacts.clear()
+                if len(react_cooldown) > 20:
+                    now = time.time()
+                    to_del = [k for k, v in react_cooldown.items() if now - v > 60]
+                    for k in to_del:
+                        del react_cooldown[k]
 
                 # پاسخ رو بفرست
                 teck(0.1, lambda r=response: CM(r))
@@ -1130,7 +1138,6 @@ class byMahyar(Plugin):
 
             teck(0.5, get_my_ids)
 
-            # ✅ React سمت چپ‌ترین (نزدیک چت)
             b_react = AR.bw(
                 position=(self._width - 100, self._height - 100),
                 parent=self._root_widget,
@@ -1140,7 +1147,6 @@ class byMahyar(Plugin):
             )
             bw(b_react, on_activate_call=Call(ReactionEditorWindow, b_react))
 
-            # ✅ Math زیرش
             b_calc = AR.bw(
                 position=(self._width - 100, self._height - 140),
                 parent=self._root_widget,
@@ -1150,7 +1156,6 @@ class byMahyar(Plugin):
             )
             bw(b_calc, on_activate_call=Call(Calculator, b_calc))
 
-            # ✅ AutoBuy زیرش
             b_auto = AR.bw(
                 position=(self._width - 100, self._height - 180),
                 parent=self._root_widget,
