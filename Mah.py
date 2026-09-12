@@ -857,7 +857,7 @@ class ReconnectWindow:
         try:
             foreground = bascenev1.get_foreground_host_session()
             if isinstance(foreground, MainMenuSession):
-                push('اینجا؟ چطور؟', color=(0, 1, 1))
+                push('Not in a server!', color=(0, 1, 1))
                 return
             
             if server_ip == "127.0.0.1":
@@ -1127,24 +1127,25 @@ def check_reaction(msg):
 def check_chat():
     global last_msg_count, server_ip, server_port
     try:
-        # ✅ چک کن که به سرور وصل هستیم و IP/Port ذخیره کنیم
+        # ✅ گرفتن IP و Port از connection info (جدا از هم)
         try:
             conn = get_connection_info()
             if conn:
-                addr = getattr(conn, 'address', None)
-                if addr and isinstance(addr, str) and ':' in addr:
-                    parts = addr.rsplit(':', 1)
-                    new_ip = parts[0]
-                    new_port = int(parts[1])
-                    
+                new_ip = getattr(conn, 'address', None)
+                new_port = getattr(conn, 'port', None)
+
+                if new_ip and new_port:
+                    new_ip = str(new_ip)
+                    new_port = int(new_port)
                     if new_ip != server_ip or new_port != server_port:
                         server_ip = new_ip
                         server_port = new_port
                         save_server(server_ip, server_port)
                         push(f'Server saved: {server_ip}:{server_port}', color=(0, 1, 1))
-        except:
-            pass
-        
+                        print(f"✅ Saved server: {server_ip}:{server_port}")
+        except Exception as e:
+            print(f"Error saving server: {e}")
+
         messages = GCM()
         if messages:
             current_count = len(messages)
