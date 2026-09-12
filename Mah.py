@@ -25,6 +25,7 @@ import bauiv1 as bui
 from babase import app
 
 SIGNATURE = "By Mahyar"
+CREATOR = "Create By @Mahyar015"
 
 # ============================================
 # ⚙️ قیمت‌های پیش‌فرض Auto Buyer
@@ -47,9 +48,9 @@ DEFAULT_UNKNOWN = 999999
 # ⚙️ تنظیمات Auto-React (پیش‌فرض)
 # ============================================
 DEFAULT_REACTIONS = {
-    'fr': 'u',      # freeze خوردم → unfreeze بزن
-    'cu': 'h',      # curse خوردم → heal بزن
-    'fl': 'fl',     # fly2d خوردم → fly2d بزن
+    'fr': 'u',
+    'cu': 'h',
+    'fl': 'fl',
 }
 
 auto_react_enabled = True
@@ -104,9 +105,10 @@ seen_messages_set = set()
 processed_buy_ids = set()
 processed_bids = set()
 processed_reacts = set()
+react_cooldown = {}  # ✅ برای جلوگیری از اسپم (آیتم + زمان)
 my_own_name = None
-my_own_client_id = None      # مثلا 151
-my_own_display_num = None    # مثلا 0 (عدد کنار اسم: "0 Mahyar")
+my_own_client_id = None
+my_own_display_num = None
 
 
 class AR:
@@ -153,7 +155,6 @@ class AR:
 # 🎯 گرفتن client_id و display_num خودمون
 # ============================================
 def get_my_ids():
-    """گرفتن client_id و شماره‌ی نمایشی خودمون از roster"""
     global my_own_client_id, my_own_display_num, my_own_name
     try:
         roster = get_roster()
@@ -163,15 +164,12 @@ def get_my_ids():
 
         for entry in roster:
             display = entry.get('display_string', '')
-            # چک: آیا این entry مال من هست؟
             if display.endswith(my_own_name):
                 my_own_client_id = entry.get('client_id')
 
-                # شماره‌ی نمایشی از name_full
                 players = entry.get('players', [])
                 if players:
                     name_full = players[0].get('name_full', '')
-                    # name_full = "0 Mahyar" → عدد اول
                     if name_full and ' ' in name_full:
                         try:
                             my_own_display_num = int(name_full.split(' ')[0])
@@ -466,7 +464,7 @@ class Calculator:
                 from babase import clipboard_set_text
                 text = s.last_expression if s.last_expression else s.current_input
                 clipboard_set_text(text)
-                push(f'Copied: {text}', color=(0, 1, 0))
+                bui.screenmessage(f'Copied: {text}', color=(0, 1, 0))
                 gs('dingSmall').play()
             else:
                 AR.err('Clipboard not supported!')
@@ -480,7 +478,7 @@ class Calculator:
             else:
                 message = f"⚖️ {s.current_input}"
             CM(message)
-            push(f'Sent: {message}', color=(0, 1, 0))
+            bui.screenmessage(f'Sent: {message}', color=(0, 1, 0))
             gs('dingSmall').play()
         except Exception as e:
             AR.err(f'Send error: {str(e)}')
@@ -527,7 +525,7 @@ class EditLimitsWindow:
 
         LIMITS[s.item_name] = value
         save_limits(LIMITS)
-        push(f'_{s.item_name} = {value}', color=(0, 1, 0))
+        bui.screenmessage(f'_{s.item_name} = {value}', color=(0, 1, 0))
         gs('dingSmallHigh').play()
 
         if s.parent_window:
@@ -579,11 +577,11 @@ class EditReactionWindow:
 
         if value:
             REACTIONS[s.trigger_code] = value
-            push(f'%{s.trigger_code} → {value}', color=(0, 1, 0))
+            bui.screenmessage(f'%{s.trigger_code} → {value}', color=(0, 1, 0))
         else:
             if s.trigger_code in REACTIONS:
                 del REACTIONS[s.trigger_code]
-            push(f'%{s.trigger_code} disabled', color=(1, 0.5, 0))
+            bui.screenmessage(f'%{s.trigger_code} disabled', color=(1, 0.5, 0))
 
         save_reactions(REACTIONS)
         gs('dingSmallHigh').play()
@@ -642,7 +640,7 @@ class AddReactionWindow:
 
         REACTIONS[trigger] = response
         save_reactions(REACTIONS)
-        push(f'%{trigger} → {response}', color=(0, 1, 0))
+        bui.screenmessage(f'%{trigger} → {response}', color=(0, 1, 0))
         gs('dingSmallHigh').play()
 
         if s.parent_window:
@@ -655,61 +653,60 @@ class AddReactionWindow:
 
 
 # ============================================
-# ⚙️ Reaction Editor Window
+# ⚙️ Reaction Editor Window (کوچیک‌تر)
 # ============================================
 class ReactionEditorWindow:
     def __init__(s, source, parent_window=None):
         s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(360, 500), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(330, 460))
+        s.w = AR.cw(source=source, size=(340, 420), ps=AR.UIS() * 0.35)
+        AR.add_close_button(s.w, position=(310, 380))
 
-        tw(parent=s.w, text='Auto React', scale=1.1,
-           position=(180, 455), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text='Auto React', scale=1.0,
+           position=(170, 375), h_align='center', color=(0, 1, 1))
 
-        tw(parent=s.w, text=SIGNATURE, scale=0.5,
-           position=(180, 435), h_align='center', color=(0.6, 0.6, 0.8))
+        tw(parent=s.w, text=SIGNATURE, scale=0.45,
+           position=(170, 358), h_align='center', color=(0.6, 0.6, 0.8))
 
-        tw(parent=s.w, text='When someone X on me → I do Y',
-           position=(180, 410), scale=0.5,
-           h_align='center', color=(1, 1, 0.8))
-
-        # نمایش client_id و شماره نمایشی ما
-        s.id_text = tw(parent=s.w, text=f'My IDs: cid={my_own_client_id or "?"} num={my_own_display_num or "?"}',
-                       position=(180, 388), scale=0.5,
+        # نمایش ID ها
+        s.id_text = tw(parent=s.w, text=f'cid={my_own_client_id or "?"} num={my_own_display_num or "?"}',
+                       position=(170, 340), scale=0.45,
                        h_align='center', color=(0, 1, 1))
 
         # اسکرول
-        s.scroll = sw(parent=s.w, size=(320, 250), position=(20, 130))
-        s.container = cw(parent=s.scroll, size=(300, 400), background=False)
+        s.scroll = sw(parent=s.w, size=(300, 170), position=(20, 145))
+        s.container = cw(parent=s.scroll, size=(280, 300), background=False)
         s.item_buttons = {}
 
         s.build_grid()
 
         # دکمه Add New
-        bw(parent=s.w, label='+ Add New', size=(140, 35),
-           position=(20, 90), on_activate_call=Call(s.add_new),
+        bw(parent=s.w, label='+ Add', size=(85, 32),
+           position=(20, 100), on_activate_call=Call(s.add_new),
            color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
+           button_type='square', text_scale=0.65)
 
         # دکمه Reset
-        bw(parent=s.w, label='Reset', size=(140, 35),
-           position=(180, 90), on_activate_call=Call(s.reset_all),
+        bw(parent=s.w, label='Reset', size=(85, 32),
+           position=(115, 100), on_activate_call=Call(s.reset_all),
            color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
+           button_type='square', text_scale=0.65)
+
+        # دکمه Refresh IDs
+        bw(parent=s.w, label='Refresh IDs', size=(85, 32),
+           position=(210, 100), on_activate_call=Call(s.refresh_ids),
+           color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.65)
 
         # دکمه روشن/خاموش
         s.toggle_btn = bw(parent=s.w,
-                          label='Auto React: ON' if auto_react_enabled else 'Auto React: OFF',
-                          size=(300, 35), position=(20, 45),
+                          label='ON' if auto_react_enabled else 'OFF',
+                          size=(150, 35), position=(95, 55),
                           on_activate_call=Call(s.toggle),
                           color=(0.2, 0.7, 0.2) if auto_react_enabled else (0.7, 0.2, 0.2),
-                          textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+                          textcolor=(1, 1, 1), button_type='square', text_scale=0.8)
 
-        # دکمه آپدیت ID
-        bw(parent=s.w, label='Refresh My IDs', size=(300, 30),
-           position=(20, 8), on_activate_call=Call(s.refresh_ids),
-           color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.6)
+        tw(parent=s.w, text='Auto React is ' + ('ON' if auto_react_enabled else 'OFF'),
+           position=(170, 30), scale=0.5, h_align='center', color=(1, 1, 0.8))
 
         gs('swish').play()
 
@@ -720,30 +717,30 @@ class ReactionEditorWindow:
         s.item_buttons.clear()
 
         items = list(REACTIONS.items())
-        row_height = 40
-        total_h = len(items) * row_height + 30
+        row_height = 34
+        total_h = len(items) * row_height + 20
 
         for i, (trigger, response) in enumerate(items):
             y = total_h - (i + 1) * row_height
 
             btn = bw(parent=s.container, label=f'%{trigger} → {response}',
-                     size=(200, 32), position=(5, y),
+                     size=(185, 28), position=(5, y),
                      on_activate_call=Call(s.edit_item, trigger),
                      color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1),
-                     button_type='square', text_scale=0.7)
+                     button_type='square', text_scale=0.65)
             s.item_buttons[trigger] = btn
 
-            bw(parent=s.container, label='X', size=(35, 32), position=(215, y),
+            bw(parent=s.container, label='X', size=(30, 28), position=(195, y),
                on_activate_call=Call(s.delete_item, trigger),
                color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1),
-               button_type='square', text_scale=0.8)
+               button_type='square', text_scale=0.7)
 
-        cw(s.container, size=(300, total_h))
+        cw(s.container, size=(280, total_h))
 
     def refresh_ids(s):
         cid, num = get_my_ids()
-        tw(s.id_text, text=f'My IDs: cid={cid or "?"} num={num or "?"}', color=(0, 1, 0))
-        push(f'cid={cid}, num={num}', color=(0, 1, 0))
+        tw(s.id_text, text=f'cid={cid or "?"} num={num or "?"}', color=(0, 1, 0))
+        bui.screenmessage(f'cid={cid}, num={num}', color=(0, 1, 0))
         gs('dingSmallHigh').play()
 
     def add_new(s):
@@ -756,7 +753,7 @@ class ReactionEditorWindow:
         if trigger in REACTIONS:
             del REACTIONS[trigger]
             save_reactions(REACTIONS)
-            push(f'Deleted: %{trigger}', color=(1, 0.5, 0))
+            bui.screenmessage(f'Deleted: %{trigger}', color=(1, 0.5, 0))
             gs('dingSmallLow').play()
             s.build_grid()
 
@@ -764,7 +761,7 @@ class ReactionEditorWindow:
         global REACTIONS
         REACTIONS = dict(DEFAULT_REACTIONS)
         save_reactions(REACTIONS)
-        push('Reset to defaults!', color=(0, 1, 1))
+        bui.screenmessage('Reset to defaults!', color=(0, 1, 1))
         gs('dingSmallHigh').play()
         s.build_grid()
 
@@ -773,11 +770,11 @@ class ReactionEditorWindow:
         auto_react_enabled = not auto_react_enabled
 
         if auto_react_enabled:
-            bw(s.toggle_btn, label='Auto React: ON', color=(0.2, 0.7, 0.2))
-            push('Auto React ON', color=(0, 1, 0))
+            bw(s.toggle_btn, label='ON', color=(0.2, 0.7, 0.2))
+            bui.screenmessage('Auto React ON', color=(0, 1, 0))
         else:
-            bw(s.toggle_btn, label='Auto React OFF', color=(0.7, 0.2, 0.2))
-            push('Auto React OFF', color=(1, 0.5, 0))
+            bw(s.toggle_btn, label='OFF', color=(0.7, 0.2, 0.2))
+            bui.screenmessage('Auto React OFF', color=(1, 0.5, 0))
         gs('dingSmall').play()
 
 
@@ -883,11 +880,11 @@ class AutoBuyerWindow:
         if auto_buyer_enabled:
             bw(s.toggle_btn, label='Turn OFF', color=(0.7, 0.2, 0.2))
             tw(s.status_text, text='Status: ON', color=(0, 1, 0))
-            push('Auto Buyer ON', color=(0, 1, 0))
+            bui.screenmessage('Auto Buyer ON', color=(0, 1, 0))
         else:
             bw(s.toggle_btn, label='Turn ON', color=(0.2, 0.7, 0.2))
             tw(s.status_text, text='Status: OFF', color=(1, 0, 0))
-            push('Auto Buyer OFF', color=(1, 0.5, 0))
+            bui.screenmessage('Auto Buyer OFF', color=(1, 0.5, 0))
         gs('dingSmall').play()
 
     def edit_item(s, name):
@@ -897,7 +894,7 @@ class AutoBuyerWindow:
         global LIMITS
         LIMITS = dict(DEFAULT_LIMITS)
         save_limits(LIMITS)
-        push('Reset to defaults!', color=(0, 1, 1))
+        bui.screenmessage('Reset to defaults!', color=(0, 1, 1))
         gs('dingSmallHigh').play()
         s.refresh_list()
 
@@ -918,8 +915,7 @@ def process_sell(item_id):
 
 def process_buy(item_id, count, item_name, total_price):
     if item_name not in LIMITS:
-        push(f"❌ Unknown: {item_name}", color=(1, 0.5, 0))
-        return
+        return  # ✅ بدون پیام
 
     bid_key = f"{item_id}_{item_name}_{count}_{total_price}"
     if bid_key in processed_buy_ids:
@@ -938,11 +934,11 @@ def process_buy(item_id, count, item_name, total_price):
 
     if unit_price <= limit:
         CM("1 ")
-        push(f"BUY {item_name} @ {unit_price:.2f} <= {limit}", color=(0, 1, 0))
+        # ✅ بدون screenmessage
         gs('dingSmallHigh').play()
     else:
         CM("0 ")
-        push(f"SKIP {item_name} @ {unit_price:.2f} > {limit}", color=(1, 0.5, 0))
+        # ✅ بدون screenmessage
 
 
 def process_bid(item_id):
@@ -956,65 +952,70 @@ def process_bid(item_id):
         processed_bids.add(key)
 
         CM(f"b {item_id}")
-        push(f"⚡ Bid: b {item_id}", color=(0, 1, 1))
+        # ✅ بدون screenmessage
         gs('dingSmall').play()
     except Exception as e:
         print(f"Bid error: {e}")
 
 
 # ============================================
-# 🎯 Auto-React Logic (با client_id + display_num)
+# 🎯 Auto-React Logic (با cooldown)
 # ============================================
 def check_reaction(msg):
-    """چک میکنه آیا رو ما کد زدن (هم client_id هم شماره نمایشی)"""
     global my_own_client_id, my_own_display_num
 
     if not auto_react_enabled:
         return
 
-    # اگه هنوز IDs رو نگرفتیم، بگیر
     if my_own_client_id is None or my_own_display_num is None:
         get_my_ids()
 
     try:
-        # استخراج محتوا
         content = msg
         if ': ' in msg:
             _, content = msg.split(': ', 1)
         content = content.strip()
         content_lower = content.lower()
 
-        # چک همه trigger های تنظیم شده
         for trigger, response in REACTIONS.items():
             trigger_lower = trigger.lower()
 
             is_target_me = False
 
-            # ✅ حالت ۱: چک %fr 144 (با client_id)
+            # روش ۱: %fr 151
             if my_own_client_id:
                 pattern1 = rf'%\s*{re.escape(trigger_lower)}\s+{my_own_client_id}\b'
                 if re.search(pattern1, content_lower):
                     is_target_me = True
 
-            # ✅ حالت ۲: چک fr 1 (با شماره نمایشی)
+            # روش ۲: fr 0
             if not is_target_me and my_own_display_num is not None:
                 pattern2 = rf'\b{re.escape(trigger_lower)}\s+{my_own_display_num}\b'
                 if re.search(pattern2, content_lower):
                     is_target_me = True
 
             if is_target_me:
-                # ✅ رو ما زدن!
-                react_key = f"{msg}_{trigger}"
-                if react_key in processed_reacts:
-                    continue
-                processed_reacts.add(react_key)
+                # ✅ استفاده از cooldown به جای processed_reacts (برای جلوگیری از اسپم)
+                current_time = time.time()
+                cooldown_key = trigger_lower
+                last_time = react_cooldown.get(cooldown_key, 0)
 
-                if len(processed_reacts) > 200:
-                    processed_reacts.clear()
+                # اگه کمتر از 2 ثانیه از آخرین بار نگذشته، نزن
+                if current_time - last_time < 2.0:
+                    return
+
+                react_cooldown[cooldown_key] = current_time
+
+                # پاکسازی دوره‌ای
+                if len(react_cooldown) > 20:
+                    now = time.time()
+                    to_delete = [k for k, v in react_cooldown.items() if now - v > 60]
+                    for k in to_delete:
+                        del react_cooldown[k]
 
                 # پاسخ رو بفرست
                 teck(0.1, lambda r=response: CM(r))
-                push(f"⚡ React: {trigger} → {response}", color=(0, 1, 1))
+                # ✅ بدون screenmessage
                 gs('dingSmall').play()
                 return
 
@@ -1036,19 +1037,16 @@ def check_chat():
                 seen_messages_set.add(msg)
                 seen_messages.append(msg)
 
-                # چک واکنش خودکار (وقتی رو من زدن)
                 check_reaction(msg)
 
                 if not auto_buyer_enabled:
                     continue
 
-                # چک پیام فروش
                 m = SELL_PATTERN.search(msg)
                 if m:
                     process_sell(m.group(1))
                     continue
 
-                # چک b sXXX
                 is_mine = False
                 if my_own_name:
                     if msg.startswith(f"{my_own_name}:") or msg.startswith(f"{my_own_name} :"):
@@ -1061,7 +1059,6 @@ def check_chat():
                         process_bid(item_id)
                         continue
 
-                # چک پیام خرید
                 m = BUY_PATTERN.search(msg)
                 if m:
                     process_buy(
@@ -1148,11 +1145,20 @@ class byMahyar(Plugin):
         def e(self, *a, **k):
             r = o(self, *a, **k)
 
-            # ✅ هر بار پنجره مهمانی باز شد، IDs رو بگیر
             teck(0.5, get_my_ids)
 
+            # ✅ دکمه React سمت چپ چت (کنار چت)
+            b_react = AR.bw(
+                position=(self._width - 100, self._height - 100),
+                parent=self._root_widget,
+                size=(80, 25),
+                label='React',
+                color=(0.8, 0.5, 0.2)
+            )
+            bw(b_react, on_activate_call=Call(ReactionEditorWindow, b_react))
+
             b_calc = AR.bw(
-                position=(self._width - 50, self._height - 100),
+                position=(self._width - 100, self._height - 140),
                 parent=self._root_widget,
                 size=(80, 25),
                 label='Math',
@@ -1161,7 +1167,7 @@ class byMahyar(Plugin):
             bw(b_calc, on_activate_call=Call(Calculator, b_calc))
 
             b_auto = AR.bw(
-                position=(self._width - 50, self._height - 140),
+                position=(self._width - 100, self._height - 180),
                 parent=self._root_widget,
                 size=(80, 25),
                 label='AutoBuy',
@@ -1169,29 +1175,18 @@ class byMahyar(Plugin):
             )
             bw(b_auto, on_activate_call=Call(AutoBuyerWindow, b_auto))
 
-            b_react = AR.bw(
-                position=(self._width - 50, self._height - 180),
-                parent=self._root_widget,
-                size=(80, 25),
-                label='React',
-                color=(0.8, 0.5, 0.2)
-            )
-            bw(b_react, on_activate_call=Call(ReactionEditorWindow, b_react))
-
             return r
 
         party.PartyWindow.__init__ = e
 
-        teck(3.0, lambda: push(SIGNATURE, color=(1, 0.1, 0.1)))
-        teck(5.0, lambda: push("Math + AutoBuy + React", color=(0, 1, 1)))
+        # ✅ پیام Creat By @Mahyar015
+        teck(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
 
         teck(0.05, check_chat)
         teck(0.1, s.check_calc)
-        # ✅ آپدیت IDs هر 20 ثانیه
         teck(20.0, s.update_ids_loop)
 
     def update_ids_loop(s):
-        """هر 20 ثانیه IDs رو آپدیت کن"""
         get_my_ids()
         teck(20.0, s.update_ids_loop)
 
