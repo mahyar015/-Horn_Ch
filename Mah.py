@@ -82,7 +82,7 @@ def save_limits(limits):
 
 def get_reactions():
     try:
-        saved = app.config.get('mahyar_reactions_v9', None)
+        saved = app.config.get('mahyar_reactions_v10', None)
         if saved:
             d = dict(DEFAULT_REACTIONS)
             d.update(saved)
@@ -94,7 +94,7 @@ def get_reactions():
 
 def save_reactions(reactions):
     try:
-        app.config['mahyar_reactions_v9'] = dict(reactions)
+        app.config['mahyar_reactions_v10'] = dict(reactions)
         app.config.commit()
     except:
         pass
@@ -102,7 +102,7 @@ def save_reactions(reactions):
 
 def get_cooldowns():
     try:
-        saved = app.config.get('mahyar_cooldowns_v9', None)
+        saved = app.config.get('mahyar_cooldowns_v10', None)
         if saved:
             d = dict(DEFAULT_COOLDOWNS)
             d.update(saved)
@@ -114,7 +114,7 @@ def get_cooldowns():
 
 def save_cooldowns(cooldowns):
     try:
-        app.config['mahyar_cooldowns_v9'] = dict(cooldowns)
+        app.config['mahyar_cooldowns_v10'] = dict(cooldowns)
         app.config.commit()
     except:
         pass
@@ -125,10 +125,13 @@ REACTIONS = get_reactions()
 COOLDOWNS = get_cooldowns()
 auto_buyer_enabled = True
 
-# ✅ فقط یه شماره: آخرین index پیام پردازش شده
+# ✅ ردیابی پیام‌های پردازش شده
 last_msg_count = 0
 
-# ✅ cooldown storage: {"trigger_sender": last_time}
+# ✅ تعداد پیام‌های ارسالی توسط خودمون (که نباید پردازش بشن)
+our_sent_count = 0
+
+# ✅ cooldown storage
 react_cooldown = {}
 
 my_own_name = None
@@ -206,6 +209,16 @@ def get_my_ids():
     except Exception as e:
         print(f"Error getting IDs: {e}")
         return None, None
+
+
+# ============================================
+# 🎯 تابع امن برای ارسال به چت
+# ============================================
+def safe_chat_send(message):
+    """پیام رو به چت میفرسته و شمارنده خودمون رو آپدیت میکنه"""
+    global our_sent_count
+    CM(message)
+    our_sent_count += 1
 
 
 # ============================================
@@ -501,7 +514,7 @@ class Calculator:
                 message = f"⚖️ {s.last_expression}"
             else:
                 message = f"⚖️ {s.current_input}"
-            CM(message)
+            safe_chat_send(message)
             bui.screenmessage(f'Sent: {message}', color=(0, 1, 0))
             gs('dingSmall').play()
         except Exception as e:
@@ -990,7 +1003,7 @@ BID_PATTERN = re.compile(r'\bb\s+(s\d+)\b', re.IGNORECASE)
 
 
 def process_sell(item_id):
-    CM(f"b {item_id}")
+    safe_chat_send(f"b {item_id}")
 
 
 def process_buy(item_id, count, item_name, total_price):
@@ -1006,17 +1019,17 @@ def process_buy(item_id, count, item_name, total_price):
         processed_buy_ids.clear()
 
     if count <= 0:
-        CM("0 ")
+        safe_chat_send("0 ")
         return
 
     unit_price = total_price / count
     limit = LIMITS[item_name]
 
     if unit_price <= limit:
-        CM("1 ")
+        safe_chat_send("1 ")
         gs('dingSmallHigh').play()
     else:
-        CM("0 ")
+        safe_chat_send("0 ")
 
 
 # ============================================
@@ -1075,7 +1088,8 @@ def check_reaction(msg):
                     for k in to_del:
                         del react_cooldown[k]
 
-                teck(0.1, lambda r=response: CM(r))
+                # ✅ ارسال فوری (بدون teck)
+                safe_chat_send(response)
                 gs('dingSmall').play()
                 break
 
@@ -1084,7 +1098,7 @@ def check_reaction(msg):
 
 
 # ============================================
-# 🎯 Check Chat (فقط پیام‌های جدید با index)
+# 🎯 Check Chat (فقط پیام‌های جدید)
 # ============================================
 def check_chat():
     global last_msg_count
@@ -1095,16 +1109,15 @@ def check_chat():
         if messages:
             current_count = len(messages)
 
-            # ✅ اگه تعداد پیام‌ها کم شد (چت ریست شد)
+            # ✅ اگه تعداد پیام‌ها کم شد
             if current_count < last_msg_count:
                 last_msg_count = current_count
 
-            # ✅ پیام‌های جدید از index قبلی به بعد
+            # ✅ پیام‌های جدید
             if current_count > last_msg_count:
                 new_messages = messages[last_msg_count:current_count]
 
                 for msg in new_messages:
-                    # چک واکنش
                     check_reaction(msg)
 
                     if not auto_buyer_enabled:
@@ -1144,6 +1157,22 @@ def check_chat():
         print(f"Chat error: {e}")
 
     teck(0.05, check_chat)
+
+
+def process_bid(item_id):
+    if not auto_buyer_enabled:
+        return
+
+    try:
+        key = f"bid_{item_id}"
+        if key in processed_bids:
+            return
+        processed_bids.add(key)
+
+        safe_chat_send(f"b {item_id}")
+        gs('dingSmall').play()
+    except Exception as e:
+        print(f"Bid error: {e}")
 
 
 # ============================================
@@ -1196,7 +1225,7 @@ def detect_calculation(message):
 # ba_meta export babase.Plugin
 class byMahyar(Plugin):
     def __init__(s):
-        global my_own_name, my_own_client_id, my_own_display_num, last_msg_count
+        global my_own_name, my_own_client_id, my_own_display_num, last_msg_count, our_sent_count
         s.seen_calc = []
         s.seen_calc_set = set()
 
@@ -1205,12 +1234,14 @@ class byMahyar(Plugin):
         except:
             my_own_name = None
 
-        # ✅ index اولیه رو از پیام‌های فعلی بگیر
+        # ✅ index اولیه
         try:
             initial_messages = GCM()
             last_msg_count = len(initial_messages) if initial_messages else 0
         except:
             last_msg_count = 0
+
+        our_sent_count = 0
 
         from bauiv1lib import party
         o = party.PartyWindow.__init__
@@ -1277,7 +1308,7 @@ class byMahyar(Plugin):
 
                         result = detect_calculation(content)
                         if result:
-                            CM(result)
+                            safe_chat_send(result)
 
                 if len(s.seen_calc) > 50:
                     old = s.seen_calc[:-50]
