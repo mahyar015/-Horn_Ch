@@ -57,7 +57,6 @@ DEFAULT_COOLDOWNS = {
 }
 DEFAULT_COOLDOWN = 5.0
 
-# ✅ Auto-Reply پیش‌فرض
 DEFAULT_AUTO_REPLIES = {}
 
 auto_react_enabled = True
@@ -150,26 +149,20 @@ COOLDOWNS = get_cooldowns()
 AUTO_REPLIES = get_auto_replies()
 auto_buyer_enabled = True
 
-# ✅ ردیابی پیام‌ها
 last_msg_count = 0
 
 processed_sell_ids = set()
 processed_buy_ids = set()
 processed_bids = set()
 
-# ✅ cooldown برای react
 react_cooldown = {}
-
-# ✅ cooldown برای auto-reply (per keyword + sender)
 auto_reply_cooldown = {}
 
-# ✅ Spam state
 spam_active = False
 spam_message = ""
 spam_delay = 2.0
 spam_timer = None
 
-# ✅ Reconnect state
 server_ip = "127.0.0.1"
 server_port = 43210
 
@@ -269,17 +262,14 @@ def check_auto_reply(msg):
             sender = parts[0].strip()
             content = parts[1].strip()
 
-        # اگه پیام از خودمون باشه، ignore
         if sender and my_own_name:
             if sender == my_own_name:
                 return False
 
         content_lower = content.lower()
 
-        # چک هر keyword
         for keyword, response in AUTO_REPLIES.items():
             if keyword.lower() in content_lower:
-                # cooldown برای هر keyword + sender
                 cd_key = f"{keyword}_{sender or 'unknown'}"
                 current_time = time.time()
                 last_time = auto_reply_cooldown.get(cd_key, 0)
@@ -289,7 +279,6 @@ def check_auto_reply(msg):
 
                 auto_reply_cooldown[cd_key] = current_time
 
-                # پاکسازی
                 if len(auto_reply_cooldown) > 50:
                     now = time.time()
                     to_del = [k for k, v in auto_reply_cooldown.items() if now - v > 60]
@@ -778,7 +767,7 @@ class AddReactionWindow:
         )
 
         bw(parent=s.w, label='Add', size=(100, 30),
-           position=(110, -15) if False else (110, -5),
+           position=(110, -5),
            on_activate_call=Call(s.save),
            color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square')
 
@@ -1190,12 +1179,10 @@ class SpamWindow:
         tw(parent=s.w, text=SIGNATURE, scale=0.45,
            position=(160, 238), h_align='center', color=(0.6, 0.6, 0.8))
 
-        # وضعیت
         s.status = tw(parent=s.w, text='Not Spamming',
                       position=(160, 215), h_align='center',
                       scale=0.7, color=(1, 1, 0))
 
-        # Message
         tw(parent=s.w, text='Message:', scale=0.6,
            position=(160, 190), h_align='center', color=(1, 1, 1))
         s.msg_input = tw(
@@ -1204,7 +1191,6 @@ class SpamWindow:
             color=(0.9, 0.9, 0.9)
         )
 
-        # Delay
         tw(parent=s.w, text='Delay (seconds):', scale=0.6,
            position=(160, 125), h_align='center', color=(1, 1, 1))
         s.delay_input = tw(
@@ -1285,7 +1271,6 @@ class ReconnectWindow:
            color=(0.7, 0.3, 0.3), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.75)
 
-        # Manual IP
         tw(parent=s.w, text='Manual Connect:', scale=0.6,
            position=(170, 95), h_align='center', color=(1, 1, 1))
 
@@ -1359,31 +1344,31 @@ class ReconnectWindow:
 
 
 # ============================================
-# 🎯 Mods Menu (همه مودها اینجا)
+# 🎯 Mods Menu
 # ============================================
 class ModsMenu:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(360, 500), ps=AR.UIS() * 0.4)
-        AR.add_close_button(s.w, position=(330, 460))
+        s.w = AR.cw(source=source, size=(400, 500), ps=AR.UIS() * 0.25)
+        AR.add_close_button(s.w, position=(370, 460))
 
         tw(parent=s.w, text='🎮 Mods Menu', scale=1.2,
-           position=(180, 455), h_align='center', color=(0, 1, 1))
+           position=(200, 455), h_align='center', color=(0, 1, 1))
 
         tw(parent=s.w, text=SIGNATURE, scale=0.5,
-           position=(180, 435), h_align='center', color=(0.6, 0.6, 0.8))
+           position=(200, 435), h_align='center', color=(0.6, 0.6, 0.8))
 
-        # دکمه‌ها
+        # دکمه‌ها - 2 ستون
         buttons = [
-            ('🔤 Calculator', Calculator, (20, 380), (150, 45), (0.3, 0.5, 0.8)),
-            ('🤖 Auto Buyer', AutoBuyerWindow, (190, 380), (150, 45), (0.2, 0.6, 0.8)),
-            ('⚡ Auto React', ReactionEditorWindow, (20, 325), (150, 45), (0.8, 0.5, 0.2)),
-            ('💬 Auto Reply', AutoReplyEditorWindow, (190, 325), (150, 45), (0.3, 0.7, 0.4)),
-            ('📢 Spam', SpamWindow, (20, 270), (150, 45), (0.8, 0.3, 0.3)),
-            ('🔄 Reconnect', ReconnectWindow, (190, 270), (150, 45), (0.4, 0.6, 0.4)),
+            ('🔤 Calculator', Calculator, (20, 375), (170, 45), (0.3, 0.5, 0.8)),
+            ('🤖 Auto Buyer', AutoBuyerWindow, (210, 375), (170, 45), (0.2, 0.6, 0.8)),
+            ('⚡ Auto React', ReactionEditorWindow, (20, 320), (170, 45), (0.8, 0.5, 0.2)),
+            ('💬 Auto Reply', AutoReplyEditorWindow, (210, 320), (170, 45), (0.3, 0.7, 0.4)),
+            ('📢 Spam', SpamWindow, (20, 265), (170, 45), (0.8, 0.3, 0.3)),
+            ('🔄 Reconnect', ReconnectWindow, (210, 265), (170, 45), (0.4, 0.6, 0.4)),
         ]
 
         for label, cls, pos, size, color in buttons:
-            btn = bw(
+            bw(
                 parent=s.w, label=label, size=size, position=pos,
                 on_activate_call=Call(cls, s.w),
                 color=color, textcolor=(1, 1, 1), button_type='square',
@@ -1392,18 +1377,25 @@ class ModsMenu:
 
         # اطلاعات
         tw(parent=s.w, text='─ Server Info ─', scale=0.6,
-           position=(180, 230), h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text=f'IP: {server_ip}', scale=0.55,
-           position=(180, 210), h_align='center', color=(0.8, 0.8, 1))
-        tw(parent=s.w, text=f'Port: {server_port}', scale=0.55,
-           position=(180, 195), h_align='center', color=(0.8, 0.8, 1))
-        tw(parent=s.w, text=f'My cid: {my_own_client_id or "?"} | num: {my_own_display_num if my_own_display_num is not None else "?"}',
-           scale=0.5, position=(180, 178), h_align='center', color=(0, 1, 1))
+           position=(200, 230), h_align='center', color=(1, 1, 0))
+        tw(parent=s.w, text=f'IP: {server_ip}  |  Port: {server_port}', scale=0.55,
+           position=(200, 210), h_align='center', color=(0.8, 0.8, 1))
+        tw(parent=s.w, text=f'cid: {my_own_client_id or "?"}  |  num: {my_own_display_num if my_own_display_num is not None else "?"}',
+           scale=0.5, position=(200, 192), h_align='center', color=(0, 1, 1))
 
         tw(parent=s.w, text='─ Spam Command ─', scale=0.6,
-           position=(180, 150), h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text='توی چت بنویس: "اسپم سلام ۲"',
-           scale=0.5, position=(180, 130), h_align='center', color=(0.8, 1, 0.8))
+           position=(200, 162), h_align='center', color=(1, 1, 0))
+        tw(parent=s.w, text='توی چت: "اسپم سلام ۲"', scale=0.55,
+           position=(200, 142), h_align='center', color=(0.8, 1, 0.8))
+        tw(parent=s.w, text='برای توقف: "توقف اسپم"', scale=0.55,
+           position=(200, 125), h_align='center', color=(1, 0.8, 0.8))
+
+        tw(parent=s.w, text='─ Status ─', scale=0.6,
+           position=(200, 95), h_align='center', color=(1, 1, 0))
+        tw(parent=s.w, text=f'Auto Reply: {"ON" if auto_reply_enabled else "OFF"}  |  Auto React: {"ON" if auto_react_enabled else "OFF"}',
+           scale=0.5, position=(200, 75), h_align='center', color=(0.8, 1, 0.8))
+        tw(parent=s.w, text=f'Auto Buyer: {"ON" if auto_buyer_enabled else "OFF"}  |  Spam: {"ON" if spam_active else "OFF"}',
+           scale=0.5, position=(200, 58), h_align='center', color=(0.8, 1, 0.8))
 
         gs('swish').play()
 
@@ -1412,11 +1404,9 @@ class ModsMenu:
 # 🧮 Chat Commands (اسپم)
 # ============================================
 def check_spam_command(msg):
-    """چک میکنه آیا پیام 'اسپم X Y' هست"""
     global spam_active
 
     try:
-        # استخراج محتوا
         content = msg
         if ': ' in msg:
             _, content = msg.split(': ', 1)
@@ -1424,7 +1414,6 @@ def check_spam_command(msg):
 
         content_lower = content.lower()
 
-        # پترن: "اسپم <message> <delay>"
         match = re.match(r'^اسپم\s+(.+?)\s+([\d.]+)\s*$', content_lower)
 
         if match:
@@ -1437,14 +1426,12 @@ def check_spam_command(msg):
             if delay <= 0:
                 delay = 2.0
 
-            # ✅ اگه اسپم فعاله، stop کن
             if spam_active:
                 stop_spam()
 
             start_spam(message, delay)
             return True
 
-        # دستور "توقف اسپم" یا "stop spam"
         if content_lower in ('توقف اسپم', 'stop spam', 'اسپم توقف'):
             stop_spam()
             return True
@@ -1485,9 +1472,9 @@ class byMahyar(Plugin):
 
             teck(0.5, get_my_ids)
 
-            # ✅ فقط یه دکمه: Mods
+            # ✅ فقط یه دکمه: Mods (پایین‌تر)
             b_mods = AR.bw(
-                position=(self._width - 100, self._height - 100),
+                position=(self._width - 100, self._height - 150),
                 parent=self._root_widget,
                 size=(80, 25),
                 label='Mods',
@@ -1687,27 +1674,22 @@ def check_chat():
                 new_messages = messages[last_msg_count:current_count]
 
                 for msg in new_messages:
-                    # 1. چک اسپم command
                     if check_spam_command(msg):
                         continue
 
-                    # 2. چک Auto-Reply
                     if check_auto_reply(msg):
                         continue
 
-                    # 3. چک Auto-React
                     check_reaction(msg)
 
                     if not auto_buyer_enabled:
                         continue
 
-                    # 4. چک پیام فروش
                     m = SELL_PATTERN.search(msg)
                     if m:
                         process_sell(m.group(1))
                         continue
 
-                    # 5. چک b sXXX
                     is_mine = False
                     if my_own_name:
                         if msg.startswith(f"{my_own_name}:") or msg.startswith(f"{my_own_name} :"):
@@ -1720,7 +1702,6 @@ def check_chat():
                             process_bid(item_id)
                             continue
 
-                    # 6. چک پیام خرید
                     m = BUY_PATTERN.search(msg)
                     if m:
                         process_buy(
@@ -1737,3 +1718,46 @@ def check_chat():
         print(f"Chat error: {e}")
 
     teck(0.05, check_chat)
+
+
+# ============================================
+# 🧮 Calculator Chat Detection
+# ============================================
+CALC_PATTERN = re.compile(
+    r'^(\d+(?:\.\d+)?)\s*([\+\-\*\/\^×÷xX])\s*(\d+(?:\.\d+)?)$'
+)
+
+
+def detect_calculation(message):
+    expression = message.replace('×', '*').replace('÷', '/')
+    expression = expression.replace('x', '*').replace('X', '*')
+
+    match = CALC_PATTERN.match(expression.strip())
+    if not match:
+        return None
+
+    num1 = float(match.group(1))
+    op = match.group(2)
+    num2 = float(match.group(3))
+
+    try:
+        if op == '+':
+            result = num1 + num2
+        elif op == '-':
+            result = num1 - num2
+        elif op == '*':
+            result = num1 * num2
+        elif op == '/':
+            if num2 == 0:
+                return None
+            result = num1 / num2
+        elif op == '^':
+            result = num1 ** num2
+        else:
+            return None
+
+        result_str = str(int(result)) if result == int(result) else str(round(result, 10))
+        op_display = {'+': '+', '-': '-', '*': '×', '/': '÷', '^': '^'}.get(op, op)
+        return f"⚖️ {match.group(1)} {op_display} {match.group(3)} = {result_str}"
+    except:
+        return None
