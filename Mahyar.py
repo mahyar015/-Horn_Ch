@@ -197,23 +197,6 @@ def clear_mods_button_position():
 
 
 # ============================================
-# ✅ رفرنس مستقیم به PartyWindow فعلی
-# ============================================
-_current_party_window = None
-
-
-def get_current_party_size():
-    """ابعاد PartyWindow فعلی رو برمیگردونه"""
-    global _current_party_window
-    try:
-        if _current_party_window is not None:
-            return float(_current_party_window._width), float(_current_party_window._height)
-    except:
-        pass
-    return 1920.0, 1080.0
-
-
-# ============================================
 # ✅ Global state
 # ============================================
 auto_react_enabled = get_enabled_state('react', True)
@@ -1070,14 +1053,6 @@ class EditLimitsWindow:
 # ============================================
 # 📍 Edit Place Window
 # ============================================
-# ✅ ناحیه ممنوعه چت (پایین صفحه)
-CHAT_ZONE_HEIGHT = 160.0
-BTN_WIDTH = 85.0
-BTN_HEIGHT = 25.0
-BTN_MARGIN_X = 110.0
-BTN_MARGIN_Y = 155.0
-
-
 class EditPlaceWindow:
     def __init__(s, source, mods_button):
         s.mods_button = mods_button
@@ -1090,87 +1065,94 @@ class EditPlaceWindow:
         except:
             s.current_x, s.current_y = 0.0, 0.0
 
-        # ✅ ابعاد واقعی PartyWindow از رفرنس مستقیم
-        s.parent_w, s.parent_h = get_current_party_size()
+        # ✅ ابعاد والد (همون روش قبلی که کار می‌کرد)
+        s.parent_w, s.parent_h = 1920.0, 1080.0
+        try:
+            parent = mods_button.get_parent()
+            if parent:
+                psize = parent.get_size()
+                s.parent_w, s.parent_h = float(psize[0]), float(psize[1])
+        except:
+            pass
 
-        s.w = AR.cw(source=source, size=(320, 360), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(290, 325))
+        s.w = AR.cw(source=source, size=(320, 380), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(290, 345))
 
-        tw(parent=s.w, text='📍 Edit Button Place', scale=0.9, position=(160, 320),
+        tw(parent=s.w, text='📍 Edit Button Place', scale=0.9, position=(160, 340),
            h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(160, 305),
+        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(160, 325),
            h_align='center', color=(0.6, 0.6, 0.8))
 
         s.pos_text = tw(parent=s.w, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}',
-                        position=(160, 280), h_align='center', scale=0.6,
+                        position=(160, 298), h_align='center', scale=0.6,
                         color=(1, 1, 0))
         tw(parent=s.w, text=f'Parent: {int(s.parent_w)} x {int(s.parent_h)}  |  Step: 5px',
-           position=(160, 262), h_align='center', scale=0.4,
+           position=(160, 280), h_align='center', scale=0.4,
            color=(0.7, 0.7, 1))
 
-        arrow_size = (60, 50)
+        arrow_size = (60, 45)
         arrow_color = (0.3, 0.5, 0.8)
         cx = 160
 
         # ─── Up ───
         bw(parent=s.w, label='▲', size=arrow_size,
-           position=(cx - 30, 200),
+           position=(cx - 30, 220),
            on_activate_call=lambda: s.move(0, s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
         # ─── Left / Right ───
         bw(parent=s.w, label='◀', size=arrow_size,
-           position=(cx - 100, 145),
+           position=(cx - 100, 165),
            on_activate_call=lambda: s.move(-s.step, 0),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
         bw(parent=s.w, label='▶', size=arrow_size,
-           position=(cx + 40, 145),
+           position=(cx + 40, 165),
            on_activate_call=lambda: s.move(s.step, 0),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
         # ─── Down ───
         bw(parent=s.w, label='▼', size=arrow_size,
-           position=(cx - 30, 90),
+           position=(cx - 30, 110),
            on_activate_call=lambda: s.move(0, -s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        # ─── Info ───
-        tw(parent=s.w, text='⚠️ Button cannot enter chat area',
-           position=(cx, 65), scale=0.35, h_align='center',
-           color=(1, 0.7, 0.3))
-
         # ─── Save / Reset ───
-        bw(parent=s.w, label='💾 Save', size=(130, 30), position=(cx - 140, 25),
+        bw(parent=s.w, label='💾 Save', size=(130, 30), position=(cx - 140, 35),
            on_activate_call=s.save, color=(0.2, 0.7, 0.3),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
 
-        bw(parent=s.w, label='↺ Reset', size=(130, 30), position=(cx + 10, 25),
+        bw(parent=s.w, label='↺ Reset', size=(130, 30), position=(cx + 10, 35),
            on_activate_call=s.reset, color=(0.7, 0.3, 0.2),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
 
+        tw(parent=s.w, text='Changes apply immediately',
+           position=(cx, 12), scale=0.35, h_align='center',
+           color=(0.6, 1, 0.6))
+
         gs('swish').play()
-
-    def _clamp(self, x, y):
-        """محدود کردن موقعیت به محدوده مجاز (خارج از ناحیه چت)"""
-        max_x = max(0.0, s.parent_w - BTN_WIDTH)
-        max_y = max(CHAT_ZONE_HEIGHT, s.parent_h - BTN_HEIGHT)
-
-        if x < 0: x = 0.0
-        if y < CHAT_ZONE_HEIGHT: y = CHAT_ZONE_HEIGHT
-        if x > max_x: x = max_x
-        if y > max_y: y = max_y
-        return x, y
 
     def move(s, dx, dy):
         try:
             new_x = s.current_x + dx
             new_y = s.current_y + dy
-            s.current_x, s.current_y = s._clamp(new_x, new_y)
+
+            # حداقل خیلی کم برای اینکه کامل از صفحه خارج نشه
+            min_y = 0.0
+            max_x = max(0.0, s.parent_w - 85)
+            max_y = max(0.0, s.parent_h - 25)
+
+            if new_x < 0: new_x = 0.0
+            if new_y < min_y: new_y = min_y
+            if new_x > max_x: new_x = max_x
+            if new_y > max_y: new_y = max_y
+
+            s.current_x = new_x
+            s.current_y = new_y
 
             bw(s.mods_button, position=(s.current_x, s.current_y))
             tw(s.pos_text, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}')
@@ -1187,14 +1169,19 @@ class EditPlaceWindow:
         gs('dingSmallHigh').play()
 
     def reset(s):
-        # ✅ ابعاد واقعی PartyWindow
-        s.parent_w, s.parent_h = get_current_party_size()
+        # ✅ ابعاد والد رو دوباره بگیر
+        try:
+            parent = s.mods_button.get_parent()
+            if parent:
+                psize = parent.get_size()
+                s.parent_w, s.parent_h = float(psize[0]), float(psize[1])
+        except:
+            pass
 
-        # پیش‌فرض: گوشه بالا-راست
-        default_x = s.parent_w - BTN_MARGIN_X
-        default_y = s.parent_h - BTN_MARGIN_Y
+        default_x = s.parent_w - 110
+        default_y = s.parent_h - 155
 
-        s.current_x, s.current_y = s._clamp(default_x, default_y)
+        s.current_x, s.current_y = float(default_x), float(default_y)
         bw(s.mods_button, position=(s.current_x, s.current_y))
         tw(s.pos_text, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}')
         save_mods_button_position(s.current_x, s.current_y)
@@ -1393,15 +1380,21 @@ def check_chat_commands(msg):
                     btn = getattr(_plugin_instance, 'mods_button_ref', None)
                     if btn is not None:
                         try:
-                            pw, ph = get_current_party_size()
-                            new_x = float(pw) - BTN_MARGIN_X
-                            new_y = float(ph) - BTN_MARGIN_Y
-                            if new_y < CHAT_ZONE_HEIGHT:
-                                new_y = CHAT_ZONE_HEIGHT
-                            if new_x < 0:
-                                new_x = 0.0
-                            if new_y > ph - BTN_HEIGHT:
-                                new_y = float(ph) - BTN_HEIGHT
+                            new_x = 0.0
+                            new_y = 0.0
+                            try:
+                                parent = btn.get_parent()
+                                if parent:
+                                    psize = parent.get_size()
+                                    new_x = float(psize[0]) - 110
+                                    new_y = float(psize[1]) - 155
+                            except:
+                                new_x = 1810.0
+                                new_y = 925.0
+
+                            if new_x < 0: new_x = 0.0
+                            if new_y < 0: new_y = 0.0
+
                             bw(btn, position=(new_x, new_y))
                             push(f"✅ Mods → X={int(new_x)} Y={int(new_y)}", color=(0, 1, 0))
                             moved = True
@@ -1532,13 +1525,11 @@ class byMahyar(Plugin):
         o = party.PartyWindow.__init__
 
         def e(self, *a, **k):
-            global _current_party_window
             r = o(self, *a, **k)
-            _current_party_window = self   # ✅ ذخیره رفرنس مستقیم
             teck(0.5, get_my_ids)
 
-            default_x = self._width - BTN_MARGIN_X
-            default_y = self._height - BTN_MARGIN_Y
+            default_x = self._width - 110
+            default_y = self._height - 155
             saved_x, saved_y = get_mods_button_position(default_x, default_y)
 
             try:
@@ -1547,20 +1538,10 @@ class byMahyar(Plugin):
             except:
                 saved_x, saved_y = float(default_x), float(default_y)
 
-            # ✅ محدود کردن موقعیت ذخیره شده
-            if saved_y < CHAT_ZONE_HEIGHT:
-                saved_y = CHAT_ZONE_HEIGHT
-            if saved_x < 0:
-                saved_x = 0.0
-            if saved_x > self._width - BTN_WIDTH:
-                saved_x = float(self._width - BTN_WIDTH)
-            if saved_y > self._height - BTN_HEIGHT:
-                saved_y = float(self._height - BTN_HEIGHT)
-
             b_mods = AR.bw(
                 position=(saved_x, saved_y),
                 parent=self._root_widget,
-                size=(int(BTN_WIDTH), int(BTN_HEIGHT)),
+                size=(85, 25),
                 label='Mods',
                 color=(0.3, 0.5, 0.8)
             )
