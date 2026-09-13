@@ -1021,20 +1021,21 @@ class EditLimitsWindow:
 
 
 # ============================================
-# 📍 Edit Place Window
+# 📍 Edit Place Window (ساده و دقیق)
 # ============================================
 class EditPlaceWindow:
     def __init__(s, source, mods_button):
         s.mods_button = mods_button
-        s.step = 10
-        s.step_buttons = {}
+        s.step = 5  # ✅ فقط 5 پیکسل
 
+        # موقعیت فعلی دکمه
         try:
             pos = mods_button.get_position()
             s.current_x, s.current_y = float(pos[0]), float(pos[1])
         except:
             s.current_x, s.current_y = 0.0, 0.0
 
+        # ابعاد والد
         s.parent_w, s.parent_h = 1920.0, 1080.0
         try:
             parent = mods_button.get_parent()
@@ -1044,90 +1045,84 @@ class EditPlaceWindow:
         except:
             pass
 
-        s.w = AR.cw(source=source, size=(320, 380), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(290, 345))
+        s.w = AR.cw(source=source, size=(340, 320), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(310, 285))
 
-        tw(parent=s.w, text='📍 Edit Button Place', scale=0.9, position=(160, 340),
+        tw(parent=s.w, text='📍 Edit Button Place', scale=0.95, position=(170, 280),
            h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(160, 325),
+        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(170, 265),
            h_align='center', color=(0.6, 0.6, 0.8))
 
+        # موقعیت فعلی
         s.pos_text = tw(parent=s.w, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}',
-                        position=(160, 298), h_align='center', scale=0.6,
+                        position=(170, 235), h_align='center', scale=0.7,
                         color=(1, 1, 0))
-        tw(parent=s.w, text=f'Parent: {int(s.parent_w)} x {int(s.parent_h)}',
-           position=(160, 280), h_align='center', scale=0.4,
+
+        tw(parent=s.w, text=f'Step: {s.step}px (fixed)',
+           position=(170, 215), h_align='center', scale=0.45,
            color=(0.7, 0.7, 1))
 
-        arrow_size = (60, 45)
+        # ─── فلش‌های جابجایی ───
+        arrow_size = (55, 45)
         arrow_color = (0.3, 0.5, 0.8)
-        cx = 160
+        cx = 170
 
+        # بالا
         bw(parent=s.w, label='▲', size=arrow_size,
-           position=(cx - 30, 220),
-           on_activate_call=lambda: s.move(0, s.step),
+           position=(cx - 27, 155),
+           on_activate_call=s.move_up,
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
+        # چپ / راست
         bw(parent=s.w, label='◀', size=arrow_size,
-           position=(cx - 100, 165),
-           on_activate_call=lambda: s.move(-s.step, 0),
+           position=(cx - 110, 100),
+           on_activate_call=s.move_left,
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
         bw(parent=s.w, label='▶', size=arrow_size,
-           position=(cx + 40, 165),
-           on_activate_call=lambda: s.move(s.step, 0),
+           position=(cx + 55, 100),
+           on_activate_call=s.move_right,
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
+        # پایین
         bw(parent=s.w, label='▼', size=arrow_size,
-           position=(cx - 30, 110),
-           on_activate_call=lambda: s.move(0, -s.step),
+           position=(cx - 27, 45),
+           on_activate_call=s.move_down,
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        tw(parent=s.w, text='Step:', scale=0.5, position=(cx - 90, 82),
-           h_align='center', color=(0.8, 0.8, 1))
-
-        for i, val in enumerate((1, 5, 10, 25, 50)):
-            btn = bw(
-                parent=s.w, label=str(val), size=(38, 26),
-                position=(cx - 55 + i * 42, 75),
-                on_activate_call=lambda v=val: s.set_step(v),
-                color=(0.3, 0.6, 0.3) if val == 10 else (0.35, 0.35, 0.5),
-                textcolor=(1, 1, 1), button_type='square', text_scale=0.6
-            )
-            s.step_buttons[val] = btn
-
-        bw(parent=s.w, label='💾 Save', size=(130, 30), position=(cx - 140, 35),
-           on_activate_call=s.save, color=(0.2, 0.7, 0.3),
+        # ─── دکمه Reset ───
+        bw(parent=s.w, label='↺ Reset to Default', size=(200, 32),
+           position=(70, 5),
+           on_activate_call=s.reset,
+           color=(0.7, 0.3, 0.2),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-
-        bw(parent=s.w, label='↺ Reset', size=(130, 30), position=(cx + 10, 35),
-           on_activate_call=s.reset, color=(0.7, 0.3, 0.2),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-
-        tw(parent=s.w, text='Changes apply immediately',
-           position=(cx, 12), scale=0.35, h_align='center',
-           color=(0.6, 1, 0.6))
 
         gs('swish').play()
 
-    def set_step(s, value):
-        s.step = value
-        for val, btn in s.step_buttons.items():
-            try:
-                bw(btn, color=(0.3, 0.6, 0.3) if val == value else (0.35, 0.35, 0.5))
-            except:
-                pass
-        gs('click01').play()
+    def move_up(s):
+        s.current_y += s.step
+        s.apply_position()
 
-    def move(s, dx, dy):
+    def move_down(s):
+        s.current_y -= s.step
+        s.apply_position()
+
+    def move_left(s):
+        s.current_x -= s.step
+        s.apply_position()
+
+    def move_right(s):
+        s.current_x += s.step
+        s.apply_position()
+
+    def apply_position(s):
+        """اعمال موقعیت جدید + ذخیره فوری"""
         try:
-            s.current_x += dx
-            s.current_y += dy
-
+            # محدود به صفحه
             max_x = max(0, s.parent_w - 85)
             max_y = max(0, s.parent_h - 25)
             if s.current_x < 0: s.current_x = 0
@@ -1135,25 +1130,21 @@ class EditPlaceWindow:
             if s.current_x > max_x: s.current_x = max_x
             if s.current_y > max_y: s.current_y = max_y
 
+            # ✅ جابجایی دکمه
             bw(s.mods_button, position=(s.current_x, s.current_y))
+
+            # ✅ آپدیت متن
             tw(s.pos_text, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}')
 
-            # ✅ ذخیره فوری هر تغییر
+            # ✅ ذخیره فوری
             save_mods_button_position(s.current_x, s.current_y)
 
             gs('click01').play()
         except Exception as e:
             print(f"Move error: {e}")
 
-    def save(s):
-        save_mods_button_position(s.current_x, s.current_y)
-        bui.screenmessage(
-            f'Saved! X={int(s.current_x)} Y={int(s.current_y)}',
-            color=(0, 1, 0)
-        )
-        gs('dingSmallHigh').play()
-
     def reset(s):
+        """بازگشت به موقعیت پیش‌فرض (گوشه بالا راست)"""
         try:
             default_x = s.parent_w - 110
             default_y = s.parent_h - 155
@@ -1161,9 +1152,8 @@ class EditPlaceWindow:
             default_x, default_y = 0, 0
 
         s.current_x, s.current_y = float(default_x), float(default_y)
-        bw(s.mods_button, position=(s.current_x, s.current_y))
-        tw(s.pos_text, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}')
-        save_mods_button_position(s.current_x, s.current_y)
+        s.apply_position()
+
         bui.screenmessage('Reset!', color=(0, 1, 1))
         gs('dingSmallHigh').play()
 
@@ -1455,8 +1445,7 @@ class byMahyar(Plugin):
             r = o(self, *a, **k)
             teck(0.5, get_my_ids)
 
-            # ✅ موقعیت پیش‌فرض = جای دکمه Reply قدیم
-            # (width - 110, height - 155) = گوشه بالا راست، زیر دکمه چت
+            # ✅ موقعیت پیش‌فرض = گوشه بالا راست، زیر دکمه چت
             default_x = self._width - 110
             default_y = self._height - 155
             saved_x, saved_y = get_mods_button_position(default_x, default_y)
