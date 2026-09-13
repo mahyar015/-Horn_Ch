@@ -24,7 +24,6 @@ from bascenev1 import (
 import math
 import re
 import time
-import gc
 import bauiv1 as bui
 import bascenev1
 from babase import app
@@ -197,18 +196,18 @@ def clear_mods_button_position():
         return False
 
 
-def find_party_window_size():
-    """پیدا کردن ابعاد PartyWindow از طریق gc"""
+# ============================================
+# ✅ رفرنس مستقیم به PartyWindow فعلی
+# ============================================
+_current_party_window = None
+
+
+def get_current_party_size():
+    """ابعاد PartyWindow فعلی رو برمیگردونه"""
+    global _current_party_window
     try:
-        for obj in gc.get_objects():
-            try:
-                if type(obj).__name__ == 'PartyWindow':
-                    w = getattr(obj, '_width', None)
-                    h = getattr(obj, '_height', None)
-                    if w and h:
-                        return float(w), float(h)
-            except:
-                pass
+        if _current_party_window is not None:
+            return float(_current_party_window._width), float(_current_party_window._height)
     except:
         pass
     return 1920.0, 1080.0
@@ -1071,7 +1070,7 @@ class EditLimitsWindow:
 # ============================================
 # 📍 Edit Place Window
 # ============================================
-# ✅ ناحیه ممنوعه چت (پایین صفحه) - دکمه نباید بره داخل این ناحیه
+# ✅ ناحیه ممنوعه چت (پایین صفحه)
 CHAT_ZONE_HEIGHT = 160.0
 BTN_WIDTH = 85.0
 BTN_HEIGHT = 25.0
@@ -1091,8 +1090,8 @@ class EditPlaceWindow:
         except:
             s.current_x, s.current_y = 0.0, 0.0
 
-        # ✅ پیدا کردن ابعاد واقعی PartyWindow
-        s.parent_w, s.parent_h = find_party_window_size()
+        # ✅ ابعاد واقعی PartyWindow از رفرنس مستقیم
+        s.parent_w, s.parent_h = get_current_party_size()
 
         s.w = AR.cw(source=source, size=(320, 360), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(290, 325))
@@ -1161,10 +1160,6 @@ class EditPlaceWindow:
         max_x = max(0.0, s.parent_w - BTN_WIDTH)
         max_y = max(CHAT_ZONE_HEIGHT, s.parent_h - BTN_HEIGHT)
 
-        # اگه parent_h کوچیک‌تر از ناحیه چت باشه، یه حداقل منطقی
-        if max_y < CHAT_ZONE_HEIGHT:
-            max_y = CHAT_ZONE_HEIGHT
-
         if x < 0: x = 0.0
         if y < CHAT_ZONE_HEIGHT: y = CHAT_ZONE_HEIGHT
         if x > max_x: x = max_x
@@ -1193,7 +1188,7 @@ class EditPlaceWindow:
 
     def reset(s):
         # ✅ ابعاد واقعی PartyWindow
-        s.parent_w, s.parent_h = find_party_window_size()
+        s.parent_w, s.parent_h = get_current_party_size()
 
         # پیش‌فرض: گوشه بالا-راست
         default_x = s.parent_w - BTN_MARGIN_X
@@ -1372,7 +1367,7 @@ def detect_calculation(message):
 
 
 # ============================================
-# 🧮 Chat Commands (شامل mods reset و spam)
+# 🧮 Chat Commands
 # ============================================
 _plugin_instance = None
 
@@ -1398,13 +1393,15 @@ def check_chat_commands(msg):
                     btn = getattr(_plugin_instance, 'mods_button_ref', None)
                     if btn is not None:
                         try:
-                            pw = getattr(_plugin_instance, 'party_width', 1920)
-                            ph = getattr(_plugin_instance, 'party_height', 1080)
+                            pw, ph = get_current_party_size()
                             new_x = float(pw) - BTN_MARGIN_X
                             new_y = float(ph) - BTN_MARGIN_Y
-                            # اطمینان از خروج از ناحیه چت
                             if new_y < CHAT_ZONE_HEIGHT:
                                 new_y = CHAT_ZONE_HEIGHT
+                            if new_x < 0:
+                                new_x = 0.0
+                            if new_y > ph - BTN_HEIGHT:
+                                new_y = float(ph) - BTN_HEIGHT
                             bw(btn, position=(new_x, new_y))
                             push(f"✅ Mods → X={int(new_x)} Y={int(new_y)}", color=(0, 1, 0))
                             moved = True
@@ -1524,10 +1521,8 @@ class byMahyar(Plugin):
         s.last_msg_hash = ""
         s.last_calc_hash = ""
 
-        # رفرنس دکمه Mods و ابعاد PartyWindow
+        # رفرنس دکمه Mods
         s.mods_button_ref = None
-        s.party_width = 1920.0
-        s.party_height = 1080.0
 
         teck(1, s.ear)
         teck(1, s.calc_ear)
@@ -1537,7 +1532,9 @@ class byMahyar(Plugin):
         o = party.PartyWindow.__init__
 
         def e(self, *a, **k):
+            global _current_party_window
             r = o(self, *a, **k)
+            _current_party_window = self   # ✅ ذخیره رفرنس مستقیم
             teck(0.5, get_my_ids)
 
             default_x = self._width - BTN_MARGIN_X
@@ -1550,7 +1547,7 @@ class byMahyar(Plugin):
             except:
                 saved_x, saved_y = float(default_x), float(default_y)
 
-            # ✅ اطمینان از اینکه موقعیت ذخیره شده داخل ناحیه مجاز باشه
+            # ✅ محدود کردن موقعیت ذخیره شده
             if saved_y < CHAT_ZONE_HEIGHT:
                 saved_y = CHAT_ZONE_HEIGHT
             if saved_x < 0:
@@ -1569,10 +1566,8 @@ class byMahyar(Plugin):
             )
             bw(b_mods, on_activate_call=lambda: s.delayed_open(ModsMenu, b_mods))
 
-            # ✅ ذخیره reference برای دستور mods reset
+            # ✅ ذخیره رفرنس برای دستور mods reset
             s.mods_button_ref = b_mods
-            s.party_width = float(self._width)
-            s.party_height = float(self._height)
 
             return r
 
@@ -1611,7 +1606,6 @@ class byMahyar(Plugin):
                         return
             except: pass
 
-            # ✅ دستورات چت (شامل mods reset و spam)
             try:
                 if check_chat_commands(msg): return
             except: pass
