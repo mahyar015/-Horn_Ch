@@ -186,7 +186,6 @@ my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
 
-# ✅ Cache برای سرعت
 _limits_cache = None
 _limits_cache_time = 0
 
@@ -283,7 +282,7 @@ bascenev1.connect_to_party = new_connect_to_party
 
 
 # ============================================
-# 🎯 Auto-Reply
+# 🎯 Auto-Reply (فقط کلمه کامل)
 # ============================================
 def check_auto_reply(msg):
     if not auto_reply_enabled: return False
@@ -294,12 +293,13 @@ def check_auto_reply(msg):
             sender = parts[0].strip(); content = parts[1].strip()
         if sender and my_own_name:
             if sender == my_own_name: return False
-        content_lower = content.lower()
+
+        content_stripped = content.strip().lower()
 
         for keyword, response in get_auto_replies().items():
-            kw_lower = keyword.lower()
-            pattern = r'\b' + re.escape(kw_lower) + r'\b'
-            if re.search(pattern, content_lower, re.IGNORECASE):
+            kw_lower = keyword.lower().strip()
+
+            if content_stripped == kw_lower:
                 cd_key = f"{keyword}_{sender or 'unknown'}"
                 current_time = time.time()
                 last_time = auto_reply_cooldown.get(cd_key, 0)
@@ -313,7 +313,8 @@ def check_auto_reply(msg):
                 try: gs('dingSmall').play()
                 except: pass
                 return True
-    except Exception as e: print(f"Auto-Reply error: {e}")
+    except Exception as e:
+        print(f"Auto-Reply error: {e}")
     return False
 
 
@@ -380,7 +381,7 @@ class Calculator:
         row_gap = 27
         btn_h = 22
         rows = [
-            [('AC', s.clear_all, (15, row_y), (35, btn_h), (0.7, 0.2, 0.3)), ('+/-', s.toggle_sign, (55, row_y), (35, btn_h), (0.3, 0.4, 0.7)), ('%', s.percentage, (95, row_y), (35, btn_h), (0.3, 0.4, 0.7)), ('R', s.square_root, (135, row_y), (35, btn_h), (0.3, 0.4, 0.7)), ('x2', s.square, (175, row_y), (35, btn_h), (0.3, 0.4, 0.7)), ('/', lambda: s.set_operation('/'), (215, row_y), (30, btn_h), (0.8, 0.6, 0.1))],
+            [('AC', s.clear_all, (15, row_y), (35, btn_h), (0.7, 0.2, 0.3)), ('+/-', s.toggle_sign, (55, row_y), (35, btn_h), (0.3, 0.4, 0.7)), ('%', s.percentage, (95, row_y), (35, btn_h), (0.3, 0.4, 0.7)), ('R', s.square_root, (135, row_y), (35, btn_h), (0.3, 0.4, 0.7)), ('x2', s.square, (175, row_y), (35, btn_h), (0.3, 0.4, 0.7)), ('÷', lambda: s.set_operation('/'), (215, row_y), (30, btn_h), (0.8, 0.6, 0.1))],
             [('7', lambda: s.append_number('7'), (15, row_y-row_gap), (35, btn_h), (0.25, 0.3, 0.45)), ('8', lambda: s.append_number('8'), (55, row_y-row_gap), (35, btn_h), (0.25, 0.3, 0.45)), ('9', lambda: s.append_number('9'), (95, row_y-row_gap), (35, btn_h), (0.25, 0.3, 0.45)), ('×', lambda: s.set_operation('*'), (135, row_y-row_gap), (35, btn_h), (0.8, 0.6, 0.1)), ('DEL', s.backspace, (175, row_y-row_gap), (35, btn_h), (0.6, 0.15, 0.25)), ('1/x', s.reciprocal, (215, row_y-row_gap), (30, btn_h), (0.3, 0.4, 0.7))],
             [('4', lambda: s.append_number('4'), (15, row_y-row_gap*2), (35, btn_h), (0.25, 0.3, 0.45)), ('5', lambda: s.append_number('5'), (55, row_y-row_gap*2), (35, btn_h), (0.25, 0.3, 0.45)), ('6', lambda: s.append_number('6'), (95, row_y-row_gap*2), (35, btn_h), (0.25, 0.3, 0.45)), ('-', lambda: s.set_operation('-'), (135, row_y-row_gap*2), (35, btn_h), (0.8, 0.6, 0.1)), ('n!', s.factorial, (175, row_y-row_gap*2), (35, btn_h), (0.3, 0.4, 0.7)), ('log', s.logarithm, (215, row_y-row_gap*2), (30, btn_h), (0.3, 0.4, 0.7))],
             [('1', lambda: s.append_number('1'), (15, row_y-row_gap*3), (35, btn_h), (0.25, 0.3, 0.45)), ('2', lambda: s.append_number('2'), (55, row_y-row_gap*3), (35, btn_h), (0.25, 0.3, 0.45)), ('3', lambda: s.append_number('3'), (95, row_y-row_gap*3), (35, btn_h), (0.25, 0.3, 0.45)), ('+', lambda: s.set_operation('+'), (135, row_y-row_gap*3), (35, btn_h), (0.8, 0.6, 0.1)), ('^', s.power, (175, row_y-row_gap*3), (35, btn_h), (0.3, 0.4, 0.7)), ('pi', s.pi_value, (215, row_y-row_gap*3), (30, btn_h), (0.5, 0.3, 0.7))],
@@ -415,7 +416,7 @@ class Calculator:
     def set_operation(s, op):
         if s.operation and not s.reset_next_input: s.calculate()
         s.previous_input = s.current_input; s.operation = op; s.reset_next_input = True
-        op_symbol = {'+': '+', '-': '-', '*': '×', '/': '/', '**': '^'}.get(op, op)
+        op_symbol = {'+': '+', '-': '-', '*': '×', '/': '÷', '**': '^'}.get(op, op)
         try:
             if s.expression.exists(): tw(s.expression, text=f"{s.current_input} {op_symbol}")
         except: pass
@@ -424,7 +425,7 @@ class Calculator:
         try:
             if not s.operation or s.reset_next_input: return
             num1 = float(s.previous_input); num2 = float(s.current_input)
-            op_symbol = {'+': '+', '-': '-', '*': '×', '/': '/', '**': '^'}.get(s.operation, s.operation)
+            op_symbol = {'+': '+', '-': '-', '*': '×', '/': '÷', '**': '^'}.get(s.operation, s.operation)
             s.last_expression = f"{s.previous_input} {op_symbol} {s.current_input}"
             if s.operation == '+': result = num1 + num2
             elif s.operation == '-': result = num1 - num2
@@ -999,6 +1000,68 @@ class EditLimitsWindow:
 
 
 # ============================================
+# 🎯 Mods Menu (صفحه اصلی با همه دکمه‌ها)
+# ============================================
+class ModsMenu:
+    def __init__(s, source):
+        s.w = AR.cw(source=source, size=(400, 500), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(370, 460))
+        
+        # عنوان
+        tw(parent=s.w, text='⚙️ Mods Menu', scale=1.2, position=(200, 455), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 435), h_align='center', color=(0.6, 0.6, 0.8))
+
+        # ✅ اسکرول‌ویجت برای دکمه‌ها
+        s.scroll = sw(parent=s.w, size=(340, 400), position=(30, 25))
+        
+        # ✅ کانتینر برای دکمه‌های داخل اسکرول
+        s.container = cw(parent=s.scroll, size=(320, 700), background=False)
+
+        # ✅ لیست دکمه‌ها
+        buttons = [
+            ('🧮 Calculator', Calculator, (0, 0.3, 0.8)),
+            ('🛒 Auto Buyer', AutoBuyerWindow, (0.2, 0.6, 0.8)),
+            ('⚡ Auto React', ReactionEditorWindow, (0.8, 0.5, 0.2)),
+            ('💬 Auto Reply', AutoReplyEditorWindow, (0.3, 0.7, 0.4)),
+            ('📢 Spam', SpamWindow, (0.8, 0.3, 0.3)),
+            ('🔄 Reconnect', ReconnectWindow, (0.4, 0.6, 0.4)),
+        ]
+
+        # ✅ ساخت دکمه‌ها از بالا به پایین
+        s.item_buttons = []
+        y_pos = 650
+        for label, cls, color in buttons:
+            btn = bw(
+                parent=s.container,
+                label=label,
+                size=(300, 55),
+                position=(10, y_pos),
+                on_activate_call=Call(s.open_window, cls),
+                color=color,
+                textcolor=(1, 1, 1),
+                button_type='square',
+                text_scale=0.8
+            )
+            s.item_buttons.append(btn)
+            y_pos -= 65
+
+        # ✅ تنظیم ارتفاع کانتینر
+        cw(s.container, size=(320, 700))
+        
+        gs('swish').play()
+
+    def open_window(s, cls):
+        """باز کردن پنجره انتخابی"""
+        # ✅ پنجره Mods رو می‌بندیم و پنجره انتخابی رو باز می‌کنیم
+        gs('swish').play()
+        try:
+            AR.swish(s.w)
+            teck(0.15, lambda: cls(s.w))
+        except Exception as e:
+            print(f"Open window error: {e}")
+
+
+# ============================================
 # 🤖 Auto Buyer Logic
 # ============================================
 SELL_PATTERN = re.compile(r'💰Sell ID:\s*(\w+)')
@@ -1200,7 +1263,7 @@ def stop_auto_reconnect():
 
 
 # ============================================
-# 🎯 Main Plugin - hash + سرعت بالا
+# 🎯 Main Plugin
 # ============================================
 # ba_meta require api 9
 # ba_meta export babase.Plugin
@@ -1210,7 +1273,6 @@ class byMahyar(Plugin):
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
 
-        # ✅ برگشت به hash (که کار می‌کرد)
         s.last_msg_hash = ""
         s.last_calc_hash = ""
 
@@ -1225,29 +1287,15 @@ class byMahyar(Plugin):
             r = o(self, *a, **k)
             teck(0.5, get_my_ids)
 
-            b_calc = AR.bw(position=(self._width - 100, self._height - 100),
-                parent=self._root_widget, size=(85, 25), label='Math', color=(0.3, 0.5, 0.8))
-            bw(b_calc, on_activate_call=Call(s.delayed_open, Calculator, b_calc))
-
-            b_auto = AR.bw(position=(self._width - 100, self._height - 130),
-                parent=self._root_widget, size=(85, 25), label='AutoBuy', color=(0.2, 0.6, 0.8))
-            bw(b_auto, on_activate_call=Call(s.delayed_open, AutoBuyerWindow, b_auto))
-
-            b_react = AR.bw(position=(self._width - 100, self._height - 160),
-                parent=self._root_widget, size=(85, 25), label='React', color=(0.8, 0.5, 0.2))
-            bw(b_react, on_activate_call=Call(s.delayed_open, ReactionEditorWindow, b_react))
-
-            b_reply = AR.bw(position=(self._width - 100, self._height - 190),
-                parent=self._root_widget, size=(85, 25), label='Reply', color=(0.3, 0.7, 0.4))
-            bw(b_reply, on_activate_call=Call(s.delayed_open, AutoReplyEditorWindow, b_reply))
-
-            b_spam = AR.bw(position=(self._width - 100, self._height - 220),
-                parent=self._root_widget, size=(85, 25), label='Spam', color=(0.8, 0.3, 0.3))
-            bw(b_spam, on_activate_call=Call(s.delayed_open, SpamWindow, b_spam))
-
-            b_recon = AR.bw(position=(self._width - 100, self._height - 250),
-                parent=self._root_widget, size=(85, 25), label='Reconnect', color=(0.4, 0.6, 0.4))
-            bw(b_recon, on_activate_call=Call(s.delayed_open, ReconnectWindow, b_recon))
+            # ✅ فقط یک دکمه Mods
+            b_mods = AR.bw(
+                position=(self._width - 100, self._height - 100),
+                parent=self._root_widget,
+                size=(85, 25),
+                label='Mods',
+                color=(0.3, 0.5, 0.8)
+            )
+            bw(b_mods, on_activate_call=Call(s.delayed_open, ModsMenu, b_mods))
 
             return r
 
@@ -1255,13 +1303,10 @@ class byMahyar(Plugin):
 
         teck(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
 
-    # ============================================
-    # 🎯 ear - hash + سرعت 200 بار در ثانیه
-    # ============================================
     def ear(s):
         try:
             z = GCM()
-            teck(0.005, s.ear)  # ✅ فقط سرعت زیاد شد
+            teck(0.005, s.ear)
 
             if not z:
                 s.last_msg_hash = ""
@@ -1277,7 +1322,6 @@ class byMahyar(Plugin):
             s.last_msg_hash = current_hash
             msg = last_msg
 
-            # ✅ AutoBuy اول
             try:
                 if auto_buyer_enabled:
                     m = SELL_PATTERN.search(msg)
@@ -1307,9 +1351,6 @@ class byMahyar(Plugin):
                 pass
             print(f"Error in ear: {e}")
 
-    # ============================================
-    # 🎯 calc_ear - hash
-    # ============================================
     def calc_ear(s):
         try:
             z = GCM()
@@ -1344,9 +1385,6 @@ class byMahyar(Plugin):
                 pass
             print(f"Error in calc_ear: {e}")
 
-    # ============================================
-    # 🎯 reconnect_ear
-    # ============================================
     def reconnect_ear(s):
         try:
             teck(2.0, s.reconnect_ear)
