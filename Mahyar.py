@@ -381,7 +381,7 @@ def stop_spam():
 
 
 # ============================================
-# 🧮 Calculator (با علامت ÷)
+# 🧮 Calculator
 # ============================================
 class Calculator:
     def __init__(s, source):
@@ -1029,14 +1029,12 @@ class EditPlaceWindow:
         s.step = 10
         s.step_buttons = {}
 
-        # موقعیت فعلی دکمه (نسبت به والدش)
         try:
             pos = mods_button.get_position()
             s.current_x, s.current_y = float(pos[0]), float(pos[1])
         except:
             s.current_x, s.current_y = 0.0, 0.0
 
-        # ابعاد والد
         s.parent_w, s.parent_h = 1920.0, 1080.0
         try:
             parent = mods_button.get_parent()
@@ -1065,14 +1063,12 @@ class EditPlaceWindow:
         arrow_color = (0.3, 0.5, 0.8)
         cx = 160
 
-        # ─── Up ───
         bw(parent=s.w, label='▲', size=arrow_size,
            position=(cx - 30, 220),
            on_activate_call=lambda: s.move(0, s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        # ─── Left / Right ───
         bw(parent=s.w, label='◀', size=arrow_size,
            position=(cx - 100, 165),
            on_activate_call=lambda: s.move(-s.step, 0),
@@ -1085,14 +1081,12 @@ class EditPlaceWindow:
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        # ─── Down ───
         bw(parent=s.w, label='▼', size=arrow_size,
            position=(cx - 30, 110),
            on_activate_call=lambda: s.move(0, -s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        # ─── Step Selector ───
         tw(parent=s.w, text='Step:', scale=0.5, position=(cx - 90, 82),
            h_align='center', color=(0.8, 0.8, 1))
 
@@ -1106,7 +1100,6 @@ class EditPlaceWindow:
             )
             s.step_buttons[val] = btn
 
-        # ─── Save / Reset ───
         bw(parent=s.w, label='💾 Save', size=(130, 30), position=(cx - 140, 35),
            on_activate_call=s.save, color=(0.2, 0.7, 0.3),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
@@ -1135,7 +1128,6 @@ class EditPlaceWindow:
             s.current_x += dx
             s.current_y += dy
 
-            # محدود کردن به محدوده والد
             max_x = max(0, s.parent_w - 85)
             max_y = max(0, s.parent_h - 25)
             if s.current_x < 0: s.current_x = 0
@@ -1145,6 +1137,10 @@ class EditPlaceWindow:
 
             bw(s.mods_button, position=(s.current_x, s.current_y))
             tw(s.pos_text, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}')
+
+            # ✅ ذخیره فوری هر تغییر
+            save_mods_button_position(s.current_x, s.current_y)
+
             gs('click01').play()
         except Exception as e:
             print(f"Move error: {e}")
@@ -1173,7 +1169,7 @@ class EditPlaceWindow:
 
 
 # ============================================
-# 🎯 Mods Menu (صفحه اصلی با همه دکمه‌ها)
+# 🎯 Mods Menu
 # ============================================
 class ModsMenu:
     def __init__(s, source, mods_button=None):
@@ -1459,11 +1455,12 @@ class byMahyar(Plugin):
             r = o(self, *a, **k)
             teck(0.5, get_my_ids)
 
+            # ✅ موقعیت پیش‌فرض = جای دکمه Reply قدیم
+            # (width - 110, height - 155) = گوشه بالا راست، زیر دکمه چت
             default_x = self._width - 110
             default_y = self._height - 155
             saved_x, saved_y = get_mods_button_position(default_x, default_y)
 
-            # اطمینان از اینکه مختصات عدد هستن
             try:
                 saved_x = float(saved_x)
                 saved_y = float(saved_y)
@@ -1477,7 +1474,6 @@ class byMahyar(Plugin):
                 label='Mods',
                 color=(0.3, 0.5, 0.8)
             )
-            # با lambda تا از DeprecationWarning جلوگیری بشه
             bw(b_mods, on_activate_call=lambda: s.delayed_open(ModsMenu, b_mods))
 
             return r
