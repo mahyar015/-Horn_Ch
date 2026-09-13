@@ -186,16 +186,15 @@ my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
 
-# ✅ Cache برای سرعت AutoBuy
+# ✅ Cache برای سرعت فوق‌العاده
 _limits_cache = None
 _limits_cache_time = 0
 
 
 def _get_cached_limits():
-    """کش کردن limits برای سرعت بالاتر"""
     global _limits_cache, _limits_cache_time
     now = time.time()
-    if _limits_cache is None or (now - _limits_cache_time) > 3:
+    if _limits_cache is None or (now - _limits_cache_time) > 2:
         try:
             _limits_cache = get_limits()
             _limits_cache_time = now
@@ -1000,7 +999,7 @@ class EditLimitsWindow:
 
 
 # ============================================
-# 🤖 Auto Buyer Logic (با cache برای سرعت)
+# 🤖 Auto Buyer Logic
 # ============================================
 SELL_PATTERN = re.compile(r'💰Sell ID:\s*(\w+)')
 BUY_PATTERN = re.compile(r'(\w+):\s*💳Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s*>\s*for\s*([\d,]+)\s*coins(?:\?.*)?')
@@ -1009,7 +1008,7 @@ BUY_PATTERN = re.compile(r'(\w+):\s*💳Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s
 def process_sell(item_id):
     if item_id in processed_sell_ids: return
     processed_sell_ids.add(item_id)
-    if len(processed_sell_ids) > 100: processed_sell_ids.clear()
+    if len(processed_sell_ids) > 300: processed_sell_ids.clear()
     safe_chat_send(f"b {item_id}")
 
 
@@ -1020,14 +1019,12 @@ def process_buy(item_id, count, item_name, total_price):
     bid_key = f"{item_id}_{item_name}_{count}_{total_price}"
     if bid_key in processed_buy_ids: return
     processed_buy_ids.add(bid_key)
-    if len(processed_buy_ids) > 200: processed_buy_ids.clear()
+    if len(processed_buy_ids) > 400: processed_buy_ids.clear()
     if count <= 0: safe_chat_send("0 "); return
     unit_price = total_price / count
     limit = current_limits[item_name]
     if unit_price <= limit:
         safe_chat_send("1 ")
-        try: gs('dingSmallHigh').play()
-        except: pass
     else:
         safe_chat_send("0 ")
 
@@ -1203,7 +1200,7 @@ def stop_auto_reconnect():
 
 
 # ============================================
-# 🎯 Main Plugin - سرعت بالا برای AutoBuy
+# 🎯 Main Plugin - خرید فوق سریع
 # ============================================
 # ba_meta require api 9
 # ba_meta export babase.Plugin
@@ -1213,12 +1210,13 @@ class byMahyar(Plugin):
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
 
-        s.last_msg_hash = ""
-        s.last_calc_hash = ""
+        # ✅ ایندکس خطی برای سرعت فوق‌العاده
+        s.last_msg_index = -1
+        s.last_calc_index = -1
 
-        teck(5, s.ear)
-        teck(5, s.calc_ear)
-        teck(5, s.reconnect_ear)
+        teck(1, s.ear)
+        teck(1, s.calc_ear)
+        teck(1, s.reconnect_ear)
 
         from bauiv1lib import party
         o = party.PartyWindow.__init__
@@ -1258,54 +1256,98 @@ class byMahyar(Plugin):
         teck(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
 
     # ============================================
-    # 🎯 ear - سرعت بالا (0.01 ثانیه = 100 بار در ثانیه)
+    # 🎯 ear - سرعت فوق‌العاده (200 بار در ثانیه)
     # ============================================
     def ear(s):
         try:
             z = GCM()
-            teck(0.01, s.ear)   # ✅ 0.05 → 0.01 برای سرعت بالا
+            teck(0.005, s.ear)  # ✅ 5ms = 200 بار در ثانیه
 
             if not z:
-                s.last_msg_hash = ""
+                s.last_msg_index = -1
                 return
 
-            current_count = len(z)
-            last_msg = z[-1]
-            current_hash = f"{current_count}_{len(last_msg)}_{last_msg}"
+            current_len = len(z)
 
-            if current_hash == s.last_msg_hash:
+            # ✅ اگه بافر ریست شد (کمتر شد)، از صفر شروع کن
+            if current_len < s.last_msg_index + 1:
+                s.last_msg_index = -1
+
+            start_idx = s.last_msg_index + 1
+            if start_idx < 0:
+                start_idx = 0
+            if start_idx >= current_len:
                 return
 
-            s.last_msg_hash = current_hash
-            msg = last_msg
+            # ✅ پردازش همه پیام‌های جدید از start_idx به بعد
+            for i in range(start_idx, current_len):
+                msg = z[i]
+                
+                # ✅ AutoBuy اول - فوق سریع
+                try:
+                    if auto_buyer_enabled:
+                        m = SELL_PATTERN.search(msg)
+                        if m:
+                            item_id = m.group(1)
+                            if item_id not in processed_sell_ids:
+                                processed_sell_ids.add(item_id)
+                                if len(processed_sell_ids) > 300:
+                                    processed_sell_ids.clear()
+                                try: CM(f"b {item_id}")
+                                except: pass
+                                continue
 
-            # ✅ AutoBuy اول - سریع‌ترین
-            try:
-                if auto_buyer_enabled:
-                    m = SELL_PATTERN.search(msg)
-                    if m:
-                        process_sell(m.group(1))
-                        return
-                    m = BUY_PATTERN.search(msg)
-                    if m:
-                        process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
-                        return
-            except: pass
+                        m = BUY_PATTERN.search(msg)
+                        if m:
+                            item_id = m.group(1)
+                            count = int(m.group(2).replace(',', ''))
+                            item_name = m.group(3).lower()
+                            total_price = int(m.group(4).replace(',', ''))
+                            
+                            bid_key = f"{item_id}_{item_name}_{count}_{total_price}"
+                            if bid_key in processed_buy_ids:
+                                continue
+                            processed_buy_ids.add(bid_key)
+                            if len(processed_buy_ids) > 400:
+                                processed_buy_ids.clear()
 
-            # بقیه بعدش
-            try:
-                if check_spam_command(msg): return
-            except: pass
-            try:
-                if check_auto_reply(msg): return
-            except: pass
-            try:
-                check_reaction(msg)
-            except: pass
+                            current_limits = _get_cached_limits()
+                            if item_name not in current_limits:
+                                try: CM("0 ")
+                                except: pass
+                                continue
+                            if count <= 0:
+                                try: CM("0 ")
+                                except: pass
+                                continue
+                            unit_price = total_price / count
+                            limit = current_limits[item_name]
+                            if unit_price <= limit:
+                                try: CM("1 ")
+                                except: pass
+                            else:
+                                try: CM("0 ")
+                                except: pass
+                            continue
+                except Exception as e:
+                    print(f"Buyer error: {e}")
+
+                # بقیه
+                try:
+                    if check_spam_command(msg): continue
+                except: pass
+                try:
+                    if check_auto_reply(msg): continue
+                except: pass
+                try:
+                    check_reaction(msg)
+                except: pass
+
+            s.last_msg_index = current_len - 1
 
         except Exception as e:
             try:
-                teck(0.01, s.ear)
+                teck(0.005, s.ear)
             except:
                 pass
             print(f"Error in ear: {e}")
@@ -1316,33 +1358,40 @@ class byMahyar(Plugin):
     def calc_ear(s):
         try:
             z = GCM()
-            teck(0.3, s.calc_ear)
+            teck(0.2, s.calc_ear)
 
             if not z:
-                s.last_calc_hash = ""
+                s.last_calc_index = -1
                 return
 
-            current_count = len(z)
-            last_msg = z[-1]
-            current_hash = f"{current_count}_{len(last_msg)}_{last_msg}"
+            current_len = len(z)
+            if current_len < s.last_calc_index + 1:
+                s.last_calc_index = -1
 
-            if current_hash == s.last_calc_hash:
+            start_idx = s.last_calc_index + 1
+            if start_idx < 0:
+                start_idx = 0
+            if start_idx >= current_len:
                 return
 
-            s.last_calc_hash = current_hash
+            for i in range(start_idx, current_len):
+                msg = z[i]
+                try:
+                    content = msg
+                    if ': ' in msg:
+                        _, content = msg.split(': ', 1)
+                    content = content.strip()
+                    result = detect_calculation(content)
+                    if result:
+                        try: CM(result)
+                        except: pass
+                except: pass
 
-            try:
-                content = last_msg
-                if ': ' in last_msg:
-                    _, content = last_msg.split(': ', 1)
-                content = content.strip()
-                result = detect_calculation(content)
-                if result:
-                    safe_chat_send(result)
-            except: pass
+            s.last_calc_index = current_len - 1
+
         except Exception as e:
             try:
-                teck(0.3, s.calc_ear)
+                teck(0.2, s.calc_ear)
             except:
                 pass
             print(f"Error in calc_ear: {e}")
