@@ -267,7 +267,7 @@ bascenev1.connect_to_party = new_connect_to_party
 
 
 # ============================================
-# 🎯 Auto-Reply (با word boundary)
+# 🎯 Auto-Reply
 # ============================================
 def check_auto_reply(msg):
     if not auto_reply_enabled: return False
@@ -499,7 +499,7 @@ class Calculator:
 
 
 # ============================================
-# ⚙️ Edit Reaction (fix شده)
+# ⚙️ Edit Reaction
 # ============================================
 class EditReactionWindow:
     def __init__(s, source, trigger_code, parent_window=None):
@@ -1018,9 +1018,10 @@ def check_reaction(msg):
     global my_own_client_id, my_own_display_num
     if not auto_react_enabled: return
     try:
+        if my_own_client_id is None and my_own_display_num is None:
+            get_my_ids()
         current_reactions = get_reactions()
         current_cooldowns = get_cooldowns()
-        get_my_ids()
         sender = None; content = msg
         if ': ' in msg:
             parts = msg.split(': ', 1)
@@ -1029,7 +1030,7 @@ def check_reaction(msg):
         for trigger, response in current_reactions.items():
             trigger_lower = trigger.lower()
             is_target_me = False
-            if my_own_client_id is not None:
+            if my_own_client_id:
                 pattern1 = rf'%\s*{re.escape(trigger_lower)}\s+(\d+)'
                 m1 = re.search(pattern1, content_lower)
                 if m1 and int(m1.group(1)) == my_own_client_id: is_target_me = True
@@ -1181,7 +1182,7 @@ def stop_auto_reconnect():
 
 
 # ============================================
-# 🎯 Main Plugin (روش ping.py - با index)
+# 🎯 Main Plugin - فقط hash آخرین پیام
 # ============================================
 # ba_meta require api 9
 # ba_meta export babase.Plugin
@@ -1191,9 +1192,9 @@ class byMahyar(Plugin):
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
 
-        # ✅ index به جای لیست
-        s.z = 0
-        s.last_calc = 0
+        # ✅ فقط hash آخرین پیام - هیچی دیگه ذخیره نمی‌شه
+        s.last_msg_hash = ""
+        s.last_calc_hash = ""
 
         teck(5, s.ear)
         teck(5, s.calc_ear)
@@ -1237,7 +1238,7 @@ class byMahyar(Plugin):
         teck(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
 
     # ============================================
-    # 🎯 ear - با index (حل اصلی مشکل)
+    # 🎯 ear - فقط hash آخرین پیام
     # ============================================
     def ear(s):
         try:
@@ -1245,49 +1246,43 @@ class byMahyar(Plugin):
             teck(0.05, s.ear)
 
             if not z:
-                s.z = 0
+                s.last_msg_hash = ""
                 return
 
-            current_len = len(z)
-            last_len = s.z if isinstance(s.z, int) else 0
+            # ✅ فقط آخرین پیام
+            last_msg = z[-1]
+            # ✅ hash یکتا برای هر پیام (متن + طول)
+            current_hash = f"{len(last_msg)}_{last_msg}"
 
-            # اگه بافر ریست شد
-            if current_len < last_len:
-                s.z = 0
-                last_len = 0
-
-            if current_len <= last_len:
+            # ✅ اگه همون پیام قبلیه، کاری نکن
+            if current_hash == s.last_msg_hash:
                 return
 
-            # ✅ پیام‌های جدید از index last_len به بعد
-            new_msgs = z[last_len:]
-            s.z = current_len
+            # ✅ پیام جدید! سریع پردازش کن
+            s.last_msg_hash = current_hash
 
-            for msg in new_msgs:
-                try:
-                    if check_spam_command(msg): continue
-                except Exception as e:
-                    print(f"Spam error: {e}")
-                try:
-                    if check_auto_reply(msg): continue
-                except Exception as e:
-                    print(f"Reply error: {e}")
-                try:
-                    check_reaction(msg)
-                except Exception as e:
-                    print(f"React error: {e}")
-                try:
-                    if not auto_buyer_enabled: continue
-                    m = SELL_PATTERN.search(msg)
-                    if m:
-                        process_sell(m.group(1))
-                        continue
-                    m = BUY_PATTERN.search(msg)
-                    if m:
-                        process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
-                        continue
-                except Exception as e:
-                    print(f"Buyer error: {e}")
+            # ✅ پردازش پیام
+            msg = last_msg
+            try:
+                if check_spam_command(msg): return
+            except: pass
+            try:
+                if check_auto_reply(msg): return
+            except: pass
+            try:
+                check_reaction(msg)
+            except: pass
+            try:
+                if not auto_buyer_enabled: return
+                m = SELL_PATTERN.search(msg)
+                if m:
+                    process_sell(m.group(1))
+                    return
+                m = BUY_PATTERN.search(msg)
+                if m:
+                    process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
+                    return
+            except: pass
         except Exception as e:
             try:
                 teck(0.05, s.ear)
@@ -1296,7 +1291,7 @@ class byMahyar(Plugin):
             print(f"Error in ear: {e}")
 
     # ============================================
-    # 🎯 calc_ear - با index
+    # 🎯 calc_ear - فقط hash آخرین پیام
     # ============================================
     def calc_ear(s):
         try:
@@ -1304,33 +1299,26 @@ class byMahyar(Plugin):
             teck(0.3, s.calc_ear)
 
             if not z:
-                s.last_calc = 0
+                s.last_calc_hash = ""
                 return
 
-            current_len = len(z)
-            last_len = s.last_calc if isinstance(s.last_calc, int) else 0
+            last_msg = z[-1]
+            current_hash = f"{len(last_msg)}_{last_msg}"
 
-            if current_len < last_len:
-                s.last_calc = 0
-                last_len = 0
-
-            if current_len <= last_len:
+            if current_hash == s.last_calc_hash:
                 return
 
-            new_msgs = z[last_len:]
-            s.last_calc = current_len
+            s.last_calc_hash = current_hash
 
-            for msg in new_msgs:
-                try:
-                    content = msg
-                    if ': ' in msg:
-                        _, content = msg.split(': ', 1)
-                    content = content.strip()
-                    result = detect_calculation(content)
-                    if result:
-                        safe_chat_send(result)
-                except:
-                    pass
+            try:
+                content = last_msg
+                if ': ' in last_msg:
+                    _, content = last_msg.split(': ', 1)
+                content = content.strip()
+                result = detect_calculation(content)
+                if result:
+                    safe_chat_send(result)
+            except: pass
         except Exception as e:
             try:
                 teck(0.3, s.calc_ear)
