@@ -160,8 +160,13 @@ def save_server(ip, port):
 
 
 # ============================================
-# ✅ اینا مثل ping.py به صورت global می‌مونن
+# ✅ Global state (مثل ping.py)
 # ============================================
+LIMITS = get_limits()
+REACTIONS = get_reactions()
+COOLDOWNS = get_cooldowns()
+AUTO_REPLIES = get_auto_replies()
+
 auto_react_enabled = get_enabled_state('react', True)
 auto_reply_enabled = get_enabled_state('reply', True)
 auto_buyer_enabled = get_enabled_state('buyer', True)
@@ -515,12 +520,14 @@ class EditReactionWindow:
         bw(parent=s.w, label='Save', size=(110, 28), position=(75, 10), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
         gs('swish').play()
     def save(s):
+        global REACTIONS, COOLDOWNS
         value = tw(query=s.input).strip().lower()
         if value: REACTIONS[s.trigger_code] = value
         else:
             if s.trigger_code in REACTIONS: del REACTIONS[s.trigger_code]
             if s.trigger_code in COOLDOWNS: del COOLDOWNS[s.trigger_code]
             save_reactions(REACTIONS); save_cooldowns(COOLDOWNS)
+            REACTIONS = get_reactions(); COOLDOWNS = get_cooldowns()
             bui.screenmessage(f'%{s.trigger_code} disabled', color=(1, 0.5, 0))
             gs('dingSmallHigh').play()
             if s.parent_window:
@@ -532,6 +539,7 @@ class EditReactionWindow:
         if cd_value < 0: cd_value = 0
         COOLDOWNS[s.trigger_code] = cd_value
         save_reactions(REACTIONS); save_cooldowns(COOLDOWNS)
+        REACTIONS = get_reactions(); COOLDOWNS = get_cooldowns()
         bui.screenmessage(f'%{s.trigger_code} → {value}', color=(0, 1, 0))
         gs('dingSmallHigh').play()
         if s.parent_window:
@@ -555,6 +563,7 @@ class AddReactionWindow:
         bw(parent=s.w, label='Add', size=(80, 25), position=(90, -15), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
         gs('swish').play()
     def save(s):
+        global REACTIONS, COOLDOWNS
         trigger = tw(query=s.trigger_input).strip().lower()
         response = tw(query=s.response_input).strip().lower()
         if not trigger or not response:
@@ -564,6 +573,7 @@ class AddReactionWindow:
         if cd_value < 0: cd_value = 0
         REACTIONS[trigger] = response; COOLDOWNS[trigger] = cd_value
         save_reactions(REACTIONS); save_cooldowns(COOLDOWNS)
+        REACTIONS = get_reactions(); COOLDOWNS = get_cooldowns()
         bui.screenmessage(f'%{trigger} → {response}', color=(0, 1, 0))
         gs('dingSmallHigh').play()
         if s.parent_window:
@@ -574,6 +584,10 @@ class AddReactionWindow:
 
 class ReactionEditorWindow:
     def __init__(s, source, parent_window=None):
+        global REACTIONS, COOLDOWNS
+        REACTIONS = get_reactions()
+        COOLDOWNS = get_cooldowns()
+
         s.parent_window = parent_window
         s.w = AR.cw(source=source, size=(300, 370), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(270, 335))
@@ -590,6 +604,7 @@ class ReactionEditorWindow:
         s.toggle_btn = bw(parent=s.w, label='ON' if auto_react_enabled else 'OFF', size=(260, 28), position=(20, 70), on_activate_call=Call(s.toggle), color=(0.2, 0.7, 0.2) if auto_react_enabled else (0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
         gs('swish').play()
     def build_grid(s):
+        global REACTIONS, COOLDOWNS
         for child in s.container.get_children(): child.delete()
         s.item_buttons.clear()
         items = list(REACTIONS.items())
@@ -611,15 +626,19 @@ class ReactionEditorWindow:
     def add_new(s): AddReactionWindow(s.w, parent_window=s)
     def edit_item(s, trigger): EditReactionWindow(s.w, trigger_code=trigger, parent_window=s)
     def delete_item(s, trigger):
+        global REACTIONS, COOLDOWNS
         if trigger in REACTIONS: del REACTIONS[trigger]
         if trigger in COOLDOWNS: del COOLDOWNS[trigger]
         save_reactions(REACTIONS); save_cooldowns(COOLDOWNS)
+        REACTIONS = get_reactions(); COOLDOWNS = get_cooldowns()
         bui.screenmessage(f'Deleted: %{trigger}', color=(1, 0.5, 0)); gs('dingSmallLow').play()
         s.build_grid()
     def reset_all(s):
         global REACTIONS, COOLDOWNS
-        REACTIONS = dict(DEFAULT_REACTIONS); COOLDOWNS = dict(DEFAULT_COOLDOWNS)
+        REACTIONS = dict(DEFAULT_REACTIONS)
+        COOLDOWNS = dict(DEFAULT_COOLDOWNS)
         save_reactions(REACTIONS); save_cooldowns(COOLDOWNS)
+        REACTIONS = get_reactions(); COOLDOWNS = get_cooldowns()
         bui.screenmessage('Reset!', color=(0, 1, 1)); gs('dingSmallHigh').play()
         s.build_grid()
     def toggle(s):
@@ -649,17 +668,22 @@ class EditAutoReplyWindow:
         bw(parent=s.w, label='Delete', size=(80, 26), position=(145, 20), on_activate_call=Call(s.delete), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
         gs('swish').play()
     def save(s):
+        global AUTO_REPLIES
         value = tw(query=s.input).strip()
         if not value: AR.err('Required!'); return
-        AUTO_REPLIES[s.keyword] = value; save_auto_replies(AUTO_REPLIES)
+        AUTO_REPLIES[s.keyword] = value
+        save_auto_replies(AUTO_REPLIES)
+        AUTO_REPLIES = get_auto_replies()
         bui.screenmessage(f'Saved!', color=(0, 1, 0)); gs('dingSmallHigh').play()
         if s.parent_window:
             try: s.parent_window.build_grid()
             except: pass
         AR.swish(s.w)
     def delete(s):
+        global AUTO_REPLIES
         if s.keyword in AUTO_REPLIES: del AUTO_REPLIES[s.keyword]
         save_auto_replies(AUTO_REPLIES)
+        AUTO_REPLIES = get_auto_replies()
         bui.screenmessage(f'Deleted!', color=(1, 0.5, 0)); gs('dingSmallLow').play()
         if s.parent_window:
             try: s.parent_window.build_grid()
@@ -680,10 +704,13 @@ class AddAutoReplyWindow:
         bw(parent=s.w, label='Add', size=(80, 26), position=(90, 0), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
         gs('swish').play()
     def save(s):
+        global AUTO_REPLIES
         keyword = tw(query=s.keyword_input).strip()
         response = tw(query=s.response_input).strip()
         if not keyword or not response: AR.err('Both required!'); return
-        AUTO_REPLIES[keyword] = response; save_auto_replies(AUTO_REPLIES)
+        AUTO_REPLIES[keyword] = response
+        save_auto_replies(AUTO_REPLIES)
+        AUTO_REPLIES = get_auto_replies()
         bui.screenmessage(f'Saved!', color=(0, 1, 0)); gs('dingSmallHigh').play()
         if s.parent_window:
             try: s.parent_window.build_grid()
@@ -693,6 +720,9 @@ class AddAutoReplyWindow:
 
 class AutoReplyEditorWindow:
     def __init__(s, source, parent_window=None):
+        global AUTO_REPLIES
+        AUTO_REPLIES = get_auto_replies()
+
         s.parent_window = parent_window
         s.w = AR.cw(source=source, size=(300, 370), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(270, 335))
@@ -708,6 +738,7 @@ class AutoReplyEditorWindow:
         tw(parent=s.w, text='Everywhere keyword matches → reply', position=(150, 82), scale=0.35, h_align='center', color=(0.7, 0.7, 1))
         gs('swish').play()
     def build_grid(s):
+        global AUTO_REPLIES
         for child in s.container.get_children(): child.delete()
         s.item_buttons.clear()
         items = list(AUTO_REPLIES.items())
@@ -722,13 +753,17 @@ class AutoReplyEditorWindow:
     def add_new(s): AddAutoReplyWindow(s.w, parent_window=s)
     def edit_item(s, keyword): EditAutoReplyWindow(s.w, keyword=keyword, parent_window=s)
     def delete_item(s, keyword):
+        global AUTO_REPLIES
         if keyword in AUTO_REPLIES: del AUTO_REPLIES[keyword]
         save_auto_replies(AUTO_REPLIES)
+        AUTO_REPLIES = get_auto_replies()
         bui.screenmessage(f'Deleted!', color=(1, 0.5, 0)); gs('dingSmallLow').play()
         s.build_grid()
     def clear_all(s):
         global AUTO_REPLIES
-        AUTO_REPLIES = {}; save_auto_replies(AUTO_REPLIES)
+        AUTO_REPLIES = {}
+        save_auto_replies(AUTO_REPLIES)
+        AUTO_REPLIES = get_auto_replies()
         bui.screenmessage('Cleared!', color=(1, 0.5, 0)); gs('dingSmallLow').play()
         s.build_grid()
     def toggle(s):
@@ -873,6 +908,9 @@ class ReconnectWindow:
 # ============================================
 class AutoBuyerWindow:
     def __init__(s, source):
+        global LIMITS
+        LIMITS = get_limits()
+
         s.w = AR.cw(source=source, size=(340, 410), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(310, 375))
         tw(parent=s.w, text='Auto Buyer', scale=0.95, position=(170, 370), h_align='center', color=(0, 1, 1))
@@ -889,6 +927,7 @@ class AutoBuyerWindow:
         s.build_grid()
         gs('swish').play()
     def build_grid(s):
+        global LIMITS
         for child in s.container.get_children(): child.delete()
         s.item_buttons.clear()
         items = list(LIMITS.items())
@@ -906,6 +945,7 @@ class AutoBuyerWindow:
             s.item_buttons[name] = btn
         cw(s.container, size=(280, total_h))
     def refresh_list(s):
+        global LIMITS
         for name, btn in s.item_buttons.items():
             try:
                 if btn and btn.exists():
@@ -926,12 +966,15 @@ class AutoBuyerWindow:
             tw(s.status_text, text='Status: OFF', color=(1, 0, 0))
             bui.screenmessage('Auto Buyer OFF', color=(1, 0.5, 0))
         gs('dingSmall').play()
-    def edit_item(s, name): EditLimitsWindow(s.w, item_name=name, parent_window=s)
+    def edit_item(s, name): 
+        EditLimitsWindow(s.w, item_name=name, parent_window=s)
     def reset_all(s):
         global LIMITS
-        LIMITS = dict(DEFAULT_LIMITS); save_limits(LIMITS)
+        LIMITS = dict(DEFAULT_LIMITS)
+        save_limits(LIMITS)
+        LIMITS = get_limits()
         bui.screenmessage('Reset!', color=(0, 1, 1)); gs('dingSmallHigh').play()
-        s.refresh_list()
+        s.build_grid()
 
 
 class EditLimitsWindow:
@@ -946,9 +989,12 @@ class EditLimitsWindow:
         bw(parent=s.w, label='Save', size=(100, 28), position=(80, 12), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
         gs('swish').play()
     def save(s):
+        global LIMITS
         try: value = float(tw(query=s.input).strip())
         except: AR.err('Invalid!'); return
-        LIMITS[s.item_name] = value; save_limits(LIMITS)
+        LIMITS[s.item_name] = value
+        save_limits(LIMITS)
+        LIMITS = get_limits()
         bui.screenmessage(f'Saved!', color=(0, 1, 0)); gs('dingSmallHigh').play()
         if s.parent_window:
             try: s.parent_window.refresh_list()
@@ -971,6 +1017,8 @@ def process_sell(item_id):
 
 
 def process_buy(item_id, count, item_name, total_price):
+    global LIMITS
+    LIMITS = get_limits()
     if item_name not in LIMITS:
         safe_chat_send("0 "); return
     bid_key = f"{item_id}_{item_name}_{count}_{total_price}"
@@ -990,8 +1038,10 @@ def process_buy(item_id, count, item_name, total_price):
 # 🎯 Auto-React Logic
 # ============================================
 def check_reaction(msg):
-    global my_own_client_id, my_own_display_num
+    global my_own_client_id, my_own_display_num, REACTIONS, COOLDOWNS
     if not auto_react_enabled: return
+    REACTIONS = get_reactions()
+    COOLDOWNS = get_cooldowns()
     if my_own_client_id is None and my_own_display_num is None:
         get_my_ids()
     try:
@@ -1087,7 +1137,7 @@ def check_spam_command(msg):
 
 
 # ============================================
-# 🎯 AUTO RECONNECT (فقط چک می‌کنه، تایمر نداره)
+# 🎯 Auto Reconnect Logic
 # ============================================
 def auto_reconnect_check():
     global auto_reconnect_enabled, server_ip, server_port, auto_reconnect_busy
@@ -1153,7 +1203,7 @@ def stop_auto_reconnect():
 
 
 # ============================================
-# 🎯 Main Plugin (دقیقاً مثل ping.py)
+# 🎯 Main Plugin (روش ping.py)
 # ============================================
 # ba_meta require api 9
 # ba_meta export babase.Plugin
@@ -1163,13 +1213,11 @@ class byMahyar(Plugin):
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
 
-        # ✅ مثل ping.py:
-        # - z: نگهداری آخرین پیام‌های پردازش‌شده
-        # - آخرین پیام‌ها رو تو self نگه می‌داریم
-        s.z = []           # مثل s.z = [] تو ping.py
-        s.last_calc = []   # برای ماشین حساب
+        # ✅ دقیقاً مثل ping.py
+        s.z = []
+        s.last_calc = []
 
-        # ✅ شروع تایمرها مثل teck(5, s.ear) تو ping.py
+        # ✅ شروع تایمرها مثل ping.py
         teck(5, s.ear)
         teck(5, s.calc_ear)
         teck(5, s.reconnect_ear)
@@ -1217,27 +1265,21 @@ class byMahyar(Plugin):
     def ear(s):
         try:
             z = GCM()
-            # ✅ تایمر جدید رو اول می‌سازیم (مثل ping.py)
             teck(0.05, s.ear)
 
             if not z:
                 return
-
-            # ✅ فقط پیام‌های جدید رو چک کن
             if z == s.z:
                 return
 
-            # ✅ پیام‌های جدید
             new_msgs = []
             old_set = set(s.z) if s.z else set()
             for msg in z:
                 if msg not in old_set:
                     new_msgs.append(msg)
 
-            # ✅ ذخیره آخرین 50 پیام
             s.z = z[-50:] if len(z) > 50 else z[:]
 
-            # ✅ پردازش پیام‌های جدید
             for msg in new_msgs:
                 try:
                     if check_spam_command(msg): continue
@@ -1255,8 +1297,6 @@ class byMahyar(Plugin):
                 except Exception as e:
                     print(f"Msg error: {e}")
         except Exception as e:
-            # ✅ مثل ping.py: تایمر رو تو except هم می‌سازیم
-            # که هیچوقت متوقف نشه
             try:
                 teck(0.05, s.ear)
             except:
@@ -1264,7 +1304,7 @@ class byMahyar(Plugin):
             print(f"Error in ear: {e}")
 
     # ============================================
-    # 🎯 calc_ear - مثل ear ولی برای ماشین حساب
+    # 🎯 calc_ear
     # ============================================
     def calc_ear(s):
         try:
@@ -1273,7 +1313,6 @@ class byMahyar(Plugin):
 
             if not z:
                 return
-
             if z == s.last_calc:
                 return
 
@@ -1304,7 +1343,7 @@ class byMahyar(Plugin):
             print(f"Error in calc_ear: {e}")
 
     # ============================================
-    # 🎯 reconnect_ear - مثل ear ولی برای auto reconnect
+    # 🎯 reconnect_ear
     # ============================================
     def reconnect_ear(s):
         try:
