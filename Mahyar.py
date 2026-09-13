@@ -160,6 +160,27 @@ def save_server(ip, port):
 
 
 # ============================================
+# 📍 Mods Button Position
+# ============================================
+def get_mods_button_position(default_x=None, default_y=None):
+    try:
+        x = app.config.get('mahyar_mods_btn_x', default_x)
+        y = app.config.get('mahyar_mods_btn_y', default_y)
+        return x, y
+    except:
+        return default_x, default_y
+
+
+def save_mods_button_position(x, y):
+    try:
+        app.config['mahyar_mods_btn_x'] = x
+        app.config['mahyar_mods_btn_y'] = y
+        app.config.commit()
+    except:
+        pass
+
+
+# ============================================
 # ✅ Global state
 # ============================================
 auto_react_enabled = get_enabled_state('react', True)
@@ -1000,18 +1021,133 @@ class EditLimitsWindow:
 
 
 # ============================================
+# 📍 Edit Place Window
+# ============================================
+class EditPlaceWindow:
+    def __init__(s, source, mods_button):
+        s.mods_button = mods_button
+        s.step = 10
+
+        try:
+            pos = mods_button.get_position()
+            s.current_x, s.current_y = pos[0], pos[1]
+        except:
+            s.current_x, s.current_y = 0, 0
+
+        s.w = AR.cw(source=source, size=(300, 340), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(270, 305))
+
+        tw(parent=s.w, text='Edit Button Place', scale=0.9, position=(150, 300), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(150, 285), h_align='center', color=(0.6, 0.6, 0.8))
+
+        s.pos_text = tw(parent=s.w, text=f'X: {int(s.current_x)}  Y: {int(s.current_y)}',
+                        position=(150, 258), h_align='center', scale=0.6, color=(1, 1, 0))
+
+        arrow_size = (55, 40)
+        arrow_color = (0.3, 0.5, 0.8)
+
+        # Up
+        bw(parent=s.w, label='▲', size=arrow_size, position=(122, 210),
+           on_activate_call=Call(s.move, 0, s.step), color=arrow_color,
+           textcolor=(1, 1, 1), button_type='square', text_scale=1.0)
+
+        # Left
+        bw(parent=s.w, label='◀', size=arrow_size, position=(55, 160),
+           on_activate_call=Call(s.move, -s.step, 0), color=arrow_color,
+           textcolor=(1, 1, 1), button_type='square', text_scale=1.0)
+
+        # Right
+        bw(parent=s.w, label='▶', size=arrow_size, position=(190, 160),
+           on_activate_call=Call(s.move, s.step, 0), color=arrow_color,
+           textcolor=(1, 1, 1), button_type='square', text_scale=1.0)
+
+        # Down
+        bw(parent=s.w, label='▼', size=arrow_size, position=(122, 110),
+           on_activate_call=Call(s.move, 0, -s.step), color=arrow_color,
+           textcolor=(1, 1, 1), button_type='square', text_scale=1.0)
+
+        # Step size selector
+        tw(parent=s.w, text='Step:', scale=0.5, position=(60, 80), h_align='center', color=(0.8, 0.8, 1))
+        s.step_btn_5 = bw(parent=s.w, label='5', size=(40, 24), position=(95, 75),
+           on_activate_call=Call(s.set_step, 5), color=(0.4, 0.4, 0.5),
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+        s.step_btn_10 = bw(parent=s.w, label='10', size=(40, 24), position=(140, 75),
+           on_activate_call=Call(s.set_step, 10), color=(0.3, 0.6, 0.3),
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+        s.step_btn_50 = bw(parent=s.w, label='50', size=(40, 24), position=(185, 75),
+           on_activate_call=Call(s.set_step, 50), color=(0.4, 0.4, 0.5),
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+
+        # Save
+        bw(parent=s.w, label='💾 Save Position', size=(180, 30), position=(60, 38),
+           on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3),
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+
+        # Reset
+        bw(parent=s.w, label='↺ Reset', size=(180, 30), position=(60, 5),
+           on_activate_call=Call(s.reset), color=(0.7, 0.3, 0.2),
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+
+        gs('swish').play()
+
+    def set_step(s, value):
+        s.step = value
+        # Update button colors
+        bw(s.step_btn_5, color=(0.3, 0.6, 0.3) if value == 5 else (0.4, 0.4, 0.5))
+        bw(s.step_btn_10, color=(0.3, 0.6, 0.3) if value == 10 else (0.4, 0.4, 0.5))
+        bw(s.step_btn_50, color=(0.3, 0.6, 0.3) if value == 50 else (0.4, 0.4, 0.5))
+        gs('click01').play()
+
+    def move(s, dx, dy):
+        try:
+            s.current_x += dx
+            s.current_y += dy
+            bw(s.mods_button, position=(s.current_x, s.current_y))
+            tw(s.pos_text, text=f'X: {int(s.current_x)}  Y: {int(s.current_y)}')
+            gs('click01').play()
+        except Exception as e:
+            print(f"Move error: {e}")
+
+    def save(s):
+        save_mods_button_position(s.current_x, s.current_y)
+        bui.screenmessage(f'Saved! X={int(s.current_x)} Y={int(s.current_y)}', color=(0, 1, 0))
+        gs('dingSmallHigh').play()
+
+    def reset(s):
+        # Reset to top-right corner default
+        default_x = 0
+        default_y = 0
+        try:
+            # try to get parent widget width
+            parent = s.mods_button.get_parent()
+            if parent:
+                parent_size = parent.get_size()
+                default_x = parent_size[0] - 110
+                default_y = parent_size[1] - 155
+        except: pass
+        s.current_x = default_x
+        s.current_y = default_y
+        bw(s.mods_button, position=(default_x, default_y))
+        tw(s.pos_text, text=f'X: {int(s.current_x)}  Y: {int(s.current_y)}')
+        save_mods_button_position(default_x, default_y)
+        bui.screenmessage('Reset!', color=(0, 1, 1))
+        gs('dingSmallHigh').play()
+
+
+# ============================================
 # 🎯 Mods Menu (صفحه اصلی با همه دکمه‌ها)
 # ============================================
 class ModsMenu:
-    def __init__(s, source):
-        s.w = AR.cw(source=source, size=(400, 500), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(370, 460))
-        
-        tw(parent=s.w, text='⚙️ Mods Menu', scale=1.2, position=(200, 455), h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 435), h_align='center', color=(0.6, 0.6, 0.8))
+    def __init__(s, source, mods_button=None):
+        s.mods_button_ref = mods_button
+        s.w = AR.cw(source=source, size=(400, 520), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(370, 480))
 
-        s.scroll = sw(parent=s.w, size=(340, 400), position=(30, 25))
-        s.container = cw(parent=s.scroll, size=(320, 700), background=False)
+        tw(parent=s.w, text='⚙️ Mods Menu', scale=1.2, position=(200, 475), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 455), h_align='center', color=(0.6, 0.6, 0.8))
+
+        s.scroll = sw(parent=s.w, size=(340, 420), position=(30, 25))
+        s.container = cw(parent=s.scroll, size=(320, 750), background=False)
 
         buttons = [
             ('🧮 Calculator', Calculator, (0, 0.3, 0.8)),
@@ -1020,10 +1156,11 @@ class ModsMenu:
             ('💬 Auto Reply', AutoReplyEditorWindow, (0.3, 0.7, 0.4)),
             ('📢 Spam', SpamWindow, (0.8, 0.3, 0.3)),
             ('🔄 Reconnect', ReconnectWindow, (0.4, 0.6, 0.4)),
+            ('📍 Edit Place', None, (0.6, 0.4, 0.7)),
         ]
 
         s.item_buttons = []
-        y_pos = 650
+        y_pos = 700
         for label, cls, color in buttons:
             btn = bw(
                 parent=s.container,
@@ -1039,15 +1176,22 @@ class ModsMenu:
             s.item_buttons.append(btn)
             y_pos -= 65
 
-        cw(s.container, size=(320, 700))
-        
+        cw(s.container, size=(320, 750))
+
         gs('swish').play()
 
     def open_window(s, cls):
         gs('swish').play()
         try:
             AR.swish(s.w)
-            teck(0.15, lambda: cls(s.w))
+            if cls is None:
+                # Edit Place
+                if s.mods_button_ref is not None:
+                    teck(0.15, lambda: EditPlaceWindow(s.w, s.mods_button_ref))
+                else:
+                    bui.screenmessage('Mods button not found!', color=(1, 0, 0))
+            else:
+                teck(0.15, lambda: cls(s.w))
         except Exception as e:
             print(f"Open window error: {e}")
 
@@ -1278,9 +1422,12 @@ class byMahyar(Plugin):
             r = o(self, *a, **k)
             teck(0.5, get_my_ids)
 
-            # ✅ دکمه Mods - پایین‌تر و راست‌تر
+            default_x = self._width - 110
+            default_y = self._height - 155
+            saved_x, saved_y = get_mods_button_position(default_x, default_y)
+
             b_mods = AR.bw(
-                position=(self._width - 110, self._height - 155),
+                position=(saved_x, saved_y),
                 parent=self._root_widget,
                 size=(85, 25),
                 label='Mods',
@@ -1388,4 +1535,7 @@ class byMahyar(Plugin):
             print(f"Error in reconnect_ear: {e}")
 
     def delayed_open(s, cls, btn):
-        teck(0.05, lambda: cls(btn))
+        if cls is ModsMenu:
+            teck(0.05, lambda: cls(btn, btn))
+        else:
+            teck(0.05, lambda: cls(btn))
