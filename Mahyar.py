@@ -1,10 +1,11 @@
-from babase import Plugin, AppTimer
+from babase import Plugin
 from bauiv1 import (
     containerwidget as cw,
     buttonwidget as bw,
     textwidget as tw,
     get_special_widget as gsw,
     getsound as gs,
+    apptimer as teck,
     UIScale as uis,
     app as APP,
     Call,
@@ -26,9 +27,6 @@ import time
 import bauiv1 as bui
 import bascenev1
 from babase import app
-
-from bauiv1 import apptimer as teck_scene
-
 from bascenev1lib.mainmenu import MainMenuSession
 
 SIGNATURE = "By Mahyar"
@@ -161,11 +159,9 @@ def save_server(ip, port):
     except: pass
 
 
-LIMITS = get_limits()
-REACTIONS = get_reactions()
-COOLDOWNS = get_cooldowns()
-AUTO_REPLIES = get_auto_replies()
-
+# ============================================
+# ✅ اینا مثل ping.py به صورت global می‌مونن
+# ============================================
 auto_react_enabled = get_enabled_state('react', True)
 auto_reply_enabled = get_enabled_state('reply', True)
 auto_buyer_enabled = get_enabled_state('buyer', True)
@@ -189,11 +185,6 @@ auto_reconnect_busy = False
 my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
-
-_processed_msg_hashes = set()
-_MAX_HASHES = 500
-_calc_processed_hashes = set()
-_MAX_CALC_HASHES = 200
 
 
 class AR:
@@ -264,11 +255,9 @@ def safe_chat_send(message):
 original_connect_to_party = original_connect
 
 def new_connect_to_party(address, port=43210, print_progress=False):
-    global server_ip, server_port, last_saved_ip, last_saved_port
+    global server_ip, server_port
     server_ip = address
     server_port = port
-    last_saved_ip = address
-    last_saved_port = port
     save_server(address, port)
     push(f'Saved server: {address}:{port}', color=(0, 1, 1))
     return original_connect_to_party(address, port, print_progress)
@@ -324,7 +313,7 @@ def spam_send():
         spam_counter += 1
         if spam_counter >= 100: spam_counter = 0
         safe_chat_send(spam_message + suffix)
-        spam_timer = teck_scene(spam_delay, spam_send)
+        spam_timer = teck(spam_delay, spam_send)
     except:
         spam_active = False
 
@@ -349,72 +338,6 @@ def stop_spam():
         spam_timer = None
     spam_active = False
     push("Spam Stopped", color=(1, 0.5, 0))
-
-
-# ============================================
-# 🔄 Auto Reconnect Logic
-# ============================================
-def auto_reconnect_check():
-    global auto_reconnect_enabled, server_ip, server_port, auto_reconnect_busy
-
-    if not auto_reconnect_enabled:
-        return
-
-    try:
-        conn = get_connection_info()
-
-        if not conn and server_ip and server_ip != "127.0.0.1" and not auto_reconnect_busy:
-            auto_reconnect_busy = True
-            push("Auto Reconnecting...", color=(1, 1, 0))
-
-            def try_connect(attempt=0):
-                global auto_reconnect_busy
-                try:
-                    if not auto_reconnect_enabled:
-                        auto_reconnect_busy = False
-                        return
-
-                    if get_connection_info():
-                        push("Reconnected!", color=(0, 1, 0))
-                        auto_reconnect_busy = False
-                        return
-
-                    if attempt > 40:
-                        auto_reconnect_busy = False
-                        return
-
-                    foreground = bascenev1.get_foreground_host_session()
-                    if isinstance(foreground, MainMenuSession):
-                        push(f"Connecting... (try {attempt+1})", color=(1, 1, 0))
-                        try:
-                            original_connect_to_party(server_ip, server_port)
-                        except Exception as e:
-                            print(f"Auto connect attempt {attempt} error: {e}")
-
-                        teck_scene(0.5, lambda: try_connect(attempt + 1))
-                    else:
-                        teck_scene(0.3, lambda: try_connect(attempt))
-                except Exception as e:
-                    print(f"Auto reconnect error: {e}")
-                    teck_scene(0.5, lambda: try_connect(attempt + 1))
-
-            try_connect()
-    except Exception as e:
-        print(f"Auto reconnect check error: {e}")
-
-
-def start_auto_reconnect():
-    global auto_reconnect_enabled, auto_reconnect_busy
-    auto_reconnect_enabled = True
-    auto_reconnect_busy = False
-    push("Auto Reconnect: ON", color=(0, 1, 0))
-
-
-def stop_auto_reconnect():
-    global auto_reconnect_enabled, auto_reconnect_busy
-    auto_reconnect_enabled = False
-    auto_reconnect_busy = False
-    push("Auto Reconnect: OFF", color=(1, 0.5, 0))
 
 
 # ============================================
@@ -499,7 +422,7 @@ class Calculator:
                 if s.expression.exists(): tw(s.expression, text=s.last_expression)
             except: pass
             s.operation = None; s.reset_next_input = True; s.update_display(); gs('dingSmallHigh').play()
-        except: s.current_input = 'Error'; s.update_display(); gs('error').play(); teck_scene(2.0, s.clear_all)
+        except: s.current_input = 'Error'; s.update_display(); gs('error').play(); teck(2.0, s.clear_all)
     def clear_all(s):
         s.current_input = '0'; s.previous_input = ''; s.operation = None; s.reset_next_input = False; s.last_expression = ''
         s.update_display()
@@ -924,11 +847,11 @@ class ReconnectWindow:
                             bui.screenmessage(f'Connected to {ip}:{port}', color=(0, 1, 0))
                             tw(s.status, text='Connected', color=(0, 1, 0))
                         else:
-                            teck_scene(0.15, lambda: do_connect(attempt + 1))
+                            teck(0.15, lambda: do_connect(attempt + 1))
                     except Exception as e:
-                        teck_scene(0.2, lambda: do_connect(attempt + 1))
+                        teck(0.2, lambda: do_connect(attempt + 1))
 
-                teck_scene(0.2, do_connect)
+                teck(0.2, do_connect)
             else:
                 original_connect_to_party(ip, port)
                 bui.screenmessage(f'Connected to {ip}:{port}', color=(0, 1, 0))
@@ -1105,145 +1028,6 @@ def check_reaction(msg):
 
 
 # ============================================
-# 🎯 Hash-based Message Processing
-# ============================================
-last_saved_ip = None
-last_saved_port = None
-
-
-def _msg_hash(msg):
-    try:
-        return f"{len(msg)}|{msg[:80]}|{msg[-20:] if len(msg) > 80 else ''}"
-    except:
-        try:
-            return f"{len(msg)}|{msg[:50]}"
-        except:
-            return "unknown"
-
-
-def check_chat_once():
-    global server_ip, server_port, last_saved_ip, last_saved_port
-    global _processed_msg_hashes
-
-    # ✅ IP/Port
-    try:
-        conn = get_connection_info()
-        if conn:
-            new_ip = getattr(conn, 'address', None)
-            new_port = getattr(conn, 'port', None)
-            if new_ip and new_port:
-                new_ip = str(new_ip)
-                new_port = int(new_port)
-                if new_ip != last_saved_ip or new_port != last_saved_port:
-                    server_ip = new_ip
-                    server_port = new_port
-                    last_saved_ip = new_ip
-                    last_saved_port = new_port
-                    save_server(server_ip, server_port)
-    except:
-        pass
-
-    # ✅ پیام‌ها
-    try:
-        messages = GCM()
-    except:
-        return
-    if not messages:
-        return
-
-    try:
-        recent = messages[-20:] if len(messages) > 20 else messages[:]
-    except:
-        return
-
-    # ✅ پیام‌های جدید
-    new_msgs = []
-    for msg in recent:
-        try:
-            h = _msg_hash(msg)
-            if h not in _processed_msg_hashes:
-                new_msgs.append(msg)
-                _processed_msg_hashes.add(h)
-        except:
-            continue
-
-    # ✅ پاکسازی
-    try:
-        if len(_processed_msg_hashes) > _MAX_HASHES:
-            hashes_to_remove = list(_processed_msg_hashes)[:_MAX_HASHES // 2]
-            for h in hashes_to_remove:
-                _processed_msg_hashes.discard(h)
-    except:
-        pass
-
-    # ✅ پردازش هر پیام مستقل
-    for msg in new_msgs:
-        try:
-            if check_spam_command(msg): continue
-        except: pass
-        try:
-            if check_auto_reply(msg): continue
-        except: pass
-        try:
-            check_reaction(msg)
-        except: pass
-        try:
-            if not auto_buyer_enabled: continue
-            m = SELL_PATTERN.search(msg)
-            if m:
-                process_sell(m.group(1))
-                continue
-            m = BUY_PATTERN.search(msg)
-            if m:
-                process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
-                continue
-        except: pass
-
-
-def check_calc_once():
-    global _calc_processed_hashes
-    try:
-        messages = GCM()
-    except:
-        return
-    if not messages:
-        return
-
-    try:
-        recent = messages[-15:] if len(messages) > 15 else messages[:]
-    except:
-        return
-
-    for msg in recent:
-        try:
-            h = _msg_hash(msg)
-            if h in _calc_processed_hashes:
-                continue
-            _calc_processed_hashes.add(h)
-        except:
-            continue
-
-        try:
-            content = msg
-            if ': ' in msg:
-                _, content = msg.split(': ', 1)
-            content = content.strip()
-            result = detect_calculation(content)
-            if result:
-                safe_chat_send(result)
-        except:
-            pass
-
-    try:
-        if len(_calc_processed_hashes) > _MAX_CALC_HASHES:
-            hashes_to_remove = list(_calc_processed_hashes)[:_MAX_CALC_HASHES // 2]
-            for h in hashes_to_remove:
-                _calc_processed_hashes.discard(h)
-    except:
-        pass
-
-
-# ============================================
 # 🧮 Calculator Chat Detection
 # ============================================
 CALC_PATTERN = re.compile(r'^(\d+(?:\.\d+)?)\s*([\+\-\*\/\^×÷xX])\s*(\d+(?:\.\d+)?)$')
@@ -1303,30 +1087,73 @@ def check_spam_command(msg):
 
 
 # ============================================
-# 🎯 Timer Setup (بدون watchdog)
+# 🎯 AUTO RECONNECT (فقط چک می‌کنه، تایمر نداره)
 # ============================================
-_chat_timer = None
-_calc_timer = None
-_reconnect_timer = None
-_timers_started = False
+def auto_reconnect_check():
+    global auto_reconnect_enabled, server_ip, server_port, auto_reconnect_busy
 
-
-def _start_timers():
-    global _chat_timer, _calc_timer, _reconnect_timer, _timers_started
-    if _timers_started:
+    if not auto_reconnect_enabled:
         return
-    _timers_started = True
+
     try:
-        _chat_timer = AppTimer(0.05, check_chat_once, repeat=True)
-        _calc_timer = AppTimer(0.3, check_calc_once, repeat=True)
-        _reconnect_timer = AppTimer(2.0, auto_reconnect_check, repeat=True)
-        print("[Mahyar] ✅ Timers started (repeat=True)")
+        conn = get_connection_info()
+
+        if not conn and server_ip and server_ip != "127.0.0.1" and not auto_reconnect_busy:
+            auto_reconnect_busy = True
+            push("Auto Reconnecting...", color=(1, 1, 0))
+
+            def try_connect(attempt=0):
+                global auto_reconnect_busy
+                try:
+                    if not auto_reconnect_enabled:
+                        auto_reconnect_busy = False
+                        return
+
+                    if get_connection_info():
+                        push("Reconnected!", color=(0, 1, 0))
+                        auto_reconnect_busy = False
+                        return
+
+                    if attempt > 40:
+                        auto_reconnect_busy = False
+                        return
+
+                    foreground = bascenev1.get_foreground_host_session()
+                    if isinstance(foreground, MainMenuSession):
+                        push(f"Connecting... (try {attempt+1})", color=(1, 1, 0))
+                        try:
+                            original_connect_to_party(server_ip, server_port)
+                        except Exception as e:
+                            print(f"Auto connect attempt {attempt} error: {e}")
+
+                        teck(0.5, lambda: try_connect(attempt + 1))
+                    else:
+                        teck(0.3, lambda: try_connect(attempt))
+                except Exception as e:
+                    print(f"Auto reconnect error: {e}")
+                    teck(0.5, lambda: try_connect(attempt + 1))
+
+            try_connect()
     except Exception as e:
-        print(f"[Mahyar] ❌ Timer start failed: {e}")
+        print(f"Auto reconnect check error: {e}")
+
+
+def start_auto_reconnect():
+    global auto_reconnect_enabled, auto_reconnect_busy
+    auto_reconnect_enabled = True
+    auto_reconnect_busy = False
+    push("Auto Reconnect: ON", color=(0, 1, 0))
+
+
+def stop_auto_reconnect():
+    global auto_reconnect_enabled, auto_reconnect_busy
+    auto_reconnect_enabled = False
+    auto_reconnect_busy = False
+    push("Auto Reconnect: OFF", color=(1, 0.5, 0))
 
 
 # ============================================
-# 🎯 Main Plugin
+# 🎯 Main Plugin (دقیقاً مثل ping.py)
 # ============================================
 # ba_meta require api 9
 # ba_meta export babase.Plugin
@@ -1336,14 +1163,23 @@ class byMahyar(Plugin):
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
 
-        _start_timers()
+        # ✅ مثل ping.py:
+        # - z: نگهداری آخرین پیام‌های پردازش‌شده
+        # - آخرین پیام‌ها رو تو self نگه می‌داریم
+        s.z = []           # مثل s.z = [] تو ping.py
+        s.last_calc = []   # برای ماشین حساب
+
+        # ✅ شروع تایمرها مثل teck(5, s.ear) تو ping.py
+        teck(5, s.ear)
+        teck(5, s.calc_ear)
+        teck(5, s.reconnect_ear)
 
         from bauiv1lib import party
         o = party.PartyWindow.__init__
 
         def e(self, *a, **k):
             r = o(self, *a, **k)
-            teck_scene(0.5, get_my_ids)
+            teck(0.5, get_my_ids)
 
             b_calc = AR.bw(position=(self._width - 100, self._height - 100),
                 parent=self._root_widget, size=(85, 25), label='Math', color=(0.3, 0.5, 0.8))
@@ -1373,7 +1209,113 @@ class byMahyar(Plugin):
 
         party.PartyWindow.__init__ = e
 
-        teck_scene(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
+        teck(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
+
+    # ============================================
+    # 🎯 ear - دقیقاً مثل ping.py
+    # ============================================
+    def ear(s):
+        try:
+            z = GCM()
+            # ✅ تایمر جدید رو اول می‌سازیم (مثل ping.py)
+            teck(0.05, s.ear)
+
+            if not z:
+                return
+
+            # ✅ فقط پیام‌های جدید رو چک کن
+            if z == s.z:
+                return
+
+            # ✅ پیام‌های جدید
+            new_msgs = []
+            old_set = set(s.z) if s.z else set()
+            for msg in z:
+                if msg not in old_set:
+                    new_msgs.append(msg)
+
+            # ✅ ذخیره آخرین 50 پیام
+            s.z = z[-50:] if len(z) > 50 else z[:]
+
+            # ✅ پردازش پیام‌های جدید
+            for msg in new_msgs:
+                try:
+                    if check_spam_command(msg): continue
+                    if check_auto_reply(msg): continue
+                    check_reaction(msg)
+                    if not auto_buyer_enabled: continue
+                    m = SELL_PATTERN.search(msg)
+                    if m:
+                        process_sell(m.group(1))
+                        continue
+                    m = BUY_PATTERN.search(msg)
+                    if m:
+                        process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
+                        continue
+                except Exception as e:
+                    print(f"Msg error: {e}")
+        except Exception as e:
+            # ✅ مثل ping.py: تایمر رو تو except هم می‌سازیم
+            # که هیچوقت متوقف نشه
+            try:
+                teck(0.05, s.ear)
+            except:
+                pass
+            print(f"Error in ear: {e}")
+
+    # ============================================
+    # 🎯 calc_ear - مثل ear ولی برای ماشین حساب
+    # ============================================
+    def calc_ear(s):
+        try:
+            z = GCM()
+            teck(0.3, s.calc_ear)
+
+            if not z:
+                return
+
+            if z == s.last_calc:
+                return
+
+            new_msgs = []
+            old_set = set(s.last_calc) if s.last_calc else set()
+            for msg in z:
+                if msg not in old_set:
+                    new_msgs.append(msg)
+
+            s.last_calc = z[-50:] if len(z) > 50 else z[:]
+
+            for msg in new_msgs:
+                try:
+                    content = msg
+                    if ': ' in msg:
+                        _, content = msg.split(': ', 1)
+                    content = content.strip()
+                    result = detect_calculation(content)
+                    if result:
+                        safe_chat_send(result)
+                except:
+                    pass
+        except Exception as e:
+            try:
+                teck(0.3, s.calc_ear)
+            except:
+                pass
+            print(f"Error in calc_ear: {e}")
+
+    # ============================================
+    # 🎯 reconnect_ear - مثل ear ولی برای auto reconnect
+    # ============================================
+    def reconnect_ear(s):
+        try:
+            teck(2.0, s.reconnect_ear)
+            auto_reconnect_check()
+        except Exception as e:
+            try:
+                teck(2.0, s.reconnect_ear)
+            except:
+                pass
+            print(f"Error in reconnect_ear: {e}")
 
     def delayed_open(s, cls, btn):
-        teck_scene(0.05, lambda: cls(btn))
+        teck(0.05, lambda: cls(btn))
