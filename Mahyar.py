@@ -1089,7 +1089,7 @@ class MoveButtonWindow:
         gs('dingSmallHigh').play()
 
     def update_mods_button(s):
-        """دکمه Mods رو حذف و از اول بساز (بدون باگ کردن چت)"""
+        """دکمه Mods رو حذف و از اول بساز - بدون parent (رو چت نمیفته)"""
         global _mods_button_ref, _party_window_ref
         try:
             if _party_window_ref is None:
@@ -1104,17 +1104,22 @@ class MoveButtonWindow:
                         _mods_button_ref.delete()
                 except: pass
 
-            # ✅ دکمه جدید رو تو موقعیت جدید بساز
-            new_btn = AR.bw(
+            # ✅ دکمه جدید رو بدون parent بساز (مستقل - رو چت نمیفته)
+            new_btn = bw(
                 position=(_party_window_ref._width + new_x,
                           _party_window_ref._height + new_y),
-                parent=_party_window_ref._root_widget,
                 size=(85, 25),
                 label='Mods',
-                color=(0.3, 0.5, 0.8)
+                color=(0.3, 0.5, 0.8),
+                textcolor=(1, 1, 1),
+                button_type='square',
+                enable_sound=False,
             )
 
-            bw(new_btn, on_activate_call=Call(_open_mods_menu, new_btn))
+            # ✅ callback رو ست کن
+            try:
+                bw(new_btn, on_activate_call=Call(_open_mods_menu, new_btn))
+            except: pass
 
             _mods_button_ref = new_btn
 
@@ -1407,14 +1412,19 @@ class byMahyar(Plugin):
 
             bx, by = get_button_pos()
 
-            b_mods = AR.bw(
+            # ✅ دکمه Mods مستقل (بدون parent - رو چت نمیفته)
+            b_mods = bw(
                 position=(self._width + bx, self._height + by),
-                parent=self._root_widget,
                 size=(85, 25),
                 label='Mods',
-                color=(0.3, 0.5, 0.8)
+                color=(0.3, 0.5, 0.8),
+                textcolor=(1, 1, 1),
+                button_type='square',
+                enable_sound=False,
             )
-            bw(b_mods, on_activate_call=Call(_open_mods_menu, b_mods))
+            try:
+                bw(b_mods, on_activate_call=Call(_open_mods_menu, b_mods))
+            except: pass
 
             _mods_button_ref = b_mods
 
