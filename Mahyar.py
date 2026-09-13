@@ -183,6 +183,20 @@ def save_mods_button_position(x, y):
         pass
 
 
+def clear_mods_button_position():
+    """پاک کردن موقعیت ذخیره شده دکمه Mods"""
+    try:
+        if 'mahyar_mods_btn_x' in app.config:
+            del app.config['mahyar_mods_btn_x']
+        if 'mahyar_mods_btn_y' in app.config:
+            del app.config['mahyar_mods_btn_y']
+        app.config.commit()
+        return True
+    except Exception as e:
+        print(f"Clear position error: {e}")
+        return False
+
+
 def find_party_window_size():
     """پیدا کردن ابعاد PartyWindow از طریق gc"""
     try:
@@ -1057,11 +1071,18 @@ class EditLimitsWindow:
 # ============================================
 # 📍 Edit Place Window
 # ============================================
+# ✅ ناحیه ممنوعه چت (پایین صفحه) - دکمه نباید بره داخل این ناحیه
+CHAT_ZONE_HEIGHT = 160.0
+BTN_WIDTH = 85.0
+BTN_HEIGHT = 25.0
+BTN_MARGIN_X = 110.0
+BTN_MARGIN_Y = 155.0
+
+
 class EditPlaceWindow:
     def __init__(s, source, mods_button):
         s.mods_button = mods_button
-        s.step = 10
-        s.step_buttons = {}
+        s.step = 5   # ← فقط 5 پیکسل
 
         # موقعیت فعلی دکمه
         try:
@@ -1070,105 +1091,91 @@ class EditPlaceWindow:
         except:
             s.current_x, s.current_y = 0.0, 0.0
 
-        # ✅ پیدا کردن ابعاد واقعی PartyWindow از طریق gc
+        # ✅ پیدا کردن ابعاد واقعی PartyWindow
         s.parent_w, s.parent_h = find_party_window_size()
 
-        s.w = AR.cw(source=source, size=(320, 380), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(290, 345))
+        s.w = AR.cw(source=source, size=(320, 360), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(290, 325))
 
-        tw(parent=s.w, text='📍 Edit Button Place', scale=0.9, position=(160, 340),
+        tw(parent=s.w, text='📍 Edit Button Place', scale=0.9, position=(160, 320),
            h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(160, 325),
+        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(160, 305),
            h_align='center', color=(0.6, 0.6, 0.8))
 
         s.pos_text = tw(parent=s.w, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}',
-                        position=(160, 298), h_align='center', scale=0.6,
+                        position=(160, 280), h_align='center', scale=0.6,
                         color=(1, 1, 0))
-        tw(parent=s.w, text=f'Parent: {int(s.parent_w)} x {int(s.parent_h)}',
-           position=(160, 280), h_align='center', scale=0.4,
+        tw(parent=s.w, text=f'Parent: {int(s.parent_w)} x {int(s.parent_h)}  |  Step: 5px',
+           position=(160, 262), h_align='center', scale=0.4,
            color=(0.7, 0.7, 1))
 
-        arrow_size = (60, 45)
+        arrow_size = (60, 50)
         arrow_color = (0.3, 0.5, 0.8)
         cx = 160
 
         # ─── Up ───
         bw(parent=s.w, label='▲', size=arrow_size,
-           position=(cx - 30, 220),
+           position=(cx - 30, 200),
            on_activate_call=lambda: s.move(0, s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
         # ─── Left / Right ───
         bw(parent=s.w, label='◀', size=arrow_size,
-           position=(cx - 100, 165),
+           position=(cx - 100, 145),
            on_activate_call=lambda: s.move(-s.step, 0),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
         bw(parent=s.w, label='▶', size=arrow_size,
-           position=(cx + 40, 165),
+           position=(cx + 40, 145),
            on_activate_call=lambda: s.move(s.step, 0),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
         # ─── Down ───
         bw(parent=s.w, label='▼', size=arrow_size,
-           position=(cx - 30, 110),
+           position=(cx - 30, 90),
            on_activate_call=lambda: s.move(0, -s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        # ─── Step Selector ───
-        tw(parent=s.w, text='Step:', scale=0.5, position=(cx - 90, 82),
-           h_align='center', color=(0.8, 0.8, 1))
-
-        for i, val in enumerate((1, 5, 10, 25, 50)):
-            btn = bw(
-                parent=s.w, label=str(val), size=(38, 26),
-                position=(cx - 55 + i * 42, 75),
-                on_activate_call=lambda v=val: s.set_step(v),
-                color=(0.3, 0.6, 0.3) if val == 10 else (0.35, 0.35, 0.5),
-                textcolor=(1, 1, 1), button_type='square', text_scale=0.6
-            )
-            s.step_buttons[val] = btn
+        # ─── Info ───
+        tw(parent=s.w, text='⚠️ Button cannot enter chat area',
+           position=(cx, 65), scale=0.35, h_align='center',
+           color=(1, 0.7, 0.3))
 
         # ─── Save / Reset ───
-        bw(parent=s.w, label='💾 Save', size=(130, 30), position=(cx - 140, 35),
+        bw(parent=s.w, label='💾 Save', size=(130, 30), position=(cx - 140, 25),
            on_activate_call=s.save, color=(0.2, 0.7, 0.3),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
 
-        bw(parent=s.w, label='↺ Reset', size=(130, 30), position=(cx + 10, 35),
+        bw(parent=s.w, label='↺ Reset', size=(130, 30), position=(cx + 10, 25),
            on_activate_call=s.reset, color=(0.7, 0.3, 0.2),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
 
-        tw(parent=s.w, text='Changes apply immediately',
-           position=(cx, 12), scale=0.35, h_align='center',
-           color=(0.6, 1, 0.6))
-
         gs('swish').play()
 
-    def set_step(s, value):
-        s.step = value
-        for val, btn in s.step_buttons.items():
-            try:
-                bw(btn, color=(0.3, 0.6, 0.3) if val == value else (0.35, 0.35, 0.5))
-            except:
-                pass
-        gs('click01').play()
+    def _clamp(self, x, y):
+        """محدود کردن موقعیت به محدوده مجاز (خارج از ناحیه چت)"""
+        max_x = max(0.0, s.parent_w - BTN_WIDTH)
+        max_y = max(CHAT_ZONE_HEIGHT, s.parent_h - BTN_HEIGHT)
+
+        # اگه parent_h کوچیک‌تر از ناحیه چت باشه، یه حداقل منطقی
+        if max_y < CHAT_ZONE_HEIGHT:
+            max_y = CHAT_ZONE_HEIGHT
+
+        if x < 0: x = 0.0
+        if y < CHAT_ZONE_HEIGHT: y = CHAT_ZONE_HEIGHT
+        if x > max_x: x = max_x
+        if y > max_y: y = max_y
+        return x, y
 
     def move(s, dx, dy):
         try:
-            s.current_x += dx
-            s.current_y += dy
-
-            # محدود کردن به محدوده والد
-            max_x = max(0, s.parent_w - 85)
-            max_y = max(0, s.parent_h - 25)
-            if s.current_x < 0: s.current_x = 0
-            if s.current_y < 0: s.current_y = 0
-            if s.current_x > max_x: s.current_x = max_x
-            if s.current_y > max_y: s.current_y = max_y
+            new_x = s.current_x + dx
+            new_y = s.current_y + dy
+            s.current_x, s.current_y = s._clamp(new_x, new_y)
 
             bw(s.mods_button, position=(s.current_x, s.current_y))
             tw(s.pos_text, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}')
@@ -1185,14 +1192,14 @@ class EditPlaceWindow:
         gs('dingSmallHigh').play()
 
     def reset(s):
-        # ✅ اول ابعاد واقعی رو دوباره بگیر
+        # ✅ ابعاد واقعی PartyWindow
         s.parent_w, s.parent_h = find_party_window_size()
 
         # پیش‌فرض: گوشه بالا-راست
-        default_x = s.parent_w - 110
-        default_y = s.parent_h - 155
+        default_x = s.parent_w - BTN_MARGIN_X
+        default_y = s.parent_h - BTN_MARGIN_Y
 
-        s.current_x, s.current_y = float(default_x), float(default_y)
+        s.current_x, s.current_y = s._clamp(default_x, default_y)
         bw(s.mods_button, position=(s.current_x, s.current_y))
         tw(s.pos_text, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}')
         save_mods_button_position(s.current_x, s.current_y)
@@ -1365,9 +1372,12 @@ def detect_calculation(message):
 
 
 # ============================================
-# 🧮 Chat Commands
+# 🧮 Chat Commands (شامل mods reset و spam)
 # ============================================
-def check_spam_command(msg):
+_plugin_instance = None
+
+
+def check_chat_commands(msg):
     global spam_active
     try:
         content = msg
@@ -1376,6 +1386,40 @@ def check_spam_command(msg):
         content = content.strip()
         content_lower = content.lower()
 
+        # ─── دستور Mods Reset ───
+        if content_lower in ('mods reset', 'modsreset', 'ریست مودز', 'مودز ریست'):
+            try:
+                # پاک کردن مقادیر ذخیره شده
+                clear_mods_button_position()
+
+                # ✅ اگه دکمه موجوده، همون لحظه جابجاش کن
+                moved = False
+                if _plugin_instance is not None:
+                    btn = getattr(_plugin_instance, 'mods_button_ref', None)
+                    if btn is not None:
+                        try:
+                            pw = getattr(_plugin_instance, 'party_width', 1920)
+                            ph = getattr(_plugin_instance, 'party_height', 1080)
+                            new_x = float(pw) - BTN_MARGIN_X
+                            new_y = float(ph) - BTN_MARGIN_Y
+                            # اطمینان از خروج از ناحیه چت
+                            if new_y < CHAT_ZONE_HEIGHT:
+                                new_y = CHAT_ZONE_HEIGHT
+                            bw(btn, position=(new_x, new_y))
+                            push(f"✅ Mods → X={int(new_x)} Y={int(new_y)}", color=(0, 1, 0))
+                            moved = True
+                        except Exception as ee:
+                            print(f"Move on reset error: {ee}")
+
+                if not moved:
+                    push("✅ Mods reset! Reopen Party window.", color=(0, 1, 0))
+
+                gs('dingSmallHigh').play()
+            except Exception as e:
+                push(f"Reset error: {e}", color=(1, 0, 0))
+            return True
+
+        # ─── Spam Commands ───
         if content_lower in ('spam on', 'اسپم روشن'):
             start_spam(spam_message if spam_message else 'spam', spam_delay)
             return True
@@ -1392,7 +1436,9 @@ def check_spam_command(msg):
             if delay <= 0: delay = 2.0
             if spam_active: stop_spam()
             start_spam(message, delay); return True
-    except Exception as e: print(f"Spam command error: {e}")
+
+    except Exception as e:
+        print(f"Chat command error: {e}")
     return False
 
 
@@ -1469,12 +1515,19 @@ def stop_auto_reconnect():
 # ba_meta export babase.Plugin
 class byMahyar(Plugin):
     def __init__(s):
-        global my_own_name
+        global _plugin_instance, my_own_name
+        _plugin_instance = s
+
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
 
         s.last_msg_hash = ""
         s.last_calc_hash = ""
+
+        # رفرنس دکمه Mods و ابعاد PartyWindow
+        s.mods_button_ref = None
+        s.party_width = 1920.0
+        s.party_height = 1080.0
 
         teck(1, s.ear)
         teck(1, s.calc_ear)
@@ -1487,8 +1540,8 @@ class byMahyar(Plugin):
             r = o(self, *a, **k)
             teck(0.5, get_my_ids)
 
-            default_x = self._width - 110
-            default_y = self._height - 155
+            default_x = self._width - BTN_MARGIN_X
+            default_y = self._height - BTN_MARGIN_Y
             saved_x, saved_y = get_mods_button_position(default_x, default_y)
 
             try:
@@ -1497,14 +1550,29 @@ class byMahyar(Plugin):
             except:
                 saved_x, saved_y = float(default_x), float(default_y)
 
+            # ✅ اطمینان از اینکه موقعیت ذخیره شده داخل ناحیه مجاز باشه
+            if saved_y < CHAT_ZONE_HEIGHT:
+                saved_y = CHAT_ZONE_HEIGHT
+            if saved_x < 0:
+                saved_x = 0.0
+            if saved_x > self._width - BTN_WIDTH:
+                saved_x = float(self._width - BTN_WIDTH)
+            if saved_y > self._height - BTN_HEIGHT:
+                saved_y = float(self._height - BTN_HEIGHT)
+
             b_mods = AR.bw(
                 position=(saved_x, saved_y),
                 parent=self._root_widget,
-                size=(85, 25),
+                size=(int(BTN_WIDTH), int(BTN_HEIGHT)),
                 label='Mods',
                 color=(0.3, 0.5, 0.8)
             )
             bw(b_mods, on_activate_call=lambda: s.delayed_open(ModsMenu, b_mods))
+
+            # ✅ ذخیره reference برای دستور mods reset
+            s.mods_button_ref = b_mods
+            s.party_width = float(self._width)
+            s.party_height = float(self._height)
 
             return r
 
@@ -1543,8 +1611,9 @@ class byMahyar(Plugin):
                         return
             except: pass
 
+            # ✅ دستورات چت (شامل mods reset و spam)
             try:
-                if check_spam_command(msg): return
+                if check_chat_commands(msg): return
             except: pass
             try:
                 if check_auto_reply(msg): return
