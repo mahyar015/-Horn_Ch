@@ -159,6 +159,24 @@ def save_server(ip, port):
     except: pass
 
 
+# ✅ موقعیت دکمه Mods (ذخیره در config)
+def get_button_pos():
+    try:
+        x = app.config.get('mahyar_btn_x', -110)
+        y = app.config.get('mahyar_btn_y', -250)
+        return int(x), int(y)
+    except:
+        return -110, -250
+
+
+def save_button_pos(x, y):
+    try:
+        app.config['mahyar_btn_x'] = int(x)
+        app.config['mahyar_btn_y'] = int(y)
+        app.config.commit()
+    except: pass
+
+
 # ============================================
 # ✅ Global state
 # ============================================
@@ -185,6 +203,10 @@ auto_reconnect_busy = False
 my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
+
+# ✅ مرجع به دکمه Mods و پنجره اصلی
+_mods_button_ref = None
+_party_window_ref = None
 
 _limits_cache = None
 _limits_cache_time = 0
@@ -360,7 +382,7 @@ def stop_spam():
 
 
 # ============================================
-# 🧮 Calculator (با علامت ÷)
+# 🧮 Calculator
 # ============================================
 class Calculator:
     def __init__(s, source):
@@ -1000,19 +1022,106 @@ class EditLimitsWindow:
 
 
 # ============================================
+# 🎯 Move Button Window (پنجره جابجایی)
+# ============================================
+class MoveButtonWindow:
+    """پنجره جابجایی دکمه Mods با فلش‌ها"""
+    STEP = 10  # مقدار هر جابجایی
+
+    def __init__(s, source):
+        global _mods_button_ref
+
+        s.w = AR.cw(source=source, size=(320, 280), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(290, 245))
+
+        tw(parent=s.w, text='🎯 Move Mods Button', scale=0.95, position=(160, 240), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(160, 225), h_align='center', color=(0.6, 0.6, 0.8))
+
+        # ✅ نمایش موقعیت فعلی
+        current_x, current_y = get_button_pos()
+        s.pos_text = tw(parent=s.w, text=f'X: {current_x}  Y: {current_y}',
+                        scale=0.7, position=(160, 200), h_align='center', color=(1, 1, 0))
+
+        # ✅ دکمه‌های فلش
+        bw(parent=s.w, label='↑', size=(50, 40), position=(135, 155),
+           on_activate_call=Call(s.move, 0, s.STEP),
+           color=(0.3, 0.6, 0.9), textcolor=(1, 1, 1), button_type='square')
+
+        bw(parent=s.w, label='↓', size=(50, 40), position=(135, 65),
+           on_activate_call=Call(s.move, 0, -s.STEP),
+           color=(0.3, 0.6, 0.9), textcolor=(1, 1, 1), button_type='square')
+
+        bw(parent=s.w, label='←', size=(50, 40), position=(75, 110),
+           on_activate_call=Call(s.move, -s.STEP, 0),
+           color=(0.3, 0.6, 0.9), textcolor=(1, 1, 1), button_type='square')
+
+        bw(parent=s.w, label='→', size=(50, 40), position=(195, 110),
+           on_activate_call=Call(s.move, s.STEP, 0),
+           color=(0.3, 0.6, 0.9), textcolor=(1, 1, 1), button_type='square')
+
+        # ✅ دکمه ریست
+        bw(parent=s.w, label='Reset', size=(90, 30), position=(115, 15),
+           on_activate_call=Call(s.reset_pos),
+           color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+
+        gs('swish').play()
+
+    def move(s, dx, dy):
+        """جابجایی دکمه و ذخیره فوری"""
+        current_x, current_y = get_button_pos()
+        new_x = current_x + dx
+        new_y = current_y + dy
+
+        save_button_pos(new_x, new_y)
+
+        # ✅ آپدیت متن نمایش موقعیت
+        tw(s.pos_text, text=f'X: {new_x}  Y: {new_y}', color=(0, 1, 0))
+
+        # ✅ جابجایی دکمه Mods فوری
+        s.update_mods_button()
+
+        gs('click01').play()
+
+    def reset_pos(s):
+        """بازگشت به موقعیت پیش‌فرض"""
+        save_button_pos(-110, -250)
+        tw(s.pos_text, text=f'X: -110  Y: -250', color=(1, 0.5, 0))
+        s.update_mods_button()
+        gs('dingSmallHigh').play()
+
+    def update_mods_button(s):
+        """دکمه Mods رو جابجا کن"""
+        global _mods_button_ref, _party_window_ref
+        try:
+            if _mods_button_ref is None or _party_window_ref is None:
+                return
+            if not _mods_button_ref.exists():
+                return
+
+            new_x, new_y = get_button_pos()
+            # ✅ جابجایی فوری دکمه
+            bw(_mods_button_ref,
+               position=(_party_window_ref._width + new_x,
+                        _party_window_ref._height + new_y))
+        except Exception as e:
+            print(f"Move button error: {e}")
+
+
+# ============================================
 # 🎯 Mods Menu (صفحه اصلی با همه دکمه‌ها)
 # ============================================
 class ModsMenu:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(400, 500), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(370, 460))
-        
-        tw(parent=s.w, text='⚙️ Mods Menu', scale=1.2, position=(200, 455), h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 435), h_align='center', color=(0.6, 0.6, 0.8))
+        s.w = AR.cw(source=source, size=(400, 520), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(370, 480))
 
-        s.scroll = sw(parent=s.w, size=(340, 400), position=(30, 25))
-        s.container = cw(parent=s.scroll, size=(320, 700), background=False)
+        tw(parent=s.w, text='⚙️ Mods Menu', scale=1.2, position=(200, 475), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 455), h_align='center', color=(0.6, 0.6, 0.8))
 
+        s.scroll = sw(parent=s.w, size=(340, 420), position=(30, 25))
+        s.container = cw(parent=s.scroll, size=(320, 800), background=False)
+
+        # ✅ دکمه‌ها - Move Button اضافه شد
         buttons = [
             ('🧮 Calculator', Calculator, (0, 0.3, 0.8)),
             ('🛒 Auto Buyer', AutoBuyerWindow, (0.2, 0.6, 0.8)),
@@ -1020,10 +1129,11 @@ class ModsMenu:
             ('💬 Auto Reply', AutoReplyEditorWindow, (0.3, 0.7, 0.4)),
             ('📢 Spam', SpamWindow, (0.8, 0.3, 0.3)),
             ('🔄 Reconnect', ReconnectWindow, (0.4, 0.6, 0.4)),
+            ('🎯 Move Button', MoveButtonWindow, (0.9, 0.6, 0.2)),  # ✅ دکمه جدید
         ]
 
         s.item_buttons = []
-        y_pos = 650
+        y_pos = 720
         for label, cls, color in buttons:
             btn = bw(
                 parent=s.container,
@@ -1039,8 +1149,8 @@ class ModsMenu:
             s.item_buttons.append(btn)
             y_pos -= 65
 
-        cw(s.container, size=(320, 700))
-        
+        cw(s.container, size=(320, 800))
+
         gs('swish').play()
 
     def open_window(s, cls):
@@ -1275,18 +1385,27 @@ class byMahyar(Plugin):
         o = party.PartyWindow.__init__
 
         def e(self, *a, **k):
+            global _mods_button_ref, _party_window_ref
             r = o(self, *a, **k)
             teck(0.5, get_my_ids)
 
-            # ✅ دکمه Mods - پایین‌تر و راست‌تر
+            # ✅ ذخیره مرجع پنجره برای جابجایی
+            _party_window_ref = self
+
+            # ✅ موقعیت از config
+            bx, by = get_button_pos()
+
             b_mods = AR.bw(
-                position=(self._width - 110, self._height - 155),
+                position=(self._width + bx, self._height + by),
                 parent=self._root_widget,
                 size=(85, 25),
                 label='Mods',
                 color=(0.3, 0.5, 0.8)
             )
             bw(b_mods, on_activate_call=Call(s.delayed_open, ModsMenu, b_mods))
+
+            # ✅ ذخیره مرجع دکمه
+            _mods_button_ref = b_mods
 
             return r
 
