@@ -360,7 +360,7 @@ def stop_spam():
 
 
 # ============================================
-# 🧮 Calculator
+# 🧮 Calculator (با علامت ÷)
 # ============================================
 class Calculator:
     def __init__(s, source):
@@ -1007,17 +1007,12 @@ class ModsMenu:
         s.w = AR.cw(source=source, size=(400, 500), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(370, 460))
         
-        # عنوان
         tw(parent=s.w, text='⚙️ Mods Menu', scale=1.2, position=(200, 455), h_align='center', color=(0, 1, 1))
         tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 435), h_align='center', color=(0.6, 0.6, 0.8))
 
-        # ✅ اسکرول‌ویجت برای دکمه‌ها
         s.scroll = sw(parent=s.w, size=(340, 400), position=(30, 25))
-        
-        # ✅ کانتینر برای دکمه‌های داخل اسکرول
         s.container = cw(parent=s.scroll, size=(320, 700), background=False)
 
-        # ✅ لیست دکمه‌ها
         buttons = [
             ('🧮 Calculator', Calculator, (0, 0.3, 0.8)),
             ('🛒 Auto Buyer', AutoBuyerWindow, (0.2, 0.6, 0.8)),
@@ -1027,7 +1022,6 @@ class ModsMenu:
             ('🔄 Reconnect', ReconnectWindow, (0.4, 0.6, 0.4)),
         ]
 
-        # ✅ ساخت دکمه‌ها از بالا به پایین
         s.item_buttons = []
         y_pos = 650
         for label, cls, color in buttons:
@@ -1045,14 +1039,11 @@ class ModsMenu:
             s.item_buttons.append(btn)
             y_pos -= 65
 
-        # ✅ تنظیم ارتفاع کانتینر
         cw(s.container, size=(320, 700))
         
         gs('swish').play()
 
     def open_window(s, cls):
-        """باز کردن پنجره انتخابی"""
-        # ✅ پنجره Mods رو می‌بندیم و پنجره انتخابی رو باز می‌کنیم
         gs('swish').play()
         try:
             AR.swish(s.w)
@@ -1287,9 +1278,9 @@ class byMahyar(Plugin):
             r = o(self, *a, **k)
             teck(0.5, get_my_ids)
 
-            # ✅ فقط یک دکمه Mods
+            # ✅ دکمه Mods - پایین‌تر و راست‌تر
             b_mods = AR.bw(
-                position=(self._width - 100, self._height - 100),
+                position=(self._width - 110, self._height - 155),
                 parent=self._root_widget,
                 size=(85, 25),
                 label='Mods',
