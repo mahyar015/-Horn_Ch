@@ -186,6 +186,23 @@ my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
 
+# ✅ Cache برای سرعت AutoBuy
+_limits_cache = None
+_limits_cache_time = 0
+
+
+def _get_cached_limits():
+    """کش کردن limits برای سرعت بالاتر"""
+    global _limits_cache, _limits_cache_time
+    now = time.time()
+    if _limits_cache is None or (now - _limits_cache_time) > 3:
+        try:
+            _limits_cache = get_limits()
+            _limits_cache_time = now
+        except:
+            return get_limits()
+    return _limits_cache
+
 
 class AR:
     @classmethod
@@ -949,7 +966,9 @@ class AutoBuyerWindow:
     def edit_item(s, name):
         EditLimitsWindow(s.w, item_name=name, parent_window=s)
     def reset_all(s):
+        global _limits_cache
         save_limits(dict(DEFAULT_LIMITS))
+        _limits_cache = None
         bui.screenmessage('Reset!', color=(0, 1, 1)); gs('dingSmallHigh').play()
         s.build_grid()
 
@@ -966,11 +985,13 @@ class EditLimitsWindow:
         bw(parent=s.w, label='Save', size=(100, 28), position=(80, 12), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
         gs('swish').play()
     def save(s):
+        global _limits_cache
         try: value = float(tw(query=s.input).strip())
         except: AR.err('Invalid!'); return
         current_limits = get_limits()
         current_limits[s.item_name] = value
         save_limits(current_limits)
+        _limits_cache = None
         bui.screenmessage(f'Saved!', color=(0, 1, 0)); gs('dingSmallHigh').play()
         if s.parent_window:
             try: s.parent_window.build_grid()
@@ -979,7 +1000,7 @@ class EditLimitsWindow:
 
 
 # ============================================
-# 🤖 Auto Buyer Logic
+# 🤖 Auto Buyer Logic (با cache برای سرعت)
 # ============================================
 SELL_PATTERN = re.compile(r'💰Sell ID:\s*(\w+)')
 BUY_PATTERN = re.compile(r'(\w+):\s*💳Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s*>\s*for\s*([\d,]+)\s*coins(?:\?.*)?')
@@ -993,7 +1014,7 @@ def process_sell(item_id):
 
 
 def process_buy(item_id, count, item_name, total_price):
-    current_limits = get_limits()
+    current_limits = _get_cached_limits()
     if item_name not in current_limits:
         safe_chat_send("0 "); return
     bid_key = f"{item_id}_{item_name}_{count}_{total_price}"
@@ -1182,7 +1203,7 @@ def stop_auto_reconnect():
 
 
 # ============================================
-# 🎯 Main Plugin - فقط hash آخرین پیام
+# 🎯 Main Plugin - سرعت بالا برای AutoBuy
 # ============================================
 # ba_meta require api 9
 # ba_meta export babase.Plugin
@@ -1192,7 +1213,6 @@ class byMahyar(Plugin):
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
 
-        # ✅ فقط hash آخرین پیام - هیچی دیگه ذخیره نمی‌شه
         s.last_msg_hash = ""
         s.last_calc_hash = ""
 
@@ -1238,31 +1258,41 @@ class byMahyar(Plugin):
         teck(3.0, lambda: bui.screenmessage(CREATOR, color=(0, 1, 1)))
 
     # ============================================
-    # 🎯 ear - فقط hash آخرین پیام
+    # 🎯 ear - سرعت بالا (0.01 ثانیه = 100 بار در ثانیه)
     # ============================================
     def ear(s):
         try:
             z = GCM()
-            teck(0.05, s.ear)
+            teck(0.01, s.ear)   # ✅ 0.05 → 0.01 برای سرعت بالا
 
             if not z:
                 s.last_msg_hash = ""
                 return
 
-            # ✅ فقط آخرین پیام
+            current_count = len(z)
             last_msg = z[-1]
-            # ✅ hash یکتا برای هر پیام (متن + طول)
-            current_hash = f"{len(last_msg)}_{last_msg}"
+            current_hash = f"{current_count}_{len(last_msg)}_{last_msg}"
 
-            # ✅ اگه همون پیام قبلیه، کاری نکن
             if current_hash == s.last_msg_hash:
                 return
 
-            # ✅ پیام جدید! سریع پردازش کن
             s.last_msg_hash = current_hash
-
-            # ✅ پردازش پیام
             msg = last_msg
+
+            # ✅ AutoBuy اول - سریع‌ترین
+            try:
+                if auto_buyer_enabled:
+                    m = SELL_PATTERN.search(msg)
+                    if m:
+                        process_sell(m.group(1))
+                        return
+                    m = BUY_PATTERN.search(msg)
+                    if m:
+                        process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
+                        return
+            except: pass
+
+            # بقیه بعدش
             try:
                 if check_spam_command(msg): return
             except: pass
@@ -1272,26 +1302,16 @@ class byMahyar(Plugin):
             try:
                 check_reaction(msg)
             except: pass
-            try:
-                if not auto_buyer_enabled: return
-                m = SELL_PATTERN.search(msg)
-                if m:
-                    process_sell(m.group(1))
-                    return
-                m = BUY_PATTERN.search(msg)
-                if m:
-                    process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
-                    return
-            except: pass
+
         except Exception as e:
             try:
-                teck(0.05, s.ear)
+                teck(0.01, s.ear)
             except:
                 pass
             print(f"Error in ear: {e}")
 
     # ============================================
-    # 🎯 calc_ear - فقط hash آخرین پیام
+    # 🎯 calc_ear
     # ============================================
     def calc_ear(s):
         try:
@@ -1302,8 +1322,9 @@ class byMahyar(Plugin):
                 s.last_calc_hash = ""
                 return
 
+            current_count = len(z)
             last_msg = z[-1]
-            current_hash = f"{len(last_msg)}_{last_msg}"
+            current_hash = f"{current_count}_{len(last_msg)}_{last_msg}"
 
             if current_hash == s.last_calc_hash:
                 return
