@@ -1475,18 +1475,12 @@ class EditLimitsWindow:
 
 
 # ============================================
-# 📍 Edit Place Window (با حرکت ممتد)
+# 📍 Edit Place Window (ساده - هر کلیک 5 پیکسل)
 # ============================================
 class EditPlaceWindow:
     def __init__(s, source, mods_button):
         s.mods_button = mods_button
         s.step = 5
-        s.hold_timer = None
-        s.hold_active = False
-        s.hold_direction = (0, 0)
-        s.hold_delay = 0.3     # 0.3 ثانیه صبر بعد از اولین فشار
-        s.hold_speed = 0.05    # سرعت حرکت ممتد
-        s.hold_multiplier = 5  # ضریب سرعت در حالت ممتد
 
         try:
             pos = mods_button.get_position()
@@ -1514,7 +1508,7 @@ class EditPlaceWindow:
         s.pos_text = tw(parent=s.w, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}',
                         position=(160, 282), h_align='center', scale=0.6,
                         color=(1, 1, 0))
-        tw(parent=s.w, text=f'Parent: {int(s.parent_w)} x {int(s.parent_h)}',
+        tw(parent=s.w, text='Each click = 5 pixels',
            position=(160, 265), h_align='center', scale=0.4,
            color=(0.7, 0.7, 1))
 
@@ -1522,95 +1516,39 @@ class EditPlaceWindow:
         arrow_color = (0.3, 0.5, 0.8)
         cx = 160
 
-        # ─── Up ───
-        up_btn = bw(parent=s.w, label='^', size=arrow_size,
+        bw(parent=s.w, label='^', size=arrow_size,
            position=(cx - 30, 210),
-           on_activate_call=lambda: s.start_hold(0, s.step),
+           on_activate_call=lambda: s.move(0, s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
-        bw(up_btn, on_activate_call=lambda: s.start_hold(0, s.step))
-        # از on_activate_call استفاده میکنیم برای شروع hold
-        s._attach_hold(up_btn, 0, s.step)
 
-        # ─── Left ───
-        left_btn = bw(parent=s.w, label='<', size=arrow_size,
+        bw(parent=s.w, label='<', size=arrow_size,
            position=(cx - 100, 155),
-           on_activate_call=lambda: s.start_hold(-s.step, 0),
+           on_activate_call=lambda: s.move(-s.step, 0),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
-        s._attach_hold(left_btn, -s.step, 0)
 
-        # ─── Right ───
-        right_btn = bw(parent=s.w, label='>', size=arrow_size,
+        bw(parent=s.w, label='>', size=arrow_size,
            position=(cx + 40, 155),
-           on_activate_call=lambda: s.start_hold(s.step, 0),
+           on_activate_call=lambda: s.move(s.step, 0),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
-        s._attach_hold(right_btn, s.step, 0)
 
-        # ─── Down ───
-        down_btn = bw(parent=s.w, label='v', size=arrow_size,
+        bw(parent=s.w, label='v', size=arrow_size,
            position=(cx - 30, 100),
-           on_activate_call=lambda: s.start_hold(0, -s.step),
+           on_activate_call=lambda: s.move(0, -s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
-        s._attach_hold(down_btn, 0, -s.step)
 
-        # ─── Save (فقط این دکمه - Reset حذف شده) ───
         bw(parent=s.w, label='Save', size=(200, 32), position=(cx - 100, 40),
            on_activate_call=s.save, color=(0.2, 0.7, 0.3),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.8)
 
-        tw(parent=s.w, text='Hold arrow for faster move',
+        tw(parent=s.w, text='Click arrow to move',
            position=(cx, 15), scale=0.35, h_align='center',
            color=(0.6, 1, 0.6))
 
         gs('swish').play()
-
-    def _attach_hold(s, btn, dx, dy):
-        """اتصال holding به دکمه"""
-        try:
-            # از طریق get_children و wrap کردن
-            # BombSquad از repeat استفاده نمی‌کنه - از تایمر خودمون استفاده می‌کنیم
-            pass
-        except: pass
-
-    def start_hold(s, dx, dy):
-        """شروع holding - حرکت سریع"""
-        s.hold_direction = (dx, dy)
-        s.hold_active = True
-        # حرکت اول
-        s.move(dx, dy)
-        # زمان‌بندی حرکت ممتد
-        s._schedule_hold()
-
-    def _schedule_hold(s):
-        """زمان‌بندی حرکت بعدی در حالت hold"""
-        if not s.hold_active:
-            return
-        try:
-            s.hold_timer = teck(s.hold_speed, s._hold_tick)
-        except:
-            s.hold_active = False
-
-    def _hold_tick(s):
-        """هر tick در حالت hold - حرکت سریع‌تر"""
-        if not s.hold_active:
-            return
-        dx, dy = s.hold_direction
-        # حرکت با ضریب سریع‌تر
-        s.move(dx * s.hold_multiplier, dy * s.hold_multiplier)
-        s._schedule_hold()
-
-    def stop_hold(s):
-        """توقف holding"""
-        s.hold_active = False
-        if s.hold_timer:
-            try:
-                s.hold_timer.cancel()
-            except:
-                pass
-            s.hold_timer = None
 
     def move(s, dx, dy):
         try:
@@ -1635,7 +1573,6 @@ class EditPlaceWindow:
             print(f"Move error: {e}")
 
     def save(s):
-        s.stop_hold()
         save_mods_button_position(s.current_x, s.current_y)
         bui.screenmessage(
             f'Saved! X={int(s.current_x)} Y={int(s.current_y)}',
@@ -1773,7 +1710,6 @@ def check_reaction(msg):
         if ': ' in msg:
             parts = msg.split(': ', 1)
             sender = parts[0].strip(); content = parts[1].strip()
-        # اگه پیام از خودمونه، نادیده بگیر
         if sender and is_my_message(sender):
             return
         content_lower = content.lower()
@@ -1813,7 +1749,6 @@ CALC_PATTERN = re.compile(r'^(\d+(?:\.\d+)?)\s*([\+\-\*\/\^×÷xX])\s*(\d+(?:\.\
 
 
 def detect_calculation(message, sender=None):
-    # ✅ فقط اگه خودم فرستادم
     if sender is None or not is_my_message(sender):
         return None
     expression = message.replace('×', '*').replace('÷', '/')
@@ -1854,7 +1789,6 @@ def check_chat_commands(msg):
         content = content.strip()
         content_lower = content.lower()
 
-        # ✅ فقط اگه خودم فرستادم
         if not is_my_message(sender):
             return False
 
@@ -1872,11 +1806,12 @@ def check_chat_commands(msg):
                                 parent = btn.get_parent()
                                 if parent:
                                     psize = parent.get_size()
+                                    # ✅ کمی بالاتر از جای پیش‌فرض
                                     new_x = float(psize[0]) - 110
-                                    new_y = float(psize[1]) - 155
+                                    new_y = float(psize[1]) - 120
                             except:
                                 new_x = 1810.0
-                                new_y = 925.0
+                                new_y = 960.0
                             if new_x < 0: new_x = 0.0
                             if new_y < 0: new_y = 0.0
                             bw(btn, position=(new_x, new_y))
@@ -2001,7 +1936,7 @@ class byMahyar(Plugin):
             teck(0.5, get_my_ids)
 
             default_x = self._width - 110
-            default_y = self._height - 155
+            default_y = self._height - 120   # ✅ کمی بالاتر
             saved_x, saved_y = get_mods_button_position(default_x, default_y)
 
             try:
@@ -2055,7 +1990,6 @@ class byMahyar(Plugin):
             else:
                 content = msg.strip()
 
-            # b sXXX (B Race)
             if auto_b_enabled:
                 try:
                     m_b = B_RACE_PATTERN.match(content)
@@ -2064,7 +1998,6 @@ class byMahyar(Plugin):
                         return
                 except: pass
 
-            # AutoBuyer
             if auto_buyer_enabled:
                 try:
                     m = SELL_PATTERN.search(msg)
@@ -2082,17 +2015,14 @@ class byMahyar(Plugin):
                         return
                 except: pass
 
-            # Chat Commands (فقط خودم)
             try:
                 if check_chat_commands(msg): return
             except: pass
 
-            # Auto Reply
             try:
                 if check_auto_reply(msg): return
             except: pass
 
-            # Auto React
             try:
                 check_reaction(msg)
             except: pass
@@ -2128,7 +2058,6 @@ class byMahyar(Plugin):
                     sender = parts[0].strip()
                     content = parts[1].strip()
                 content = content.strip()
-                # ✅ فقط اگه خودم فرستادم
                 result = detect_calculation(content, sender)
                 if result:
                     safe_chat_send(result)
