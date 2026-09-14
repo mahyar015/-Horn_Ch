@@ -183,7 +183,6 @@ def save_mods_button_position(x, y):
 
 
 def clear_mods_button_position():
-    """پاک کردن موقعیت ذخیره شده دکمه Mods"""
     try:
         if 'mahyar_mods_btn_x' in app.config:
             del app.config['mahyar_mods_btn_x']
@@ -335,7 +334,7 @@ bascenev1.connect_to_party = new_connect_to_party
 
 
 # ============================================
-# 🎯 Auto-Reply (فقط کلمه کامل)
+# 🎯 Auto-Reply
 # ============================================
 def check_auto_reply(msg):
     if not auto_reply_enabled: return False
@@ -527,14 +526,10 @@ FONTS = {
 
 
 def apply_font(text, font_name):
-    """اعمال فونت روی متن"""
     if font_name == 'Normal' or font_name not in FONTS:
         return text
     mapping = FONTS[font_name]
-    result = []
-    for ch in text:
-        result.append(mapping.get(ch, ch))
-    return ''.join(result)
+    return ''.join(mapping.get(ch, ch) for ch in text)
 
 
 # ============================================
@@ -711,7 +706,6 @@ class FontsWindow:
         tw(parent=s.w, text='Select Font:', scale=0.55, position=(180, 420),
            h_align='center', color=(1, 1, 0))
 
-        # لیست فونت‌ها
         s.font_buttons = {}
         font_names = list(FONTS.keys())
         y_start = 390
@@ -776,21 +770,8 @@ class FontsWindow:
                 color = (0.3, 0.6, 0.3) if fname == font_name else (0.35, 0.35, 0.5)
                 bw(btn, color=color)
             except: pass
-
         tw(s.selected_text, text=f'Selected: {font_name}', color=(0, 1, 0))
-        s.update_preview()
         gs('click01').play()
-
-    def update_preview(s):
-        try:
-            raw = tw(query=s.text_input).strip()
-            if not raw:
-                tw(s.preview, text='(type something)')
-                return
-            styled = apply_font(raw, s.selected_font)
-            tw(s.preview, text=styled)
-        except:
-            pass
 
     def send_to_chat(s):
         try:
@@ -1047,7 +1028,7 @@ class AutoReplyEditorWindow:
         bw(parent=s.w, label='+ Add', size=(75, 26), position=(20, 108), on_activate_call=Call(s.add_new), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
         bw(parent=s.w, label='Clear', size=(75, 26), position=(105, 108), on_activate_call=Call(s.clear_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
         s.toggle_btn = bw(parent=s.w, label='ON' if auto_reply_enabled else 'OFF', size=(75, 26), position=(190, 108), on_activate_call=Call(s.toggle), color=(0.2, 0.7, 0.2) if auto_reply_enabled else (0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        tw(parent=s.w, text='Everywhere keyword matches → reply', position=(150, 85), scale=0.35, h_align='center', color=(0.7, 0.7, 1))
+        tw(parent=s.w, text='Everywhere keyword matches -> reply', position=(150, 85), scale=0.35, h_align='center', color=(0.7, 0.7, 1))
         gs('swish').play()
     def build_grid(s):
         current = get_auto_replies()
@@ -1058,7 +1039,7 @@ class AutoReplyEditorWindow:
         total_h = len(items) * row_height + 20
         for i, (keyword, response) in enumerate(items):
             y = total_h - (i + 1) * row_height
-            btn = bw(parent=s.container, label=f'{keyword} → {response}', size=(165, 24), position=(5, y), on_activate_call=Call(s.edit_item, keyword), color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1), button_type='square', text_scale=0.45)
+            btn = bw(parent=s.container, label=f'{keyword} -> {response}', size=(165, 24), position=(5, y), on_activate_call=Call(s.edit_item, keyword), color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1), button_type='square', text_scale=0.45)
             s.item_buttons[keyword] = btn
             bw(parent=s.container, label='X', size=(25, 24), position=(175, y), on_activate_call=Call(s.delete_item, keyword), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
         cw(s.container, size=(240, total_h))
@@ -1227,7 +1208,6 @@ class AutoBuyerWindow:
         s.toggle_btn = bw(parent=s.w, label='Turn OFF' if auto_buyer_enabled else 'Turn ON', size=(120, 26), position=(20, 342), on_activate_call=Call(s.toggle), color=(0.7, 0.2, 0.2) if auto_buyer_enabled else (0.2, 0.7, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
         bw(parent=s.w, label='Reset', size=(120, 26), position=(160, 342), on_activate_call=Call(s.reset_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
-        # ─── B Auto (مسابقه b XXX) ───
         b_status = "ON" if auto_b_enabled else "OFF"
         b_color = (0, 1, 0) if auto_b_enabled else (1, 0, 0)
         s.b_status_text = tw(parent=s.w, text=f'B Race: {b_status}', position=(170, 315), h_align='center', scale=0.65, color=b_color)
@@ -1235,7 +1215,7 @@ class AutoBuyerWindow:
 
         tw(parent=s.w, text='Race: when someone sends "b xxx"', position=(170, 265), scale=0.3, h_align='center', color=(0.8, 0.8, 1))
 
-        tw(parent=s.w, text='─── Item Limits ───', position=(170, 240), h_align='center', scale=0.5, color=(1, 1, 0.8))
+        tw(parent=s.w, text='--- Item Limits ---', position=(170, 240), h_align='center', scale=0.5, color=(1, 1, 0.8))
         s.scroll = sw(parent=s.w, size=(300, 180), position=(20, 40))
         s.container = cw(parent=s.scroll, size=(280, 700), background=False)
         s.item_buttons = {}
@@ -1259,15 +1239,6 @@ class AutoBuyerWindow:
             btn = bw(parent=s.container, label=f'{name}: {limit_str}', size=(130, 26), position=(x, y), on_activate_call=Call(s.edit_item, name), color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1), button_type='square', text_scale=0.5)
             s.item_buttons[name] = btn
         cw(s.container, size=(280, total_h))
-    def refresh_list(s):
-        current_limits = get_limits()
-        for name, btn in s.item_buttons.items():
-            try:
-                if btn and btn.exists():
-                    limit = current_limits.get(name, 0)
-                    limit_str = str(int(limit)) if limit == int(limit) else f"{limit:.2f}".rstrip('.')
-                    bw(btn, label=f'{name}: {limit_str}')
-            except: pass
     def toggle(s):
         global auto_buyer_enabled
         auto_buyer_enabled = not auto_buyer_enabled
@@ -1358,7 +1329,7 @@ class EditPlaceWindow:
         s.w = AR.cw(source=source, size=(320, 380), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(290, 345))
 
-        tw(parent=s.w, text='📍 Edit Button Place', scale=0.9, position=(160, 340),
+        tw(parent=s.w, text='Edit Button Place', scale=0.9, position=(160, 340),
            h_align='center', color=(0, 1, 1))
         tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(160, 325),
            h_align='center', color=(0.6, 0.6, 0.8))
@@ -1374,35 +1345,35 @@ class EditPlaceWindow:
         arrow_color = (0.3, 0.5, 0.8)
         cx = 160
 
-        bw(parent=s.w, label='▲', size=arrow_size,
+        bw(parent=s.w, label='^', size=arrow_size,
            position=(cx - 30, 220),
            on_activate_call=lambda: s.move(0, s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        bw(parent=s.w, label='◀', size=arrow_size,
+        bw(parent=s.w, label='<', size=arrow_size,
            position=(cx - 100, 165),
            on_activate_call=lambda: s.move(-s.step, 0),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        bw(parent=s.w, label='▶', size=arrow_size,
+        bw(parent=s.w, label='>', size=arrow_size,
            position=(cx + 40, 165),
            on_activate_call=lambda: s.move(s.step, 0),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        bw(parent=s.w, label='▼', size=arrow_size,
+        bw(parent=s.w, label='v', size=arrow_size,
            position=(cx - 30, 110),
            on_activate_call=lambda: s.move(0, -s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        bw(parent=s.w, label='💾 Save', size=(130, 30), position=(cx - 140, 35),
+        bw(parent=s.w, label='Save', size=(130, 30), position=(cx - 140, 35),
            on_activate_call=s.save, color=(0.2, 0.7, 0.3),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
 
-        bw(parent=s.w, label='↺ Reset', size=(130, 30), position=(cx + 10, 35),
+        bw(parent=s.w, label='Reset', size=(130, 30), position=(cx + 10, 35),
            on_activate_call=s.reset, color=(0.7, 0.3, 0.2),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
 
@@ -1471,21 +1442,21 @@ class ModsMenu:
         s.w = AR.cw(source=source, size=(400, 570), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(370, 530))
 
-        tw(parent=s.w, text='⚙️ Mods Menu', scale=1.2, position=(200, 525), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 525), h_align='center', color=(0, 1, 1))
         tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 505), h_align='center', color=(0.6, 0.6, 0.8))
 
         s.scroll = sw(parent=s.w, size=(340, 470), position=(30, 25))
         s.container = cw(parent=s.scroll, size=(320, 850), background=False)
 
         buttons = [
-            ('🧮 Calculator', Calculator, (0, 0.3, 0.8)),
-            ('🛒 Auto Buyer', AutoBuyerWindow, (0.2, 0.6, 0.8)),
-            ('⚡ Auto React', ReactionEditorWindow, (0.8, 0.5, 0.2)),
-            ('💬 Auto Reply', AutoReplyEditorWindow, (0.3, 0.7, 0.4)),
-            ('📢 Spam', SpamWindow, (0.8, 0.3, 0.3)),
-            ('🔄 Reconnect', ReconnectWindow, (0.4, 0.6, 0.4)),
-            ('🔤 Fonts', FontsWindow, (0.7, 0.4, 0.8)),
-            ('📍 Edit Place', None, (0.6, 0.4, 0.7)),
+            ('Calculator', Calculator, (0, 0.3, 0.8)),
+            ('Auto Buyer', AutoBuyerWindow, (0.2, 0.6, 0.8)),
+            ('Auto React', ReactionEditorWindow, (0.8, 0.5, 0.2)),
+            ('Auto Reply', AutoReplyEditorWindow, (0.3, 0.7, 0.4)),
+            ('Spam', SpamWindow, (0.8, 0.3, 0.3)),
+            ('Reconnect', ReconnectWindow, (0.4, 0.6, 0.4)),
+            ('Fonts', FontsWindow, (0.7, 0.4, 0.8)),
+            ('Edit Place', None, (0.6, 0.4, 0.7)),
         ]
 
         s.item_buttons = []
@@ -1529,7 +1500,7 @@ class ModsMenu:
 # ============================================
 SELL_PATTERN = re.compile(r'💰Sell ID:\s*(\w+)')
 BUY_PATTERN = re.compile(r'(\w+):\s*💳Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s*>\s*for\s*([\d,]+)\s*coins(?:\?.*)?')
-B_RACE_PATTERN = re.compile(r'^b\s+([a-zA-Z]+\d+)\s*$')
+B_RACE_PATTERN = re.compile(r'^b\s+(\w+)\s*$')
 
 
 def process_sell(item_id):
@@ -1539,35 +1510,42 @@ def process_sell(item_id):
     safe_chat_send(f"b {item_id}")
 
 
+def process_b_race(item_id, sender):
+    """مسابقه b XXX - سریع همون رو echo کنه"""
+    if sender and my_own_name and sender == my_own_name:
+        return False
+    if item_id in processed_b_ids:
+        return False
+    processed_b_ids.add(item_id)
+    if len(processed_b_ids) > 200:
+        processed_b_ids.clear()
+    try:
+        safe_chat_send(f"b {item_id}")
+        try: gs('dingSmall').play()
+        except: pass
+    except Exception as e:
+        print(f"B race send error: {e}")
+    return True
+
+
 def process_buy(item_id, count, item_name, total_price):
     current_limits = _get_cached_limits()
     if item_name not in current_limits:
-        safe_chat_send("0 "); return
+        safe_chat_send("0")
+        return
     bid_key = f"{item_id}_{item_name}_{count}_{total_price}"
     if bid_key in processed_buy_ids: return
     processed_buy_ids.add(bid_key)
     if len(processed_buy_ids) > 200: processed_buy_ids.clear()
-    if count <= 0: safe_chat_send("0 "); return
+    if count <= 0:
+        safe_chat_send("0")
+        return
     unit_price = total_price / count
     limit = current_limits[item_name]
     if unit_price <= limit:
-        safe_chat_send("1 ")
+        safe_chat_send("1")
     else:
-        safe_chat_send("0 ")
-
-
-def process_b_race(item_id, sender):
-    """مسابقه b XXX - سریع همون رو می‌فرستیم"""
-    if sender and my_own_name and sender == my_own_name:
-        return False
-    race_key = item_id
-    if race_key in processed_b_ids:
-        return False
-    processed_b_ids.add(race_key)
-    if len(processed_b_ids) > 100:
-        processed_b_ids.clear()
-    safe_chat_send(f"b {item_id}")
-    return True
+        safe_chat_send("0")
 
 
 # ============================================
@@ -1638,7 +1616,7 @@ def detect_calculation(message):
         else: return None
         result_str = str(int(result)) if result == int(result) else str(round(result, 10))
         op_display = {'+': '+', '-': '-', '*': '×', '/': '÷', '^': '^'}.get(op, op)
-        return f"⚖️ {match.group(1)} {op_display} {match.group(3)} = {result_str}"
+        return f"-> {match.group(1)} {op_display} {match.group(3)} = {result_str}"
     except: return None
 
 
@@ -1652,27 +1630,14 @@ def check_chat_commands(msg):
     global spam_active
     try:
         content = msg
-        sender = None
         if ': ' in msg:
-            parts = msg.split(': ', 1)
-            sender = parts[0].strip()
-            content = parts[1].strip()
+            _, content = msg.split(': ', 1)
         content = content.strip()
         content_lower = content.lower()
 
-        # ─── تشخیص سریع b XXX (مسابقه) ───
-        if auto_b_enabled:
-            m_b = B_RACE_PATTERN.match(content)
-            if m_b:
-                item_id = m_b.group(1)
-                if process_b_race(item_id, sender):
-                    return True
-
-        # ─── دستور Mods Reset ───
         if content_lower in ('mods reset', 'modsreset', 'ریست مودز', 'مودز ریست'):
             try:
                 clear_mods_button_position()
-
                 moved = False
                 if _plugin_instance is not None:
                     btn = getattr(_plugin_instance, 'mods_button_ref', None)
@@ -1689,25 +1654,20 @@ def check_chat_commands(msg):
                             except:
                                 new_x = 1810.0
                                 new_y = 925.0
-
                             if new_x < 0: new_x = 0.0
                             if new_y < 0: new_y = 0.0
-
                             bw(btn, position=(new_x, new_y))
-                            push(f"✅ Mods → X={int(new_x)} Y={int(new_y)}", color=(0, 1, 0))
+                            push(f"Mods -> X={int(new_x)} Y={int(new_y)}", color=(0, 1, 0))
                             moved = True
                         except Exception as ee:
                             print(f"Move on reset error: {ee}")
-
                 if not moved:
-                    push("✅ Mods reset! Reopen Party window.", color=(0, 1, 0))
-
+                    push("Mods reset! Reopen Party window.", color=(0, 1, 0))
                 gs('dingSmallHigh').play()
             except Exception as e:
                 push(f"Reset error: {e}", color=(1, 0, 0))
             return True
 
-        # ─── Spam Commands ───
         if content_lower in ('spam on', 'اسپم روشن'):
             start_spam(spam_message if spam_message else 'spam', spam_delay)
             return True
@@ -1724,7 +1684,6 @@ def check_chat_commands(msg):
             if delay <= 0: delay = 2.0
             if spam_active: stop_spam()
             start_spam(message, delay); return True
-
     except Exception as e:
         print(f"Chat command error: {e}")
     return False
@@ -1735,13 +1694,10 @@ def check_chat_commands(msg):
 # ============================================
 def auto_reconnect_check():
     global auto_reconnect_enabled, server_ip, server_port, auto_reconnect_busy
-
     if not auto_reconnect_enabled:
         return
-
     try:
         conn = get_connection_info()
-
         if not conn and server_ip and server_ip != "127.0.0.1" and not auto_reconnect_busy:
             auto_reconnect_busy = True
             push("Auto Reconnecting...", color=(1, 1, 0))
@@ -1752,16 +1708,13 @@ def auto_reconnect_check():
                     if not auto_reconnect_enabled:
                         auto_reconnect_busy = False
                         return
-
                     if get_connection_info():
                         push("Reconnected!", color=(0, 1, 0))
                         auto_reconnect_busy = False
                         return
-
                     if attempt > 40:
                         auto_reconnect_busy = False
                         return
-
                     foreground = bascenev1.get_foreground_host_session()
                     if isinstance(foreground, MainMenuSession):
                         push(f"Connecting... (try {attempt+1})", color=(1, 1, 0))
@@ -1769,14 +1722,12 @@ def auto_reconnect_check():
                             original_connect_to_party(server_ip, server_port)
                         except Exception as e:
                             print(f"Auto connect attempt {attempt} error: {e}")
-
                         teck(0.5, lambda: try_connect(attempt + 1))
                     else:
                         teck(0.3, lambda: try_connect(attempt))
                 except Exception as e:
                     print(f"Auto reconnect error: {e}")
                     teck(0.5, lambda: try_connect(attempt + 1))
-
             try_connect()
     except Exception as e:
         print(f"Auto reconnect check error: {e}")
@@ -1861,34 +1812,69 @@ class byMahyar(Plugin):
                 s.last_msg_hash = ""
                 return
 
-            current_count = len(z)
-            last_msg = z[-1]
-            current_hash = f"{current_count}_{len(last_msg)}_{last_msg}"
-
-            if current_hash == s.last_msg_hash:
+            # ✅ فقط آخرین پیام
+            try:
+                last_msg = z[-1]
+            except (IndexError, TypeError):
+                s.last_msg_hash = ""
                 return
 
+            # فقط خود پیام رو مقایسه کن
+            current_hash = f"{len(last_msg)}_{last_msg}"
+            if current_hash == s.last_msg_hash:
+                return
             s.last_msg_hash = current_hash
+
             msg = last_msg
 
-            try:
-                if auto_buyer_enabled:
+            # جدا کردن sender و content
+            sender = None
+            content = msg
+            if ': ' in msg:
+                parts = msg.split(': ', 1)
+                sender = parts[0].strip()
+                content = parts[1].strip()
+            else:
+                content = msg.strip()
+
+            # ─── 1) b XXX ───
+            if auto_b_enabled:
+                try:
+                    m_b = B_RACE_PATTERN.match(content)
+                    if m_b:
+                        process_b_race(m_b.group(1), sender)
+                        return
+                except: pass
+
+            # ─── 2) AutoBuyer ───
+            if auto_buyer_enabled:
+                try:
                     m = SELL_PATTERN.search(msg)
                     if m:
                         process_sell(m.group(1))
                         return
                     m = BUY_PATTERN.search(msg)
                     if m:
-                        process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
+                        process_buy(
+                            m.group(1),
+                            int(m.group(2).replace(',', '')),
+                            m.group(3).lower(),
+                            int(m.group(4).replace(',', ''))
+                        )
                         return
-            except: pass
+                except: pass
 
+            # ─── 3) Chat Commands ───
             try:
                 if check_chat_commands(msg): return
             except: pass
+
+            # ─── 4) Auto Reply ───
             try:
                 if check_auto_reply(msg): return
             except: pass
+
+            # ─── 5) Auto React ───
             try:
                 check_reaction(msg)
             except: pass
@@ -1896,8 +1882,7 @@ class byMahyar(Plugin):
         except Exception as e:
             try:
                 teck(0.005, s.ear)
-            except:
-                pass
+            except: pass
             print(f"Error in ear: {e}")
 
     def calc_ear(s):
@@ -1915,7 +1900,6 @@ class byMahyar(Plugin):
 
             if current_hash == s.last_calc_hash:
                 return
-
             s.last_calc_hash = current_hash
 
             try:
@@ -1930,8 +1914,7 @@ class byMahyar(Plugin):
         except Exception as e:
             try:
                 teck(0.2, s.calc_ear)
-            except:
-                pass
+            except: pass
             print(f"Error in calc_ear: {e}")
 
     def reconnect_ear(s):
@@ -1941,8 +1924,7 @@ class byMahyar(Plugin):
         except Exception as e:
             try:
                 teck(2.0, s.reconnect_ear)
-            except:
-                pass
+            except: pass
             print(f"Error in reconnect_ear: {e}")
 
     def delayed_open(s, cls, btn):
