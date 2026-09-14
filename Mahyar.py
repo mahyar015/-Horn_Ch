@@ -33,6 +33,13 @@ SIGNATURE = "By Mahyar"
 CREATOR = "Creat By Mahyar\nTEL: @Mahyar015"
 
 # ============================================
+# 📢 پیام تبلیغاتی خودکار
+# ============================================
+AUTO_AD_MESSAGE = "🎮@HornBet_Bot🎮بزرگترین ربات شرط بندی بمب اسکواد داخل تل"
+AUTO_AD_INTERVAL = 300.0  # هر 5 دقیقه
+auto_ad_timer = None
+
+# ============================================
 # ⚙️ تنظیمات پیش‌فرض
 # ============================================
 DEFAULT_LIMITS = {
@@ -412,6 +419,30 @@ def stop_spam():
 
 
 # ============================================
+# 📢 Auto-AD Logic (هر 5 دقیقه - همیشه روشن)
+# ============================================
+def auto_ad_send():
+    global auto_ad_timer
+    try:
+        # فقط اگه توی سرور هستیم پیام بفرست
+        try:
+            conn = get_connection_info()
+            if conn:
+                safe_chat_send(AUTO_AD_MESSAGE)
+                print(f"[Auto-AD] Sent: {AUTO_AD_MESSAGE[:30]}...")
+        except:
+            pass
+
+        # دوباره زمان‌بندی کن
+        auto_ad_timer = teck(AUTO_AD_INTERVAL, auto_ad_send)
+    except Exception as e:
+        print(f"Auto-AD error: {e}")
+        try:
+            auto_ad_timer = teck(AUTO_AD_INTERVAL, auto_ad_send)
+        except: pass
+
+
+# ============================================
 # 🔤 Fonts
 # ============================================
 FONTS = {
@@ -689,77 +720,83 @@ class Calculator:
 
 
 # ============================================
-# 🔤 Fonts Window
+# 🔤 Fonts Window (نسخه کوچیک)
 # ============================================
 class FontsWindow:
     def __init__(s, source):
         s.selected_font = 'Normal'
 
-        s.w = AR.cw(source=source, size=(360, 500), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(330, 465))
+        s.w = AR.cw(source=source, size=(300, 380), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(270, 345))
 
-        tw(parent=s.w, text='🔤 Fonts', scale=0.95, position=(180, 460),
+        tw(parent=s.w, text='🔤 Fonts', scale=0.9, position=(150, 340),
            h_align='center', color=(1, 0.5, 0.9))
-        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(180, 445),
+        tw(parent=s.w, text=SIGNATURE, scale=0.3, position=(150, 325),
            h_align='center', color=(0.6, 0.6, 0.8))
 
-        tw(parent=s.w, text='Select Font:', scale=0.55, position=(180, 420),
+        tw(parent=s.w, text='Select Font:', scale=0.5, position=(150, 305),
            h_align='center', color=(1, 1, 0))
 
         s.font_buttons = {}
         font_names = list(FONTS.keys())
-        y_start = 390
-        col_w = 105
-        row_h = 30
+        col_w = 72
+        row_h = 24
+        x_start = 5
+        y_start = 282
 
         for i, fname in enumerate(font_names):
-            col = i % 3
-            row = i // 3
-            x = 15 + col * col_w
+            col = i % 4
+            row = i // 4
+            x = x_start + col * col_w
             y = y_start - row * row_h
 
             btn = bw(
-                parent=s.w, label=fname, size=(95, 26),
+                parent=s.w, label=fname, size=(68, 22),
                 position=(x, y),
                 on_activate_call=lambda f=fname: s.select_font(f),
                 color=(0.3, 0.6, 0.3) if fname == 'Normal' else (0.35, 0.35, 0.5),
-                textcolor=(1, 1, 1), button_type='square', text_scale=0.5
+                textcolor=(1, 1, 1), button_type='square', text_scale=0.35
             )
             s.font_buttons[fname] = btn
 
         s.selected_text = tw(
             parent=s.w, text='Selected: Normal',
-            position=(180, 145), h_align='center', scale=0.5,
+            position=(150, 200), h_align='center', scale=0.5,
             color=(0, 1, 0)
         )
 
-        tw(parent=s.w, text='Enter text:', scale=0.5, position=(180, 122),
+        tw(parent=s.w, text='Enter text:', scale=0.5, position=(150, 180),
            h_align='center', color=(1, 1, 1))
 
         s.text_input = tw(
-            parent=s.w, text='', editable=True, scale=0.8,
-            position=(30, 88), size=(300, 28),
+            parent=s.w, text='', editable=True, scale=0.7,
+            position=(20, 150), size=(260, 26),
             h_align='center', color=(0.9, 0.9, 0.9)
         )
 
-        tw(parent=s.w, text='Preview:', scale=0.4, position=(180, 66),
+        tw(parent=s.w, text='Preview (click to copy):', scale=0.4, position=(150, 125),
            h_align='center', color=(0.8, 0.8, 1))
 
-        s.preview = tw(
-            parent=s.w, text='(type something)', scale=0.65,
-            position=(180, 42), h_align='center',
-            color=(0.3, 1, 0.7), maxwidth=320
+        s.preview_btn = bw(
+            parent=s.w, label='(type something)', size=(270, 34),
+            position=(15, 85), on_activate_call=s.copy_preview,
+            color=(0.2, 0.5, 0.3), textcolor=(1, 1, 1),
+            button_type='square', text_scale=0.6
         )
 
-        bw(parent=s.w, label='📤 Send', size=(140, 30),
-           position=(30, 5), on_activate_call=s.send_to_chat,
-           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.65)
-
-        bw(parent=s.w, label='📋 Copy', size=(140, 30),
-           position=(190, 5), on_activate_call=s.copy_text,
+        bw(parent=s.w, label='🔄 Update', size=(120, 28),
+           position=(30, 45), on_activate_call=s.update_preview,
            color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.65)
+           button_type='square', text_scale=0.6)
+
+        bw(parent=s.w, label='📤 Send', size=(120, 28),
+           position=(160, 45), on_activate_call=s.send_to_chat,
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.6)
+
+        tw(parent=s.w, text='Tip: click preview to copy',
+           position=(150, 20), scale=0.3, h_align='center',
+           color=(0.7, 0.7, 1))
 
         gs('swish').play()
 
@@ -771,7 +808,36 @@ class FontsWindow:
                 bw(btn, color=color)
             except: pass
         tw(s.selected_text, text=f'Selected: {font_name}', color=(0, 1, 0))
+        s.update_preview()
         gs('click01').play()
+
+    def update_preview(s):
+        try:
+            raw = tw(query=s.text_input).strip()
+            if not raw:
+                bw(s.preview_btn, label='(type something)', color=(0.2, 0.5, 0.3))
+                return
+            styled = apply_font(raw, s.selected_font)
+            bw(s.preview_btn, label=styled[:40], color=(0.2, 0.6, 0.4))
+        except Exception as e:
+            print(f"Preview error: {e}")
+
+    def copy_preview(s):
+        try:
+            raw = tw(query=s.text_input).strip()
+            if not raw:
+                AR.err('Enter text first!')
+                return
+            if not CIS():
+                AR.err('Clipboard not supported!')
+                return
+            from babase import clipboard_set_text
+            styled = apply_font(raw, s.selected_font)
+            clipboard_set_text(styled)
+            bui.screenmessage(f'✅ Copied!', color=(0, 1, 0))
+            gs('dingSmallHigh').play()
+        except Exception as e:
+            AR.err(f'Copy error: {e}')
 
     def send_to_chat(s):
         try:
@@ -781,27 +847,10 @@ class FontsWindow:
                 return
             styled = apply_font(raw, s.selected_font)
             safe_chat_send(styled)
-            bui.screenmessage(f'Sent!', color=(0, 1, 0))
+            bui.screenmessage(f'✅ Sent!', color=(0, 1, 0))
             gs('dingSmallHigh').play()
         except Exception as e:
             AR.err(f'Send error: {e}')
-
-    def copy_text(s):
-        try:
-            if not CIS():
-                AR.err('Clipboard not supported!')
-                return
-            from babase import clipboard_set_text
-            raw = tw(query=s.text_input).strip()
-            if not raw:
-                AR.err('Enter text first!')
-                return
-            styled = apply_font(raw, s.selected_font)
-            clipboard_set_text(styled)
-            bui.screenmessage(f'Copied!', color=(0, 1, 0))
-            gs('dingSmallHigh').play()
-        except Exception as e:
-            AR.err(f'Copy error: {e}')
 
 
 # ============================================
@@ -1213,7 +1262,7 @@ class AutoBuyerWindow:
         s.b_status_text = tw(parent=s.w, text=f'B Race: {b_status}', position=(170, 315), h_align='center', scale=0.65, color=b_color)
         s.b_toggle_btn = bw(parent=s.w, label='B OFF' if auto_b_enabled else 'B ON', size=(120, 26), position=(20, 285), on_activate_call=Call(s.toggle_b), color=(0.7, 0.2, 0.2) if auto_b_enabled else (0.2, 0.7, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
 
-        tw(parent=s.w, text='Race: when someone sends "b xxx"', position=(170, 265), scale=0.3, h_align='center', color=(0.8, 0.8, 1))
+        tw(parent=s.w, text='Race: only "b s<number>"', position=(170, 265), scale=0.3, h_align='center', color=(0.8, 0.8, 1))
 
         tw(parent=s.w, text='--- Item Limits ---', position=(170, 240), h_align='center', scale=0.5, color=(1, 1, 0.8))
         s.scroll = sw(parent=s.w, size=(300, 180), position=(20, 40))
@@ -1500,7 +1549,9 @@ class ModsMenu:
 # ============================================
 SELL_PATTERN = re.compile(r'💰Sell ID:\s*(\w+)')
 BUY_PATTERN = re.compile(r'(\w+):\s*💳Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s*>\s*for\s*([\d,]+)\s*coins(?:\?.*)?')
-B_RACE_PATTERN = re.compile(r'^b\s+(\w+)\s*$')
+
+# ✅ فقط b s + عدد (مثل b s11, b s396) - b sagg نگیره
+B_RACE_PATTERN = re.compile(r'^b\s+s(\d+)\s*$', re.IGNORECASE)
 
 
 def process_sell(item_id):
@@ -1511,7 +1562,7 @@ def process_sell(item_id):
 
 
 def process_b_race(item_id, sender):
-    """مسابقه b XXX - سریع همون رو echo کنه"""
+    """مسابقه b sXXX - سریع echo کنه"""
     if sender and my_own_name and sender == my_own_name:
         return False
     if item_id in processed_b_ids:
@@ -1769,6 +1820,9 @@ class byMahyar(Plugin):
         teck(1, s.calc_ear)
         teck(1, s.reconnect_ear)
 
+        # ✅ پیام تبلیغاتی خودکار هر 5 دقیقه (همیشه روشن)
+        teck(60.0, auto_ad_send)
+
         from bauiv1lib import party
         o = party.PartyWindow.__init__
 
@@ -1812,14 +1866,12 @@ class byMahyar(Plugin):
                 s.last_msg_hash = ""
                 return
 
-            # ✅ فقط آخرین پیام
             try:
                 last_msg = z[-1]
             except (IndexError, TypeError):
                 s.last_msg_hash = ""
                 return
 
-            # فقط خود پیام رو مقایسه کن
             current_hash = f"{len(last_msg)}_{last_msg}"
             if current_hash == s.last_msg_hash:
                 return
@@ -1827,7 +1879,6 @@ class byMahyar(Plugin):
 
             msg = last_msg
 
-            # جدا کردن sender و content
             sender = None
             content = msg
             if ': ' in msg:
@@ -1837,12 +1888,12 @@ class byMahyar(Plugin):
             else:
                 content = msg.strip()
 
-            # ─── 1) b XXX ───
+            # ─── 1) b sXXX (فقط s + عدد) ───
             if auto_b_enabled:
                 try:
                     m_b = B_RACE_PATTERN.match(content)
                     if m_b:
-                        process_b_race(m_b.group(1), sender)
+                        process_b_race("s" + m_b.group(1), sender)
                         return
                 except: pass
 
