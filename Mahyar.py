@@ -202,9 +202,11 @@ def clear_mods_button_position():
 auto_react_enabled = get_enabled_state('react', True)
 auto_reply_enabled = get_enabled_state('reply', True)
 auto_buyer_enabled = get_enabled_state('buyer', True)
+auto_b_enabled = get_enabled_state('auto_b', True)
 
 processed_sell_ids = set()
 processed_buy_ids = set()
+processed_b_ids = set()
 react_cooldown = {}
 auto_reply_cooldown = {}
 
@@ -411,6 +413,131 @@ def stop_spam():
 
 
 # ============================================
+# 🔤 Fonts
+# ============================================
+FONTS = {
+    'Normal': {},
+    'Bold': {
+        'a': '𝐚', 'b': '𝐛', 'c': '𝐜', 'd': '𝐝', 'e': '𝐞', 'f': '𝐟', 'g': '𝐠',
+        'h': '𝐡', 'i': '𝐢', 'j': '𝐣', 'k': '𝐤', 'l': '𝐥', 'm': '𝐦', 'n': '𝐧',
+        'o': '𝐨', 'p': '𝐩', 'q': '𝐪', 'r': '𝐫', 's': '𝐬', 't': '𝐭', 'u': '𝐮',
+        'v': '𝐯', 'w': '𝐰', 'x': '𝐱', 'y': '𝐲', 'z': '𝐳',
+        'A': '𝐀', 'B': '𝐁', 'C': '𝐂', 'D': '𝐃', 'E': '𝐄', 'F': '𝐅', 'G': '𝐆',
+        'H': '𝐇', 'I': '𝐈', 'J': '𝐉', 'K': '𝐊', 'L': '𝐋', 'M': '𝐌', 'N': '𝐍',
+        'O': '𝐎', 'P': '𝐏', 'Q': '𝐐', 'R': '𝐑', 'S': '𝐒', 'T': '𝐓', 'U': '𝐔',
+        'V': '𝐕', 'W': '𝐖', 'X': '𝐗', 'Y': '𝐘', 'Z': '𝐙',
+        '0': '𝟎', '1': '𝟏', '2': '𝟐', '3': '𝟑', '4': '𝟒',
+        '5': '𝟓', '6': '𝟔', '7': '𝟕', '8': '𝟖', '9': '𝟗',
+    },
+    'Italic': {
+        'a': '𝑎', 'b': '𝑏', 'c': '𝑐', 'd': '𝑑', 'e': '𝑒', 'f': '𝑓', 'g': '𝑔',
+        'h': 'ℎ', 'i': '𝑖', 'j': '𝑗', 'k': '𝑘', 'l': '𝑙', 'm': '𝑚', 'n': '𝑛',
+        'o': '𝑜', 'p': '𝑝', 'q': '𝑞', 'r': '𝑟', 's': '𝑠', 't': '𝑡', 'u': '𝑢',
+        'v': '𝑣', 'w': '𝑤', 'x': '𝑥', 'y': '𝑦', 'z': '𝑧',
+        'A': '𝐴', 'B': '𝐵', 'C': '𝐶', 'D': '𝐷', 'E': '𝐸', 'F': '𝐹', 'G': '𝐺',
+        'H': '𝐻', 'I': '𝐼', 'J': '𝐽', 'K': '𝐾', 'L': '𝐿', 'M': '𝑀', 'N': '𝑁',
+        'O': '𝑂', 'P': '𝑃', 'Q': '𝑄', 'R': '𝑅', 'S': '𝑆', 'T': '𝑇', 'U': '𝑈',
+        'V': '𝑉', 'W': '𝑊', 'X': '𝑋', 'Y': '𝑌', 'Z': '𝑍',
+    },
+    'Bold-Italic': {
+        'a': '𝒂', 'b': '𝒃', 'c': '𝒄', 'd': '𝒅', 'e': '𝒆', 'f': '𝒇', 'g': '𝒈',
+        'h': '𝒉', 'i': '𝒊', 'j': '𝒋', 'k': '𝒌', 'l': '𝒍', 'm': '𝒎', 'n': '𝒏',
+        'o': '𝒐', 'p': '𝒑', 'q': '𝒒', 'r': '𝒓', 's': '𝒔', 't': '𝒕', 'u': '𝒖',
+        'v': '𝒗', 'w': '𝒘', 'x': '𝒙', 'y': '𝒚', 'z': '𝒛',
+        'A': '𝑨', 'B': '𝑩', 'C': '𝑪', 'D': '𝑫', 'E': '𝑬', 'F': '𝑭', 'G': '𝑮',
+        'H': '𝑯', 'I': '𝑰', 'J': '𝑱', 'K': '𝑲', 'L': '𝑳', 'M': '𝑴', 'N': '𝑵',
+        'O': '𝑶', 'P': '𝑷', 'Q': '𝑸', 'R': '𝑹', 'S': '𝑺', 'T': '𝑻', 'U': '𝑼',
+        'V': '𝑽', 'W': '𝑾', 'X': '𝑿', 'Y': '𝒀', 'Z': '𝒁',
+    },
+    'Script': {
+        'a': '𝒶', 'b': '𝒷', 'c': '𝒸', 'd': '𝒹', 'e': 'ℯ', 'f': '𝒻', 'g': 'ℊ',
+        'h': '𝒽', 'i': '𝒾', 'j': '𝒿', 'k': '𝓀', 'l': '𝓁', 'm': '𝓂', 'n': '𝓃',
+        'o': 'ℴ', 'p': '𝓅', 'q': '𝓆', 'r': '𝓇', 's': '𝓈', 't': '𝓉', 'u': '𝓊',
+        'v': '𝓋', 'w': '𝓌', 'x': '𝓍', 'y': '𝓎', 'z': '𝓏',
+        'A': '𝒜', 'B': 'ℬ', 'C': '𝒞', 'D': '𝒟', 'E': 'ℰ', 'F': 'ℱ', 'G': '𝒢',
+        'H': 'ℋ', 'I': 'ℐ', 'J': '𝒥', 'K': '𝒦', 'L': 'ℒ', 'M': 'ℳ', 'N': '𝒩',
+        'O': '𝒪', 'P': '𝒫', 'Q': '𝒬', 'R': 'ℛ', 'S': '𝒮', 'T': '𝒯', 'U': '𝒰',
+        'V': '𝒱', 'W': '𝒲', 'X': '𝒳', 'Y': '𝒴', 'Z': '𝒵',
+    },
+    'Bold-Script': {
+        'a': '𝓪', 'b': '𝓫', 'c': '𝓬', 'd': '𝓭', 'e': '𝓮', 'f': '𝓯', 'g': '𝓰',
+        'h': '𝓱', 'i': '𝓲', 'j': '𝓳', 'k': '𝓴', 'l': '𝓵', 'm': '𝓶', 'n': '𝓷',
+        'o': '𝓸', 'p': '𝓹', 'q': '𝓺', 'r': '𝓻', 's': '𝓼', 't': '𝓽', 'u': '𝓾',
+        'v': '𝓿', 'w': '𝔀', 'x': '𝔁', 'y': '𝔂', 'z': '𝔃',
+        'A': '𝓐', 'B': '𝓑', 'C': '𝓒', 'D': '𝓓', 'E': '𝓔', 'F': '𝓕', 'G': '𝓖',
+        'H': '𝓗', 'I': '𝓘', 'J': '𝓙', 'K': '𝓚', 'L': '𝓛', 'M': '𝓜', 'N': '𝓝',
+        'O': '𝓞', 'P': '𝓟', 'Q': '𝓠', 'R': '𝓡', 'S': '𝓢', 'T': '𝓣', 'U': '𝓤',
+        'V': '𝓥', 'W': '𝓦', 'X': '𝓧', 'Y': '𝓨', 'Z': '𝓩',
+    },
+    'Double': {
+        'a': '𝕒', 'b': '𝕓', 'c': '𝕔', 'd': '𝕕', 'e': '𝕖', 'f': '𝕗', 'g': '𝕘',
+        'h': '𝕙', 'i': '𝕚', 'j': '𝕛', 'k': '𝕜', 'l': '𝕝', 'm': '𝕞', 'n': '𝕟',
+        'o': '𝕠', 'p': '𝕡', 'q': '𝕢', 'r': '𝕣', 's': '𝕤', 't': '𝕥', 'u': '𝕦',
+        'v': '𝕧', 'w': '𝕨', 'x': '𝕩', 'y': '𝕪', 'z': '𝕫',
+        'A': '𝔸', 'B': '𝔹', 'C': 'ℂ', 'D': '𝔻', 'E': '𝔼', 'F': '𝔽', 'G': '𝔾',
+        'H': 'ℍ', 'I': '𝕀', 'J': '𝕁', 'K': '𝕂', 'L': '𝕃', 'M': '𝕄', 'N': 'ℕ',
+        'O': '𝕆', 'P': 'ℙ', 'Q': 'ℚ', 'R': 'ℝ', 'S': '𝕊', 'T': '𝕋', 'U': '𝕌',
+        'V': '𝕍', 'W': '𝕎', 'X': '𝕏', 'Y': '𝕐', 'Z': 'ℤ',
+        '0': '𝟘', '1': '𝟙', '2': '𝟚', '3': '𝟛', '4': '𝟜',
+        '5': '𝟝', '6': '𝟞', '7': '𝟟', '8': '𝟠', '9': '𝟡',
+    },
+    'Monospace': {
+        'a': '𝚊', 'b': '𝚋', 'c': '𝚌', 'd': '𝚍', 'e': '𝚎', 'f': '𝚏', 'g': '𝚐',
+        'h': '𝚑', 'i': '𝚒', 'j': '𝚓', 'k': '𝚔', 'l': '𝚕', 'm': '𝚖', 'n': '𝚗',
+        'o': '𝚘', 'p': '𝚙', 'q': '𝚚', 'r': '𝚛', 's': '𝚜', 't': '𝚝', 'u': '𝚞',
+        'v': '𝚟', 'w': '𝚠', 'x': '𝚡', 'y': '𝚢', 'z': '𝚣',
+        'A': '𝙰', 'B': '𝙱', 'C': '𝙲', 'D': '𝙳', 'E': '𝙴', 'F': '𝙵', 'G': '𝙶',
+        'H': '𝙷', 'I': '𝙸', 'J': '𝙹', 'K': '𝙺', 'L': '𝙻', 'M': '𝙼', 'N': '𝙽',
+        'O': '𝙾', 'P': '𝙿', 'Q': '𝚀', 'R': '𝚁', 'S': '𝚂', 'T': '𝚃', 'U': '𝚄',
+        'V': '𝚅', 'W': '𝚆', 'X': '𝚇', 'Y': '𝚈', 'Z': '𝚉',
+        '0': '𝟶', '1': '𝟷', '2': '𝟸', '3': '𝟹', '4': '𝟺',
+        '5': '𝟻', '6': '𝟼', '7': '𝟽', '8': '𝟾', '9': '𝟿',
+    },
+    'Circled': {
+        'a': 'ⓐ', 'b': 'ⓑ', 'c': 'ⓒ', 'd': 'ⓓ', 'e': 'ⓔ', 'f': 'ⓕ', 'g': 'ⓖ',
+        'h': 'ⓗ', 'i': 'ⓘ', 'j': 'ⓙ', 'k': 'ⓚ', 'l': 'ⓛ', 'm': 'ⓜ', 'n': 'ⓝ',
+        'o': 'ⓞ', 'p': 'ⓟ', 'q': 'ⓠ', 'r': 'ⓡ', 's': 'ⓢ', 't': 'ⓣ', 'u': 'ⓤ',
+        'v': 'ⓥ', 'w': 'ⓦ', 'x': 'ⓧ', 'y': 'ⓨ', 'z': 'ⓩ',
+        'A': 'Ⓐ', 'B': 'Ⓑ', 'C': 'Ⓒ', 'D': 'Ⓓ', 'E': 'Ⓔ', 'F': 'Ⓕ', 'G': 'Ⓖ',
+        'H': 'Ⓗ', 'I': 'Ⓘ', 'J': 'Ⓙ', 'K': 'Ⓚ', 'L': 'Ⓛ', 'M': 'Ⓜ', 'N': 'Ⓝ',
+        'O': 'Ⓞ', 'P': 'Ⓟ', 'Q': 'Ⓠ', 'R': 'Ⓡ', 'S': 'Ⓢ', 'T': 'Ⓣ', 'U': 'Ⓤ',
+        'V': 'Ⓥ', 'W': 'Ⓦ', 'X': 'Ⓧ', 'Y': 'Ⓨ', 'Z': 'Ⓩ',
+        '0': '⓪', '1': '①', '2': '②', '3': '③', '4': '④',
+        '5': '⑤', '6': '⑥', '7': '⑦', '8': '⑧', '9': '⑨',
+    },
+    'Squared': {
+        'A': '🄰', 'B': '🄱', 'C': '🄲', 'D': '🄳', 'E': '🄴', 'F': '🄵', 'G': '🄶',
+        'H': '🄷', 'I': '🄸', 'J': '🄹', 'K': '🄺', 'L': '🄻', 'M': '🄼', 'N': '🄽',
+        'O': '🄾', 'P': '🄿', 'Q': '🅀', 'R': '🅁', 'S': '🅂', 'T': '🅃', 'U': '🅄',
+        'V': '🅅', 'W': '🅆', 'X': '🅇', 'Y': '🅈', 'Z': '🅉',
+    },
+    'Fullwidth': {
+        'a': 'ａ', 'b': 'ｂ', 'c': 'ｃ', 'd': 'ｄ', 'e': 'ｅ', 'f': 'ｆ', 'g': 'ｇ',
+        'h': 'ｈ', 'i': 'ｉ', 'j': 'ｊ', 'k': 'ｋ', 'l': 'ｌ', 'm': 'ｍ', 'n': 'ｎ',
+        'o': 'ｏ', 'p': 'ｐ', 'q': 'ｑ', 'r': 'ｒ', 's': 'ｓ', 't': 'ｔ', 'u': 'ｕ',
+        'v': 'ｖ', 'w': 'ｗ', 'x': 'ｘ', 'y': 'ｙ', 'z': 'ｚ',
+        'A': 'Ａ', 'B': 'Ｂ', 'C': 'Ｃ', 'D': 'Ｄ', 'E': 'Ｅ', 'F': 'Ｆ', 'G': 'Ｇ',
+        'H': 'Ｈ', 'I': 'Ｉ', 'J': 'Ｊ', 'K': 'Ｋ', 'L': 'Ｌ', 'M': 'Ｍ', 'N': 'Ｎ',
+        'O': 'Ｏ', 'P': 'Ｐ', 'Q': 'Ｑ', 'R': 'Ｒ', 'S': 'Ｓ', 'T': 'Ｔ', 'U': 'Ｕ',
+        'V': 'Ｖ', 'W': 'Ｗ', 'X': 'Ｘ', 'Y': 'Ｙ', 'Z': 'Ｚ',
+        '0': '０', '1': '１', '2': '２', '3': '３', '4': '４',
+        '5': '５', '6': '６', '7': '７', '8': '８', '9': '９',
+    },
+}
+
+
+def apply_font(text, font_name):
+    """اعمال فونت روی متن"""
+    if font_name == 'Normal' or font_name not in FONTS:
+        return text
+    mapping = FONTS[font_name]
+    result = []
+    for ch in text:
+        result.append(mapping.get(ch, ch))
+    return ''.join(result)
+
+
+# ============================================
 # 🧮 Calculator
 # ============================================
 class Calculator:
@@ -564,6 +691,136 @@ class Calculator:
             message = f"⚖️ {s.last_expression}" if s.last_expression else f"⚖️ {s.current_input}"
             safe_chat_send(message); bui.screenmessage(f'Sent: {message}', color=(0, 1, 0)); gs('dingSmall').play()
         except Exception as e: AR.err(f'Send error: {str(e)}')
+
+
+# ============================================
+# 🔤 Fonts Window
+# ============================================
+class FontsWindow:
+    def __init__(s, source):
+        s.selected_font = 'Normal'
+
+        s.w = AR.cw(source=source, size=(360, 500), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(330, 465))
+
+        tw(parent=s.w, text='🔤 Fonts', scale=0.95, position=(180, 460),
+           h_align='center', color=(1, 0.5, 0.9))
+        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(180, 445),
+           h_align='center', color=(0.6, 0.6, 0.8))
+
+        tw(parent=s.w, text='Select Font:', scale=0.55, position=(180, 420),
+           h_align='center', color=(1, 1, 0))
+
+        # لیست فونت‌ها
+        s.font_buttons = {}
+        font_names = list(FONTS.keys())
+        y_start = 390
+        col_w = 105
+        row_h = 30
+
+        for i, fname in enumerate(font_names):
+            col = i % 3
+            row = i // 3
+            x = 15 + col * col_w
+            y = y_start - row * row_h
+
+            btn = bw(
+                parent=s.w, label=fname, size=(95, 26),
+                position=(x, y),
+                on_activate_call=lambda f=fname: s.select_font(f),
+                color=(0.3, 0.6, 0.3) if fname == 'Normal' else (0.35, 0.35, 0.5),
+                textcolor=(1, 1, 1), button_type='square', text_scale=0.5
+            )
+            s.font_buttons[fname] = btn
+
+        s.selected_text = tw(
+            parent=s.w, text='Selected: Normal',
+            position=(180, 145), h_align='center', scale=0.5,
+            color=(0, 1, 0)
+        )
+
+        tw(parent=s.w, text='Enter text:', scale=0.5, position=(180, 122),
+           h_align='center', color=(1, 1, 1))
+
+        s.text_input = tw(
+            parent=s.w, text='', editable=True, scale=0.8,
+            position=(30, 88), size=(300, 28),
+            h_align='center', color=(0.9, 0.9, 0.9)
+        )
+
+        tw(parent=s.w, text='Preview:', scale=0.4, position=(180, 66),
+           h_align='center', color=(0.8, 0.8, 1))
+
+        s.preview = tw(
+            parent=s.w, text='(type something)', scale=0.65,
+            position=(180, 42), h_align='center',
+            color=(0.3, 1, 0.7), maxwidth=320
+        )
+
+        bw(parent=s.w, label='📤 Send', size=(140, 30),
+           position=(30, 5), on_activate_call=s.send_to_chat,
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.65)
+
+        bw(parent=s.w, label='📋 Copy', size=(140, 30),
+           position=(190, 5), on_activate_call=s.copy_text,
+           color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.65)
+
+        gs('swish').play()
+
+    def select_font(s, font_name):
+        s.selected_font = font_name
+        for fname, btn in s.font_buttons.items():
+            try:
+                color = (0.3, 0.6, 0.3) if fname == font_name else (0.35, 0.35, 0.5)
+                bw(btn, color=color)
+            except: pass
+
+        tw(s.selected_text, text=f'Selected: {font_name}', color=(0, 1, 0))
+        s.update_preview()
+        gs('click01').play()
+
+    def update_preview(s):
+        try:
+            raw = tw(query=s.text_input).strip()
+            if not raw:
+                tw(s.preview, text='(type something)')
+                return
+            styled = apply_font(raw, s.selected_font)
+            tw(s.preview, text=styled)
+        except:
+            pass
+
+    def send_to_chat(s):
+        try:
+            raw = tw(query=s.text_input).strip()
+            if not raw:
+                AR.err('Enter text first!')
+                return
+            styled = apply_font(raw, s.selected_font)
+            safe_chat_send(styled)
+            bui.screenmessage(f'Sent!', color=(0, 1, 0))
+            gs('dingSmallHigh').play()
+        except Exception as e:
+            AR.err(f'Send error: {e}')
+
+    def copy_text(s):
+        try:
+            if not CIS():
+                AR.err('Clipboard not supported!')
+                return
+            from babase import clipboard_set_text
+            raw = tw(query=s.text_input).strip()
+            if not raw:
+                AR.err('Enter text first!')
+                return
+            styled = apply_font(raw, s.selected_font)
+            clipboard_set_text(styled)
+            bui.screenmessage(f'Copied!', color=(0, 1, 0))
+            gs('dingSmallHigh').play()
+        except Exception as e:
+            AR.err(f'Copy error: {e}')
 
 
 # ============================================
@@ -959,17 +1216,27 @@ class ReconnectWindow:
 # ============================================
 class AutoBuyerWindow:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(340, 410), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(310, 375))
-        tw(parent=s.w, text='Auto Buyer', scale=0.95, position=(170, 370), h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(170, 355), h_align='center', color=(0.6, 0.6, 0.8))
+        s.w = AR.cw(source=source, size=(340, 450), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(310, 415))
+        tw(parent=s.w, text='Auto Buyer', scale=0.95, position=(170, 410), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(170, 395), h_align='center', color=(0.6, 0.6, 0.8))
+
         status = "ON" if auto_buyer_enabled else "OFF"
         status_color = (0, 1, 0) if auto_buyer_enabled else (1, 0, 0)
-        s.status_text = tw(parent=s.w, text=f'Status: {status}', position=(170, 332), h_align='center', scale=0.7, color=status_color)
-        s.toggle_btn = bw(parent=s.w, label='Turn OFF' if auto_buyer_enabled else 'Turn ON', size=(120, 26), position=(20, 298), on_activate_call=Call(s.toggle), color=(0.7, 0.2, 0.2) if auto_buyer_enabled else (0.2, 0.7, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
-        bw(parent=s.w, label='Reset', size=(120, 26), position=(160, 298), on_activate_call=Call(s.reset_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
-        tw(parent=s.w, text='─── Item Limits ───', position=(170, 268), h_align='center', scale=0.5, color=(1, 1, 0.8))
-        s.scroll = sw(parent=s.w, size=(300, 210), position=(20, 40))
+        s.status_text = tw(parent=s.w, text=f'Buy Status: {status}', position=(170, 372), h_align='center', scale=0.65, color=status_color)
+        s.toggle_btn = bw(parent=s.w, label='Turn OFF' if auto_buyer_enabled else 'Turn ON', size=(120, 26), position=(20, 342), on_activate_call=Call(s.toggle), color=(0.7, 0.2, 0.2) if auto_buyer_enabled else (0.2, 0.7, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
+        bw(parent=s.w, label='Reset', size=(120, 26), position=(160, 342), on_activate_call=Call(s.reset_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+
+        # ─── B Auto (مسابقه b XXX) ───
+        b_status = "ON" if auto_b_enabled else "OFF"
+        b_color = (0, 1, 0) if auto_b_enabled else (1, 0, 0)
+        s.b_status_text = tw(parent=s.w, text=f'B Race: {b_status}', position=(170, 315), h_align='center', scale=0.65, color=b_color)
+        s.b_toggle_btn = bw(parent=s.w, label='B OFF' if auto_b_enabled else 'B ON', size=(120, 26), position=(20, 285), on_activate_call=Call(s.toggle_b), color=(0.7, 0.2, 0.2) if auto_b_enabled else (0.2, 0.7, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
+
+        tw(parent=s.w, text='Race: when someone sends "b xxx"', position=(170, 265), scale=0.3, h_align='center', color=(0.8, 0.8, 1))
+
+        tw(parent=s.w, text='─── Item Limits ───', position=(170, 240), h_align='center', scale=0.5, color=(1, 1, 0.8))
+        s.scroll = sw(parent=s.w, size=(300, 180), position=(20, 40))
         s.container = cw(parent=s.scroll, size=(280, 700), background=False)
         s.item_buttons = {}
         s.build_grid()
@@ -1007,13 +1274,28 @@ class AutoBuyerWindow:
         save_enabled_state('buyer', auto_buyer_enabled)
         if auto_buyer_enabled:
             bw(s.toggle_btn, label='Turn OFF', color=(0.7, 0.2, 0.2))
-            tw(s.status_text, text='Status: ON', color=(0, 1, 0))
+            tw(s.status_text, text='Buy Status: ON', color=(0, 1, 0))
             bui.screenmessage('Auto Buyer ON', color=(0, 1, 0))
         else:
             bw(s.toggle_btn, label='Turn ON', color=(0.2, 0.7, 0.2))
-            tw(s.status_text, text='Status: OFF', color=(1, 0, 0))
+            tw(s.status_text, text='Buy Status: OFF', color=(1, 0, 0))
             bui.screenmessage('Auto Buyer OFF', color=(1, 0.5, 0))
         gs('dingSmall').play()
+
+    def toggle_b(s):
+        global auto_b_enabled
+        auto_b_enabled = not auto_b_enabled
+        save_enabled_state('auto_b', auto_b_enabled)
+        if auto_b_enabled:
+            bw(s.b_toggle_btn, label='B OFF', color=(0.7, 0.2, 0.2))
+            tw(s.b_status_text, text='B Race: ON', color=(0, 1, 0))
+            bui.screenmessage('B Race ON', color=(0, 1, 0))
+        else:
+            bw(s.b_toggle_btn, label='B ON', color=(0.2, 0.7, 0.2))
+            tw(s.b_status_text, text='B Race: OFF', color=(1, 0, 0))
+            bui.screenmessage('B Race OFF', color=(1, 0.5, 0))
+        gs('dingSmall').play()
+
     def edit_item(s, name):
         EditLimitsWindow(s.w, item_name=name, parent_window=s)
     def reset_all(s):
@@ -1056,16 +1338,14 @@ class EditLimitsWindow:
 class EditPlaceWindow:
     def __init__(s, source, mods_button):
         s.mods_button = mods_button
-        s.step = 5   # ← فقط 5 پیکسل
+        s.step = 5
 
-        # موقعیت فعلی دکمه
         try:
             pos = mods_button.get_position()
             s.current_x, s.current_y = float(pos[0]), float(pos[1])
         except:
             s.current_x, s.current_y = 0.0, 0.0
 
-        # ✅ ابعاد والد (همون روش قبلی که کار می‌کرد)
         s.parent_w, s.parent_h = 1920.0, 1080.0
         try:
             parent = mods_button.get_parent()
@@ -1094,14 +1374,12 @@ class EditPlaceWindow:
         arrow_color = (0.3, 0.5, 0.8)
         cx = 160
 
-        # ─── Up ───
         bw(parent=s.w, label='▲', size=arrow_size,
            position=(cx - 30, 220),
            on_activate_call=lambda: s.move(0, s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        # ─── Left / Right ───
         bw(parent=s.w, label='◀', size=arrow_size,
            position=(cx - 100, 165),
            on_activate_call=lambda: s.move(-s.step, 0),
@@ -1114,14 +1392,12 @@ class EditPlaceWindow:
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        # ─── Down ───
         bw(parent=s.w, label='▼', size=arrow_size,
            position=(cx - 30, 110),
            on_activate_call=lambda: s.move(0, -s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
 
-        # ─── Save / Reset ───
         bw(parent=s.w, label='💾 Save', size=(130, 30), position=(cx - 140, 35),
            on_activate_call=s.save, color=(0.2, 0.7, 0.3),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
@@ -1141,13 +1417,11 @@ class EditPlaceWindow:
             new_x = s.current_x + dx
             new_y = s.current_y + dy
 
-            # حداقل خیلی کم برای اینکه کامل از صفحه خارج نشه
-            min_y = 0.0
             max_x = max(0.0, s.parent_w - 85)
             max_y = max(0.0, s.parent_h - 25)
 
             if new_x < 0: new_x = 0.0
-            if new_y < min_y: new_y = min_y
+            if new_y < 0: new_y = 0.0
             if new_x > max_x: new_x = max_x
             if new_y > max_y: new_y = max_y
 
@@ -1169,7 +1443,6 @@ class EditPlaceWindow:
         gs('dingSmallHigh').play()
 
     def reset(s):
-        # ✅ ابعاد والد رو دوباره بگیر
         try:
             parent = s.mods_button.get_parent()
             if parent:
@@ -1195,14 +1468,14 @@ class EditPlaceWindow:
 class ModsMenu:
     def __init__(s, source, mods_button=None):
         s.mods_button_ref = mods_button
-        s.w = AR.cw(source=source, size=(400, 520), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(370, 480))
+        s.w = AR.cw(source=source, size=(400, 570), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(370, 530))
 
-        tw(parent=s.w, text='⚙️ Mods Menu', scale=1.2, position=(200, 475), h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 455), h_align='center', color=(0.6, 0.6, 0.8))
+        tw(parent=s.w, text='⚙️ Mods Menu', scale=1.2, position=(200, 525), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 505), h_align='center', color=(0.6, 0.6, 0.8))
 
-        s.scroll = sw(parent=s.w, size=(340, 420), position=(30, 25))
-        s.container = cw(parent=s.scroll, size=(320, 750), background=False)
+        s.scroll = sw(parent=s.w, size=(340, 470), position=(30, 25))
+        s.container = cw(parent=s.scroll, size=(320, 850), background=False)
 
         buttons = [
             ('🧮 Calculator', Calculator, (0, 0.3, 0.8)),
@@ -1211,11 +1484,12 @@ class ModsMenu:
             ('💬 Auto Reply', AutoReplyEditorWindow, (0.3, 0.7, 0.4)),
             ('📢 Spam', SpamWindow, (0.8, 0.3, 0.3)),
             ('🔄 Reconnect', ReconnectWindow, (0.4, 0.6, 0.4)),
+            ('🔤 Fonts', FontsWindow, (0.7, 0.4, 0.8)),
             ('📍 Edit Place', None, (0.6, 0.4, 0.7)),
         ]
 
         s.item_buttons = []
-        y_pos = 700
+        y_pos = 800
         for label, cls, color in buttons:
             btn = bw(
                 parent=s.container,
@@ -1231,7 +1505,7 @@ class ModsMenu:
             s.item_buttons.append(btn)
             y_pos -= 65
 
-        cw(s.container, size=(320, 750))
+        cw(s.container, size=(320, 850))
 
         gs('swish').play()
 
@@ -1255,6 +1529,7 @@ class ModsMenu:
 # ============================================
 SELL_PATTERN = re.compile(r'💰Sell ID:\s*(\w+)')
 BUY_PATTERN = re.compile(r'(\w+):\s*💳Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s*>\s*for\s*([\d,]+)\s*coins(?:\?.*)?')
+B_RACE_PATTERN = re.compile(r'^b\s+([a-zA-Z]+\d+)\s*$')
 
 
 def process_sell(item_id):
@@ -1279,6 +1554,20 @@ def process_buy(item_id, count, item_name, total_price):
         safe_chat_send("1 ")
     else:
         safe_chat_send("0 ")
+
+
+def process_b_race(item_id, sender):
+    """مسابقه b XXX - سریع همون رو می‌فرستیم"""
+    if sender and my_own_name and sender == my_own_name:
+        return False
+    race_key = item_id
+    if race_key in processed_b_ids:
+        return False
+    processed_b_ids.add(race_key)
+    if len(processed_b_ids) > 100:
+        processed_b_ids.clear()
+    safe_chat_send(f"b {item_id}")
+    return True
 
 
 # ============================================
@@ -1363,18 +1652,27 @@ def check_chat_commands(msg):
     global spam_active
     try:
         content = msg
+        sender = None
         if ': ' in msg:
-            _, content = msg.split(': ', 1)
+            parts = msg.split(': ', 1)
+            sender = parts[0].strip()
+            content = parts[1].strip()
         content = content.strip()
         content_lower = content.lower()
+
+        # ─── تشخیص سریع b XXX (مسابقه) ───
+        if auto_b_enabled:
+            m_b = B_RACE_PATTERN.match(content)
+            if m_b:
+                item_id = m_b.group(1)
+                if process_b_race(item_id, sender):
+                    return True
 
         # ─── دستور Mods Reset ───
         if content_lower in ('mods reset', 'modsreset', 'ریست مودز', 'مودز ریست'):
             try:
-                # پاک کردن مقادیر ذخیره شده
                 clear_mods_button_position()
 
-                # ✅ اگه دکمه موجوده، همون لحظه جابجاش کن
                 moved = False
                 if _plugin_instance is not None:
                     btn = getattr(_plugin_instance, 'mods_button_ref', None)
@@ -1514,7 +1812,6 @@ class byMahyar(Plugin):
         s.last_msg_hash = ""
         s.last_calc_hash = ""
 
-        # رفرنس دکمه Mods
         s.mods_button_ref = None
 
         teck(1, s.ear)
@@ -1547,7 +1844,6 @@ class byMahyar(Plugin):
             )
             bw(b_mods, on_activate_call=lambda: s.delayed_open(ModsMenu, b_mods))
 
-            # ✅ ذخیره رفرنس برای دستور mods reset
             s.mods_button_ref = b_mods
 
             return r
