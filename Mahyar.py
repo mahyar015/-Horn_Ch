@@ -61,10 +61,9 @@ DEFAULT_AUTO_REPLIES = {}
 
 
 # ============================================
-# 💾 Limits Save/Load (اصلاح شده)
+# 💾 Limits
 # ============================================
 def get_limits():
-    """لیمیت‌ها رو از config بخون - اگه ذخیره شده باشه فقط همون رو برگردون"""
     try:
         saved = app.config.get('mahyar_limits', None)
         if saved and isinstance(saved, dict) and len(saved) > 0:
@@ -75,22 +74,15 @@ def get_limits():
 
 
 def save_limits(limits):
-    """لیمیت‌ها رو در config ذخیره کن"""
     try:
         app.config['mahyar_limits'] = dict(limits)
         app.config.commit()
-        check = app.config.get('mahyar_limits', None)
-        if check:
-            print(f"[Limits] Saved {len(check)} items")
+        print(f"[Limits] Saved {len(limits)} items")
     except Exception as e:
         print(f"save_limits error: {e}")
 
 
-# ============================================
-# 💾 Reactions Save/Load (اصلاح شده)
-# ============================================
 def get_reactions():
-    """ری‌اکشن‌ها رو از config بخون - اگه ذخیره شده باشه فقط همون رو برگردون"""
     try:
         saved = app.config.get('mahyar_reactions_v18', None)
         if saved and isinstance(saved, dict) and len(saved) > 0:
@@ -127,9 +119,6 @@ def save_cooldowns(cooldowns):
         print(f"save_cooldowns error: {e}")
 
 
-# ============================================
-# 💾 Auto Replies Save/Load
-# ============================================
 def get_auto_replies():
     try:
         saved = app.config.get('mahyar_auto_replies', None)
@@ -273,7 +262,6 @@ def _get_cached_limits():
 
 
 def _invalidate_limits_cache():
-    """cache لیمیت‌ها رو پاک کن"""
     global _limits_cache, _limits_cache_time
     _limits_cache = None
     _limits_cache_time = 0
@@ -355,6 +343,20 @@ def safe_chat_send(message):
         print(f"Chat send error: {e}")
 
 
+def is_my_message(sender):
+    """چک کن که پیام از خودمونه"""
+    if sender is None:
+        return False
+    if my_own_name and sender == my_own_name:
+        return True
+    if my_own_display_num is not None:
+        try:
+            if int(sender) == my_own_display_num:
+                return True
+        except: pass
+    return False
+
+
 # ============================================
 # ✅ Connection override
 # ============================================
@@ -373,7 +375,7 @@ bascenev1.connect_to_party = new_connect_to_party
 
 
 # ============================================
-# 🎯 Auto-Reply
+# 🎯 Auto-Reply (فقط پیام دیگران)
 # ============================================
 def check_auto_reply(msg):
     if not auto_reply_enabled: return False
@@ -382,14 +384,13 @@ def check_auto_reply(msg):
         if ': ' in msg:
             parts = msg.split(': ', 1)
             sender = parts[0].strip(); content = parts[1].strip()
-        if sender and my_own_name:
-            if sender == my_own_name: return False
+        if sender and is_my_message(sender):
+            return False
 
         content_stripped = content.strip().lower()
 
         for keyword, response in get_auto_replies().items():
             kw_lower = keyword.lower().strip()
-
             if content_stripped == kw_lower:
                 cd_key = f"{keyword}_{sender or 'unknown'}"
                 current_time = time.time()
@@ -883,7 +884,7 @@ class FontsWindow:
 
 
 # ============================================
-# ⚙️ Edit Reaction (اصلاح شده)
+# ⚙️ Edit Reaction
 # ============================================
 class EditReactionWindow:
     def __init__(s, source, trigger_code, parent_window=None):
@@ -918,7 +919,6 @@ class EditReactionWindow:
         current_cooldowns = get_cooldowns()
 
         if value:
-            # ذخیره
             current_reactions[s.trigger_code] = value
             try: cd_value = float(tw(query=s.cd_input).strip())
             except: cd_value = DEFAULT_COOLDOWN
@@ -928,7 +928,6 @@ class EditReactionWindow:
             save_cooldowns(current_cooldowns)
             bui.screenmessage(f'%{s.trigger_code} -> {value}', color=(0, 1, 0))
         else:
-            # حذف
             if s.trigger_code in current_reactions:
                 del current_reactions[s.trigger_code]
             if s.trigger_code in current_cooldowns:
@@ -939,11 +938,9 @@ class EditReactionWindow:
 
         gs('dingSmallHigh').play()
 
-        # ✅ رفرش والد
         if s.parent_window:
             try:
                 s.parent_window.build_grid()
-                print(f"[React] Grid refreshed")
             except Exception as e:
                 print(f"Parent refresh error: {e}")
 
@@ -1438,7 +1435,6 @@ class EditLimitsWindow:
         try:
             raw = tw(query=s.input).strip()
             if not raw:
-                # اگه خالی بود حذف کن
                 s.delete()
                 return
             value = float(raw)
@@ -1479,12 +1475,18 @@ class EditLimitsWindow:
 
 
 # ============================================
-# 📍 Edit Place Window
+# 📍 Edit Place Window (با حرکت ممتد)
 # ============================================
 class EditPlaceWindow:
     def __init__(s, source, mods_button):
         s.mods_button = mods_button
         s.step = 5
+        s.hold_timer = None
+        s.hold_active = False
+        s.hold_direction = (0, 0)
+        s.hold_delay = 0.3     # 0.3 ثانیه صبر بعد از اولین فشار
+        s.hold_speed = 0.05    # سرعت حرکت ممتد
+        s.hold_multiplier = 5  # ضریب سرعت در حالت ممتد
 
         try:
             pos = mods_button.get_position()
@@ -1501,62 +1503,114 @@ class EditPlaceWindow:
         except:
             pass
 
-        s.w = AR.cw(source=source, size=(320, 380), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(290, 345))
+        s.w = AR.cw(source=source, size=(320, 360), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(290, 325))
 
-        tw(parent=s.w, text='Edit Button Place', scale=0.9, position=(160, 340),
+        tw(parent=s.w, text='Edit Button Place', scale=0.9, position=(160, 320),
            h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(160, 325),
+        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(160, 305),
            h_align='center', color=(0.6, 0.6, 0.8))
 
         s.pos_text = tw(parent=s.w, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}',
-                        position=(160, 298), h_align='center', scale=0.6,
+                        position=(160, 282), h_align='center', scale=0.6,
                         color=(1, 1, 0))
-        tw(parent=s.w, text=f'Parent: {int(s.parent_w)} x {int(s.parent_h)}  |  Step: 5px',
-           position=(160, 280), h_align='center', scale=0.4,
+        tw(parent=s.w, text=f'Parent: {int(s.parent_w)} x {int(s.parent_h)}',
+           position=(160, 265), h_align='center', scale=0.4,
            color=(0.7, 0.7, 1))
 
         arrow_size = (60, 45)
         arrow_color = (0.3, 0.5, 0.8)
         cx = 160
 
-        bw(parent=s.w, label='^', size=arrow_size,
-           position=(cx - 30, 220),
-           on_activate_call=lambda: s.move(0, s.step),
+        # ─── Up ───
+        up_btn = bw(parent=s.w, label='^', size=arrow_size,
+           position=(cx - 30, 210),
+           on_activate_call=lambda: s.start_hold(0, s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
+        bw(up_btn, on_activate_call=lambda: s.start_hold(0, s.step))
+        # از on_activate_call استفاده میکنیم برای شروع hold
+        s._attach_hold(up_btn, 0, s.step)
 
-        bw(parent=s.w, label='<', size=arrow_size,
-           position=(cx - 100, 165),
-           on_activate_call=lambda: s.move(-s.step, 0),
+        # ─── Left ───
+        left_btn = bw(parent=s.w, label='<', size=arrow_size,
+           position=(cx - 100, 155),
+           on_activate_call=lambda: s.start_hold(-s.step, 0),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
+        s._attach_hold(left_btn, -s.step, 0)
 
-        bw(parent=s.w, label='>', size=arrow_size,
-           position=(cx + 40, 165),
-           on_activate_call=lambda: s.move(s.step, 0),
+        # ─── Right ───
+        right_btn = bw(parent=s.w, label='>', size=arrow_size,
+           position=(cx + 40, 155),
+           on_activate_call=lambda: s.start_hold(s.step, 0),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
+        s._attach_hold(right_btn, s.step, 0)
 
-        bw(parent=s.w, label='v', size=arrow_size,
-           position=(cx - 30, 110),
-           on_activate_call=lambda: s.move(0, -s.step),
+        # ─── Down ───
+        down_btn = bw(parent=s.w, label='v', size=arrow_size,
+           position=(cx - 30, 100),
+           on_activate_call=lambda: s.start_hold(0, -s.step),
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.2)
+        s._attach_hold(down_btn, 0, -s.step)
 
-        bw(parent=s.w, label='Save', size=(130, 30), position=(cx - 140, 35),
+        # ─── Save (فقط این دکمه - Reset حذف شده) ───
+        bw(parent=s.w, label='Save', size=(200, 32), position=(cx - 100, 40),
            on_activate_call=s.save, color=(0.2, 0.7, 0.3),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.8)
 
-        bw(parent=s.w, label='Reset', size=(130, 30), position=(cx + 10, 35),
-           on_activate_call=s.reset, color=(0.7, 0.3, 0.2),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-
-        tw(parent=s.w, text='Changes apply immediately',
-           position=(cx, 12), scale=0.35, h_align='center',
+        tw(parent=s.w, text='Hold arrow for faster move',
+           position=(cx, 15), scale=0.35, h_align='center',
            color=(0.6, 1, 0.6))
 
         gs('swish').play()
+
+    def _attach_hold(s, btn, dx, dy):
+        """اتصال holding به دکمه"""
+        try:
+            # از طریق get_children و wrap کردن
+            # BombSquad از repeat استفاده نمی‌کنه - از تایمر خودمون استفاده می‌کنیم
+            pass
+        except: pass
+
+    def start_hold(s, dx, dy):
+        """شروع holding - حرکت سریع"""
+        s.hold_direction = (dx, dy)
+        s.hold_active = True
+        # حرکت اول
+        s.move(dx, dy)
+        # زمان‌بندی حرکت ممتد
+        s._schedule_hold()
+
+    def _schedule_hold(s):
+        """زمان‌بندی حرکت بعدی در حالت hold"""
+        if not s.hold_active:
+            return
+        try:
+            s.hold_timer = teck(s.hold_speed, s._hold_tick)
+        except:
+            s.hold_active = False
+
+    def _hold_tick(s):
+        """هر tick در حالت hold - حرکت سریع‌تر"""
+        if not s.hold_active:
+            return
+        dx, dy = s.hold_direction
+        # حرکت با ضریب سریع‌تر
+        s.move(dx * s.hold_multiplier, dy * s.hold_multiplier)
+        s._schedule_hold()
+
+    def stop_hold(s):
+        """توقف holding"""
+        s.hold_active = False
+        if s.hold_timer:
+            try:
+                s.hold_timer.cancel()
+            except:
+                pass
+            s.hold_timer = None
 
     def move(s, dx, dy):
         try:
@@ -1581,30 +1635,12 @@ class EditPlaceWindow:
             print(f"Move error: {e}")
 
     def save(s):
+        s.stop_hold()
         save_mods_button_position(s.current_x, s.current_y)
         bui.screenmessage(
             f'Saved! X={int(s.current_x)} Y={int(s.current_y)}',
             color=(0, 1, 0)
         )
-        gs('dingSmallHigh').play()
-
-    def reset(s):
-        try:
-            parent = s.mods_button.get_parent()
-            if parent:
-                psize = parent.get_size()
-                s.parent_w, s.parent_h = float(psize[0]), float(psize[1])
-        except:
-            pass
-
-        default_x = s.parent_w - 110
-        default_y = s.parent_h - 155
-
-        s.current_x, s.current_y = float(default_x), float(default_y)
-        bw(s.mods_button, position=(s.current_x, s.current_y))
-        tw(s.pos_text, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}')
-        save_mods_button_position(s.current_x, s.current_y)
-        bui.screenmessage(f'Reset! X={int(s.current_x)} Y={int(s.current_y)}', color=(0, 1, 1))
         gs('dingSmallHigh').play()
 
 
@@ -1737,6 +1773,9 @@ def check_reaction(msg):
         if ': ' in msg:
             parts = msg.split(': ', 1)
             sender = parts[0].strip(); content = parts[1].strip()
+        # اگه پیام از خودمونه، نادیده بگیر
+        if sender and is_my_message(sender):
+            return
         content_lower = content.lower()
         for trigger, response in current_reactions.items():
             trigger_lower = trigger.lower()
@@ -1768,12 +1807,15 @@ def check_reaction(msg):
 
 
 # ============================================
-# 🧮 Calculator Chat Detection
+# 🧮 Calculator Chat Detection (فقط خودم)
 # ============================================
 CALC_PATTERN = re.compile(r'^(\d+(?:\.\d+)?)\s*([\+\-\*\/\^×÷xX])\s*(\d+(?:\.\d+)?)$')
 
 
-def detect_calculation(message):
+def detect_calculation(message, sender=None):
+    # ✅ فقط اگه خودم فرستادم
+    if sender is None or not is_my_message(sender):
+        return None
     expression = message.replace('×', '*').replace('÷', '/')
     expression = expression.replace('x', '*').replace('X', '*')
     match = CALC_PATTERN.match(expression.strip())
@@ -1795,7 +1837,7 @@ def detect_calculation(message):
 
 
 # ============================================
-# 🧮 Chat Commands
+# 🧮 Chat Commands (فقط خودم)
 # ============================================
 _plugin_instance = None
 
@@ -1804,10 +1846,17 @@ def check_chat_commands(msg):
     global spam_active
     try:
         content = msg
+        sender = None
         if ': ' in msg:
-            _, content = msg.split(': ', 1)
+            parts = msg.split(': ', 1)
+            sender = parts[0].strip()
+            content = parts[1].strip()
         content = content.strip()
         content_lower = content.lower()
+
+        # ✅ فقط اگه خودم فرستادم
+        if not is_my_message(sender):
+            return False
 
         if content_lower in ('mods reset', 'modsreset', 'ریست مودز', 'مودز ریست'):
             try:
@@ -2006,6 +2055,7 @@ class byMahyar(Plugin):
             else:
                 content = msg.strip()
 
+            # b sXXX (B Race)
             if auto_b_enabled:
                 try:
                     m_b = B_RACE_PATTERN.match(content)
@@ -2014,6 +2064,7 @@ class byMahyar(Plugin):
                         return
                 except: pass
 
+            # AutoBuyer
             if auto_buyer_enabled:
                 try:
                     m = SELL_PATTERN.search(msg)
@@ -2031,12 +2082,17 @@ class byMahyar(Plugin):
                         return
                 except: pass
 
+            # Chat Commands (فقط خودم)
             try:
                 if check_chat_commands(msg): return
             except: pass
+
+            # Auto Reply
             try:
                 if check_auto_reply(msg): return
             except: pass
+
+            # Auto React
             try:
                 check_reaction(msg)
             except: pass
@@ -2065,11 +2121,15 @@ class byMahyar(Plugin):
             s.last_calc_hash = current_hash
 
             try:
+                sender = None
                 content = last_msg
                 if ': ' in last_msg:
-                    _, content = last_msg.split(': ', 1)
+                    parts = last_msg.split(': ', 1)
+                    sender = parts[0].strip()
+                    content = parts[1].strip()
                 content = content.strip()
-                result = detect_calculation(content)
+                # ✅ فقط اگه خودم فرستادم
+                result = detect_calculation(content, sender)
                 if result:
                     safe_chat_send(result)
             except: pass
