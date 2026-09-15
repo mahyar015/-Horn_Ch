@@ -227,7 +227,7 @@ auto_b_enabled = get_enabled_state('auto_b', True)
 processed_sell_ids = set()
 processed_buy_ids = set()
 processed_b_ids = {}          # debounce برای b race
-my_recent_sent = {}           # ✅ پیام‌هایی که خودمون فرستادیم
+my_recent_sent = {}           # پیام‌هایی که خودمون فرستادیم
 react_cooldown = {}
 auto_reply_cooldown = {}
 
@@ -344,9 +344,7 @@ def safe_chat_send(message):
     """ارسال پیام + ذخیره در لیست پیام‌های اخیر خودمون"""
     try:
         CM(message)
-        # ✅ ذخیره پیام ارسالی خودمون
         my_recent_sent[message] = time.time()
-        # پاک کردن قدیمی‌ها
         if len(my_recent_sent) > 50:
             now = time.time()
             old = [k for k, v in my_recent_sent.items() if now - v > 10]
@@ -1615,10 +1613,9 @@ class ModsMenu:
         tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 595), h_align='center', color=(0, 1, 1))
         tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 575), h_align='center', color=(0.6, 0.6, 0.8))
 
-        # ✅ محتوا رو کوچک‌تر کن تا کامل جا بشه
-        content_height = 8 * 60 + 20  # = 500
-
-        s.scroll = sw(parent=s.w, size=(340, 540), position=(30, 25))
+        # ✅ ارتفاع محتوا بزرگتر + اسکرول با فضای اضافی
+        content_height = 8 * 65 + 100  # = 620
+        s.scroll = sw(parent=s.w, size=(340, 520), position=(30, 25))
         s.container = cw(parent=s.scroll, size=(320, content_height), background=False)
 
         buttons = [
@@ -1638,7 +1635,7 @@ class ModsMenu:
             btn = bw(
                 parent=s.container,
                 label=label,
-                size=(300, 50),
+                size=(300, 55),
                 position=(10, y_pos),
                 on_activate_call=lambda c=cls: s.open_window(c),
                 color=color,
@@ -1647,7 +1644,7 @@ class ModsMenu:
                 text_scale=0.8
             )
             s.item_buttons.append(btn)
-            y_pos -= 60
+            y_pos -= 65
 
         cw(s.container, size=(320, content_height))
 
@@ -1684,7 +1681,6 @@ def process_sell(item_id):
 
 
 def process_b_race(item_id, sender):
-    """مسابقه b sXXX - debounce"""
     if sender and my_own_name and sender == my_own_name:
         return False
 
@@ -2099,7 +2095,6 @@ class byMahyar(Plugin):
                     content = parts[1].strip()
                 content = content.strip()
 
-                # ✅ اگه خودمون اخیراً فرستادیم نادیده بگیر
                 if was_just_sent_by_me(content):
                     return
 
