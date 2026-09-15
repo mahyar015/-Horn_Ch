@@ -226,9 +226,12 @@ auto_b_enabled = get_enabled_state('auto_b', True)
 
 processed_sell_ids = set()
 processed_buy_ids = set()
-processed_b_ids = set()
+processed_b_ids = {}   # ✅ dict برای debounce
 react_cooldown = {}
 auto_reply_cooldown = {}
+
+# ✅ سرعت loop اصلی (خیلی سریع)
+EAR_INTERVAL = 0.003
 
 spam_active = False
 spam_message = ""
@@ -344,7 +347,6 @@ def safe_chat_send(message):
 
 
 def is_my_message(sender):
-    """چک کن که پیام از خودمونه"""
     if sender is None:
         return False
     if my_own_name and sender == my_own_name:
@@ -1587,13 +1589,15 @@ class EditPlaceWindow:
 class ModsMenu:
     def __init__(s, source, mods_button=None):
         s.mods_button_ref = mods_button
-        s.w = AR.cw(source=source, size=(400, 570), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(370, 530))
+        # ✅ پنجره بزرگتر
+        s.w = AR.cw(source=source, size=(400, 640), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(370, 600))
 
-        tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 525), h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 505), h_align='center', color=(0.6, 0.6, 0.8))
+        tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 595), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 575), h_align='center', color=(0.6, 0.6, 0.8))
 
-        s.scroll = sw(parent=s.w, size=(340, 470), position=(30, 25))
+        # ✅ اسکرول بزرگتر
+        s.scroll = sw(parent=s.w, size=(340, 540), position=(30, 25))
         s.container = cw(parent=s.scroll, size=(320, 850), background=False)
 
         buttons = [
@@ -1659,13 +1663,24 @@ def process_sell(item_id):
 
 
 def process_b_race(item_id, sender):
+    """مسابقه b sXXX - با debounce 0.35 ثانیه"""
     if sender and my_own_name and sender == my_own_name:
         return False
-    if item_id in processed_b_ids:
+
+    current_time = time.time()
+    last_time = processed_b_ids.get(item_id, 0)
+    # ✅ debounce کمتر = سریع‌تر
+    if current_time - last_time < 0.35:
         return False
-    processed_b_ids.add(item_id)
-    if len(processed_b_ids) > 200:
-        processed_b_ids.clear()
+
+    processed_b_ids[item_id] = current_time
+
+    if len(processed_b_ids) > 100:
+        cutoff = current_time - 60
+        old_keys = [k for k, v in processed_b_ids.items() if v < cutoff]
+        for k in old_keys:
+            del processed_b_ids[k]
+
     try:
         safe_chat_send(f"b {item_id}")
         try: gs('dingSmall').play()
@@ -1676,6 +1691,7 @@ def process_b_race(item_id, sender):
 
 
 def process_buy(item_id, count, item_name, total_price):
+    """AutoBuyer - سریع 1 یا 0 بفرست"""
     current_limits = _get_cached_limits()
     if item_name not in current_limits:
         safe_chat_send("0")
@@ -1806,7 +1822,6 @@ def check_chat_commands(msg):
                                 parent = btn.get_parent()
                                 if parent:
                                     psize = parent.get_size()
-                                    # ✅ کمی بالاتر از جای پیش‌فرض
                                     new_x = float(psize[0]) - 110
                                     new_y = float(psize[1]) - 120
                             except:
@@ -1936,7 +1951,7 @@ class byMahyar(Plugin):
             teck(0.5, get_my_ids)
 
             default_x = self._width - 110
-            default_y = self._height - 120   # ✅ کمی بالاتر
+            default_y = self._height - 120
             saved_x, saved_y = get_mods_button_position(default_x, default_y)
 
             try:
@@ -1962,7 +1977,8 @@ class byMahyar(Plugin):
     def ear(s):
         try:
             z = GCM()
-            teck(0.005, s.ear)
+            # ✅ خیلی سریع‌تر
+            teck(EAR_INTERVAL, s.ear)
 
             if not z:
                 s.last_msg_hash = ""
@@ -1990,6 +2006,7 @@ class byMahyar(Plugin):
             else:
                 content = msg.strip()
 
+            # B Race — بالاترین اولویت
             if auto_b_enabled:
                 try:
                     m_b = B_RACE_PATTERN.match(content)
@@ -1998,12 +2015,9 @@ class byMahyar(Plugin):
                         return
                 except: pass
 
+            # AutoBuyer
             if auto_buyer_enabled:
                 try:
-                    m = SELL_PATTERN.search(msg)
-                    if m:
-                        process_sell(m.group(1))
-                        return
                     m = BUY_PATTERN.search(msg)
                     if m:
                         process_buy(
@@ -2012,6 +2026,10 @@ class byMahyar(Plugin):
                             m.group(3).lower(),
                             int(m.group(4).replace(',', ''))
                         )
+                        return
+                    m = SELL_PATTERN.search(msg)
+                    if m:
+                        process_sell(m.group(1))
                         return
                 except: pass
 
@@ -2029,14 +2047,15 @@ class byMahyar(Plugin):
 
         except Exception as e:
             try:
-                teck(0.005, s.ear)
+                teck(EAR_INTERVAL, s.ear)
             except: pass
             print(f"Error in ear: {e}")
 
     def calc_ear(s):
         try:
             z = GCM()
-            teck(0.2, s.calc_ear)
+            # ✅ خیلی سریع‌تر (قبلاً 0.2 بود)
+            teck(0.05, s.calc_ear)
 
             if not z:
                 s.last_calc_hash = ""
@@ -2064,7 +2083,7 @@ class byMahyar(Plugin):
             except: pass
         except Exception as e:
             try:
-                teck(0.2, s.calc_ear)
+                teck(0.05, s.calc_ear)
             except: pass
             print(f"Error in calc_ear: {e}")
 
