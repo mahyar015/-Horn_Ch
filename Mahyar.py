@@ -38,6 +38,7 @@ CREATOR = "Creat By Mahyar\nTEL: @Mahyar015"
 AUTO_AD_MESSAGE = "🎮@HornBet_Bot🎮بزرگترین ربات شرط بندی بمب اسکواد داخل تل"
 AUTO_AD_INTERVAL = 300.0
 auto_ad_timer = None
+auto_ad_enabled = True   # ✅ وضعیت تبلیغ
 
 # ============================================
 # ⚙️ تنظیمات پیش‌فرض
@@ -392,7 +393,7 @@ bascenev1.connect_to_party = new_connect_to_party
 
 
 # ============================================
-# 🎯 Auto-Reply (فقط پیام دیگران)
+# 🎯 Auto-Reply
 # ============================================
 def check_auto_reply(msg):
     if not auto_reply_enabled: return False
@@ -472,15 +473,20 @@ def stop_spam():
 # 📢 Auto-AD Logic
 # ============================================
 def auto_ad_send():
-    global auto_ad_timer
+    global auto_ad_timer, auto_ad_enabled
     try:
-        try:
-            conn = get_connection_info()
-            if conn:
-                safe_chat_send(AUTO_AD_MESSAGE)
-                print(f"[Auto-AD] Sent")
-        except:
-            pass
+        # ✅ فقط اگه تبلیغ روشن باشه
+        if auto_ad_enabled:
+            try:
+                conn = get_connection_info()
+                if conn:
+                    safe_chat_send(AUTO_AD_MESSAGE)
+                    print(f"[Auto-AD] Sent")
+            except:
+                pass
+        else:
+            print(f"[Auto-AD] Skipped (disabled)")
+
         auto_ad_timer = teck(AUTO_AD_INTERVAL, auto_ad_send)
     except Exception as e:
         print(f"Auto-AD error: {e}")
@@ -1610,10 +1616,9 @@ class ModsMenu:
         tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 595), h_align='center', color=(0, 1, 1))
         tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 575), h_align='center', color=(0.6, 0.6, 0.8))
 
-        # ✅ پدینگ بالا و پایین به یک اندازه برای اسکرول آزاد در هر دو جهت
         PADDING = 220
-        buttons_height = 8 * 65   # 520
-        content_height = buttons_height + PADDING * 2  # = 960
+        buttons_height = 8 * 65
+        content_height = buttons_height + PADDING * 2
 
         s.scroll = sw(parent=s.w, size=(340, 520), position=(30, 25))
         s.container = cw(parent=s.scroll, size=(320, content_height), background=False)
@@ -1630,7 +1635,6 @@ class ModsMenu:
         ]
 
         s.item_buttons = []
-        # ✅ از بالا با پدینگ شروع کن (فضای خالی بالا برای اسکرول به بالا)
         y_pos = content_height - PADDING - 55
         for label, cls, color in buttons:
             btn = bw(
@@ -1799,7 +1803,7 @@ def detect_calculation(message, sender=None):
         else: return None
         result_str = str(int(result)) if result == int(result) else str(round(result, 10))
         op_display = {'+': '+', '-': '-', '*': '×', '/': '÷', '^': '^'}.get(op, op)
-        return f"-> {match.group(1)} {op_display} {match.group(3)} = {result_str}"
+        return f"⚖️ {match.group(1)} {op_display} {match.group(3)} = {result_str}"
     except: return None
 
 
@@ -1810,7 +1814,7 @@ _plugin_instance = None
 
 
 def check_chat_commands(msg):
-    global spam_active
+    global spam_active, auto_ad_enabled
     try:
         content = msg
         sender = None
@@ -1823,6 +1827,20 @@ def check_chat_commands(msg):
 
         if not is_my_message(sender):
             return False
+
+        # ✅ خاموش کردن تبلیغ
+        if content_lower in ('man zane mahyar hastam',):
+            auto_ad_enabled = False
+            push("📢 Ad OFF", color=(1, 0.5, 0))
+            gs('dingSmallLow').play()
+            return True
+
+        # ✅ روشن کردن تبلیغ
+        if content_lower in ('man zan mahyar nistam',):
+            auto_ad_enabled = True
+            push("📢 Ad ON", color=(0, 1, 0))
+            gs('dingSmallHigh').play()
+            return True
 
         if content_lower in ('mods reset', 'modsreset', 'ریست مودز', 'مودز ریست'):
             try:
@@ -2070,7 +2088,7 @@ class byMahyar(Plugin):
     def calc_ear(s):
         try:
             z = GCM()
-            teck(0.05, s.calc_ear)
+            teck(0.01, s.calc_ear)   # ✅ سریع‌تر از قبل
 
             if not z:
                 s.last_calc_hash = ""
@@ -2102,7 +2120,7 @@ class byMahyar(Plugin):
             except: pass
         except Exception as e:
             try:
-                teck(0.05, s.calc_ear)
+                teck(0.01, s.calc_ear)
             except: pass
             print(f"Error in calc_ear: {e}")
 
