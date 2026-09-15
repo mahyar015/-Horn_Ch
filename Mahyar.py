@@ -226,12 +226,11 @@ auto_b_enabled = get_enabled_state('auto_b', True)
 
 processed_sell_ids = set()
 processed_buy_ids = set()
-processed_b_ids = {}          # debounce برای b race
-my_recent_sent = {}           # پیام‌هایی که خودمون فرستادیم
+processed_b_ids = {}
+my_recent_sent = {}
 react_cooldown = {}
 auto_reply_cooldown = {}
 
-# ✅ سرعت loop اصلی
 EAR_INTERVAL = 0.003
 
 spam_active = False
@@ -341,7 +340,6 @@ def get_my_ids():
 
 
 def safe_chat_send(message):
-    """ارسال پیام + ذخیره در لیست پیام‌های اخیر خودمون"""
     try:
         CM(message)
         my_recent_sent[message] = time.time()
@@ -368,7 +366,6 @@ def is_my_message(sender):
 
 
 def was_just_sent_by_me(content):
-    """چک کن که این محتوا رو خودمون اخیراً فرستادیم"""
     try:
         now = time.time()
         t = my_recent_sent.get(content, 0)
@@ -1613,8 +1610,8 @@ class ModsMenu:
         tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 595), h_align='center', color=(0, 1, 1))
         tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 575), h_align='center', color=(0.6, 0.6, 0.8))
 
-        # ✅ ارتفاع محتوا بزرگتر + اسکرول با فضای اضافی
-        content_height = 8 * 65 + 100  # = 620
+        # ✅ فضای خالی بالای container + ارتفاع بیشتر برای اسکرول کامل
+        content_height = 8 * 65 + 250  # = 770
         s.scroll = sw(parent=s.w, size=(340, 520), position=(30, 25))
         s.container = cw(parent=s.scroll, size=(320, content_height), background=False)
 
@@ -2020,11 +2017,9 @@ class byMahyar(Plugin):
             else:
                 content = msg.strip()
 
-            # ✅ اگه خودمون اخیراً همین پیام رو فرستادیم، نادیده بگیر
             if was_just_sent_by_me(content):
                 return
 
-            # B Race
             if auto_b_enabled:
                 try:
                     m_b = B_RACE_PATTERN.match(content)
@@ -2033,7 +2028,6 @@ class byMahyar(Plugin):
                         return
                 except: pass
 
-            # AutoBuyer
             if auto_buyer_enabled:
                 try:
                     m = BUY_PATTERN.search(msg)
