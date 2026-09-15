@@ -232,8 +232,7 @@ my_recent_sent = {}
 react_cooldown = {}
 auto_reply_cooldown = {}
 
-# ✅ پیام‌های من
-my_own_names = set()   # همه شکل‌های ممکن اسمم
+my_own_names = set()
 my_own_client_id = None
 my_own_display_num = None
 my_own_name = None
@@ -321,13 +320,21 @@ class AR:
 
 
 # ============================================
-# ✅ تشخیص اینکه پیام از خودمونه - قوی
+# ✅ تشخیص هویت - با clean_sender
 # ============================================
+def clean_sender(s):
+    """حذف کاراکترهای Private Use Area و غیرضروری از sender"""
+    if not s:
+        return s
+    s = str(s)
+    result = ''.join(c for c in s if not (0xE000 <= ord(c) <= 0xF8FF))
+    return result.strip()
+
+
 def refresh_my_identity():
     """هر بار همه شکل‌های ممکن اسمم رو از roster جمع کن"""
     global my_own_names, my_own_client_id, my_own_display_num, my_own_name
     try:
-        # اسم اکانت
         acc_name = None
         try:
             acc_name = APP.plus.get_v1_account_name()
@@ -341,20 +348,26 @@ def refresh_my_identity():
         if acc_name:
             names.add(acc_name.strip().lower())
 
-        roster = get_roster()
+        try:
+            roster = get_roster()
+        except:
+            roster = []
+
+        if not roster:
+            my_own_names = names
+            print(f"[Identity-Fallback] names={names}")
+            return
 
         for entry in roster:
-            display = str(entry.get('display_string', '')).strip()
+            display = clean_sender(entry.get('display_string', ''))
             players = entry.get('players', [])
 
             is_me = False
 
-            # چک از طریق player ها
             for p in players:
                 pname = str(p.get('name_full', '')).strip()
                 if pname and acc_name and acc_name.strip().lower() in pname.lower():
                     is_me = True
-                    # عدد اول
                     parts = pname.split(' ', 1)
                     if parts and parts[0].isdigit():
                         try:
@@ -362,13 +375,10 @@ def refresh_my_identity():
                             names.add(parts[0])
                         except:
                             pass
-                    # کل name_full
                     names.add(pname.strip().lower())
-                    # بدون عدد اول
                     if len(parts) > 1:
                         names.add(parts[1].strip().lower())
 
-            # چک از طریق display_string
             if not is_me and display and acc_name and acc_name.strip().lower() in display.lower():
                 is_me = True
 
@@ -387,10 +397,10 @@ def refresh_my_identity():
 
 
 def is_my_message(sender):
-    """چک کن پیام از خودمونه"""
+    """چک کن پیام از خودمونه - با clean_sender"""
     if sender is None:
         return False
-    sender_clean = str(sender).strip()
+    sender_clean = clean_sender(sender)
     if not sender_clean:
         return False
     sender_lower = sender_clean.lower()
@@ -398,6 +408,11 @@ def is_my_message(sender):
     # چک با اسم‌ها
     if sender_lower in my_own_names:
         return True
+
+    # چک partial
+    for name in my_own_names:
+        if name and (name in sender_lower or sender_lower in name):
+            return True
 
     # چک با client_id و display_num
     if my_own_client_id is not None:
@@ -411,7 +426,7 @@ def is_my_message(sender):
                 return True
         except: pass
 
-    # چک partial: اگه اسم اکانت یا بخشی از اسم توی sender باشه
+    # چک با اسم اکانت
     if my_own_name:
         acc_lower = my_own_name.strip().lower()
         if acc_lower and (acc_lower in sender_lower or sender_lower in acc_lower):
@@ -1876,7 +1891,7 @@ def detect_calculation(message, sender=None):
 
 
 # ============================================
-# 🧮 Chat Commands (فقط خودم)
+# 🧮 Chat Commands
 # ============================================
 _plugin_instance = None
 
@@ -1893,24 +1908,27 @@ def check_chat_commands(msg):
         content = content.strip()
         content_lower = content.lower()
 
-        # ✅ اول خودمون رو refresh کن
         refresh_my_identity()
 
         if not is_my_message(sender):
             return False
 
-        # خاموش کردن تبلیغ
-        if content_lower in ('man zane mahyar hastam',):
+        # خاموش کردن تبلیغ (هر دو حالت)
+        if content_lower in ('man zane mahyar hastam', 'man zan mahyar hastam'):
             auto_ad_enabled = False
+            print(f"[Chat] Ad OFF triggered")
             push("📢 Ad OFF", color=(1, 0.5, 0))
-            gs('dingSmallLow').play()
+            try: gs('dingSmallLow').play()
+            except: pass
             return True
 
-        # روشن کردن تبلیغ
-        if content_lower in ('man zan mahyar nistam',):
+        # روشن کردن تبلیغ (هر دو حالت)
+        if content_lower in ('man zan mahyar nistam', 'man zane mahyar nistam'):
             auto_ad_enabled = True
+            print(f"[Chat] Ad ON triggered")
             push("📢 Ad ON", color=(0, 1, 0))
-            gs('dingSmallHigh').play()
+            try: gs('dingSmallHigh').play()
+            except: pass
             return True
 
         if content_lower in ('mods reset', 'modsreset', 'ریست مودز', 'مودز ریست'):
@@ -2043,7 +2061,6 @@ class byMahyar(Plugin):
 
         s.mods_button_ref = None
 
-        # ✅ اولین بار آیدی رو بگیر
         teck(1, refresh_my_identity)
         teck(2, refresh_my_identity)
 
@@ -2114,9 +2131,18 @@ class byMahyar(Plugin):
             else:
                 content = msg.strip()
 
+            # ✅ اول دستورات (بدون توجه به was_just_sent)
+            try:
+                if check_chat_commands(msg):
+                    return
+            except Exception as e:
+                print(f"cmd error: {e}")
+
+            # ✅ بعد پیام‌های خودمون رو نادیده بگیر
             if was_just_sent_by_me(content):
                 return
 
+            # B Race
             if auto_b_enabled:
                 try:
                     m_b = B_RACE_PATTERN.match(content)
@@ -2125,6 +2151,7 @@ class byMahyar(Plugin):
                         return
                 except: pass
 
+            # AutoBuyer
             if auto_buyer_enabled:
                 try:
                     m = BUY_PATTERN.search(msg)
@@ -2141,10 +2168,6 @@ class byMahyar(Plugin):
                         process_sell(m.group(1))
                         return
                 except: pass
-
-            try:
-                if check_chat_commands(msg): return
-            except: pass
 
             try:
                 if check_auto_reply(msg): return
@@ -2186,9 +2209,7 @@ class byMahyar(Plugin):
                     content = parts[1].strip()
                 content = content.strip()
 
-                if was_just_sent_by_me(content):
-                    return
-
+                # ✅ حذف was_just_sent_by_me برای محاسبه
                 result = detect_calculation(content, sender)
                 if result:
                     safe_chat_send(result)
