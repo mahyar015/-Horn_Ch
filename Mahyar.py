@@ -226,11 +226,12 @@ auto_b_enabled = get_enabled_state('auto_b', True)
 
 processed_sell_ids = set()
 processed_buy_ids = set()
-processed_b_ids = {}   # ✅ dict برای debounce
+processed_b_ids = {}          # debounce برای b race
+my_recent_sent = {}           # ✅ پیام‌هایی که خودمون فرستادیم
 react_cooldown = {}
 auto_reply_cooldown = {}
 
-# ✅ سرعت loop اصلی (خیلی سریع)
+# ✅ سرعت loop اصلی
 EAR_INTERVAL = 0.003
 
 spam_active = False
@@ -340,8 +341,17 @@ def get_my_ids():
 
 
 def safe_chat_send(message):
+    """ارسال پیام + ذخیره در لیست پیام‌های اخیر خودمون"""
     try:
         CM(message)
+        # ✅ ذخیره پیام ارسالی خودمون
+        my_recent_sent[message] = time.time()
+        # پاک کردن قدیمی‌ها
+        if len(my_recent_sent) > 50:
+            now = time.time()
+            old = [k for k, v in my_recent_sent.items() if now - v > 10]
+            for k in old:
+                del my_recent_sent[k]
     except Exception as e:
         print(f"Chat send error: {e}")
 
@@ -357,6 +367,16 @@ def is_my_message(sender):
                 return True
         except: pass
     return False
+
+
+def was_just_sent_by_me(content):
+    """چک کن که این محتوا رو خودمون اخیراً فرستادیم"""
+    try:
+        now = time.time()
+        t = my_recent_sent.get(content, 0)
+        return (now - t) < 5.0
+    except:
+        return False
 
 
 # ============================================
@@ -1477,7 +1497,7 @@ class EditLimitsWindow:
 
 
 # ============================================
-# 📍 Edit Place Window (ساده - هر کلیک 5 پیکسل)
+# 📍 Edit Place Window
 # ============================================
 class EditPlaceWindow:
     def __init__(s, source, mods_button):
@@ -1589,16 +1609,17 @@ class EditPlaceWindow:
 class ModsMenu:
     def __init__(s, source, mods_button=None):
         s.mods_button_ref = mods_button
-        # ✅ پنجره بزرگتر
         s.w = AR.cw(source=source, size=(400, 640), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(370, 600))
 
         tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 595), h_align='center', color=(0, 1, 1))
         tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 575), h_align='center', color=(0.6, 0.6, 0.8))
 
-        # ✅ اسکرول بزرگتر
+        # ✅ محتوا رو کوچک‌تر کن تا کامل جا بشه
+        content_height = 8 * 60 + 20  # = 500
+
         s.scroll = sw(parent=s.w, size=(340, 540), position=(30, 25))
-        s.container = cw(parent=s.scroll, size=(320, 850), background=False)
+        s.container = cw(parent=s.scroll, size=(320, content_height), background=False)
 
         buttons = [
             ('Calculator', Calculator, (0, 0.3, 0.8)),
@@ -1612,12 +1633,12 @@ class ModsMenu:
         ]
 
         s.item_buttons = []
-        y_pos = 800
+        y_pos = content_height - 55
         for label, cls, color in buttons:
             btn = bw(
                 parent=s.container,
                 label=label,
-                size=(300, 55),
+                size=(300, 50),
                 position=(10, y_pos),
                 on_activate_call=lambda c=cls: s.open_window(c),
                 color=color,
@@ -1626,9 +1647,9 @@ class ModsMenu:
                 text_scale=0.8
             )
             s.item_buttons.append(btn)
-            y_pos -= 65
+            y_pos -= 60
 
-        cw(s.container, size=(320, 850))
+        cw(s.container, size=(320, content_height))
 
         gs('swish').play()
 
@@ -1663,13 +1684,12 @@ def process_sell(item_id):
 
 
 def process_b_race(item_id, sender):
-    """مسابقه b sXXX - با debounce 0.35 ثانیه"""
+    """مسابقه b sXXX - debounce"""
     if sender and my_own_name and sender == my_own_name:
         return False
 
     current_time = time.time()
     last_time = processed_b_ids.get(item_id, 0)
-    # ✅ debounce کمتر = سریع‌تر
     if current_time - last_time < 0.35:
         return False
 
@@ -1691,7 +1711,6 @@ def process_b_race(item_id, sender):
 
 
 def process_buy(item_id, count, item_name, total_price):
-    """AutoBuyer - سریع 1 یا 0 بفرست"""
     current_limits = _get_cached_limits()
     if item_name not in current_limits:
         safe_chat_send("0")
@@ -1977,7 +1996,6 @@ class byMahyar(Plugin):
     def ear(s):
         try:
             z = GCM()
-            # ✅ خیلی سریع‌تر
             teck(EAR_INTERVAL, s.ear)
 
             if not z:
@@ -2006,7 +2024,11 @@ class byMahyar(Plugin):
             else:
                 content = msg.strip()
 
-            # B Race — بالاترین اولویت
+            # ✅ اگه خودمون اخیراً همین پیام رو فرستادیم، نادیده بگیر
+            if was_just_sent_by_me(content):
+                return
+
+            # B Race
             if auto_b_enabled:
                 try:
                     m_b = B_RACE_PATTERN.match(content)
@@ -2054,7 +2076,6 @@ class byMahyar(Plugin):
     def calc_ear(s):
         try:
             z = GCM()
-            # ✅ خیلی سریع‌تر (قبلاً 0.2 بود)
             teck(0.05, s.calc_ear)
 
             if not z:
@@ -2077,6 +2098,11 @@ class byMahyar(Plugin):
                     sender = parts[0].strip()
                     content = parts[1].strip()
                 content = content.strip()
+
+                # ✅ اگه خودمون اخیراً فرستادیم نادیده بگیر
+                if was_just_sent_by_me(content):
+                    return
+
                 result = detect_calculation(content, sender)
                 if result:
                     safe_chat_send(result)
