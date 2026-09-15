@@ -1610,8 +1610,11 @@ class ModsMenu:
         tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 595), h_align='center', color=(0, 1, 1))
         tw(parent=s.w, text=SIGNATURE, scale=0.4, position=(200, 575), h_align='center', color=(0.6, 0.6, 0.8))
 
-        # ✅ فضای خالی بالای container + ارتفاع بیشتر برای اسکرول کامل
-        content_height = 8 * 65 + 250  # = 770
+        # ✅ پدینگ بالا و پایین به یک اندازه برای اسکرول آزاد در هر دو جهت
+        PADDING = 220
+        buttons_height = 8 * 65   # 520
+        content_height = buttons_height + PADDING * 2  # = 960
+
         s.scroll = sw(parent=s.w, size=(340, 520), position=(30, 25))
         s.container = cw(parent=s.scroll, size=(320, content_height), background=False)
 
@@ -1627,7 +1630,8 @@ class ModsMenu:
         ]
 
         s.item_buttons = []
-        y_pos = content_height - 55
+        # ✅ از بالا با پدینگ شروع کن (فضای خالی بالا برای اسکرول به بالا)
+        y_pos = content_height - PADDING - 55
         for label, cls, color in buttons:
             btn = bw(
                 parent=s.container,
