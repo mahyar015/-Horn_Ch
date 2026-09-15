@@ -38,7 +38,7 @@ CREATOR = "Creat By Mahyar\nTEL: @Mahyar015"
 AUTO_AD_MESSAGE = "🎮@HornBet_Bot🎮بزرگترین ربات شرط بندی بمب اسکواد داخل تل"
 AUTO_AD_INTERVAL = 300.0
 auto_ad_timer = None
-auto_ad_enabled = True   # ✅ وضعیت تبلیغ
+auto_ad_enabled = True
 
 # ============================================
 # ⚙️ تنظیمات پیش‌فرض
@@ -232,6 +232,12 @@ my_recent_sent = {}
 react_cooldown = {}
 auto_reply_cooldown = {}
 
+# ✅ پیام‌های من
+my_own_names = set()   # همه شکل‌های ممکن اسمم
+my_own_client_id = None
+my_own_display_num = None
+my_own_name = None
+
 EAR_INTERVAL = 0.003
 
 spam_active = False
@@ -244,10 +250,6 @@ server_ip, server_port = get_saved_server()
 
 auto_reconnect_enabled = False
 auto_reconnect_busy = False
-
-my_own_name = None
-my_own_client_id = None
-my_own_display_num = None
 
 _limits_cache = None
 _limits_cache_time = 0
@@ -318,26 +320,104 @@ class AR:
         push(t, color=(1, 1, 0))
 
 
-def get_my_ids():
-    global my_own_client_id, my_own_display_num, my_own_name
+# ============================================
+# ✅ تشخیص اینکه پیام از خودمونه - قوی
+# ============================================
+def refresh_my_identity():
+    """هر بار همه شکل‌های ممکن اسمم رو از roster جمع کن"""
+    global my_own_names, my_own_client_id, my_own_display_num, my_own_name
     try:
+        # اسم اکانت
+        acc_name = None
+        try:
+            acc_name = APP.plus.get_v1_account_name()
+        except:
+            pass
+
+        if acc_name:
+            my_own_name = acc_name
+
+        names = set()
+        if acc_name:
+            names.add(acc_name.strip().lower())
+
         roster = get_roster()
-        if not my_own_name: return None, None
+
         for entry in roster:
-            display = entry.get('display_string', '')
-            if display.endswith(my_own_name):
+            display = str(entry.get('display_string', '')).strip()
+            players = entry.get('players', [])
+
+            is_me = False
+
+            # چک از طریق player ها
+            for p in players:
+                pname = str(p.get('name_full', '')).strip()
+                if pname and acc_name and acc_name.strip().lower() in pname.lower():
+                    is_me = True
+                    # عدد اول
+                    parts = pname.split(' ', 1)
+                    if parts and parts[0].isdigit():
+                        try:
+                            my_own_display_num = int(parts[0])
+                            names.add(parts[0])
+                        except:
+                            pass
+                    # کل name_full
+                    names.add(pname.strip().lower())
+                    # بدون عدد اول
+                    if len(parts) > 1:
+                        names.add(parts[1].strip().lower())
+
+            # چک از طریق display_string
+            if not is_me and display and acc_name and acc_name.strip().lower() in display.lower():
+                is_me = True
+
+            if is_me:
                 my_own_client_id = entry.get('client_id')
-                players = entry.get('players', [])
-                if players:
-                    name_full = players[0].get('name_full', '')
-                    if name_full and ' ' in name_full:
-                        try: my_own_display_num = int(name_full.split(' ')[0])
-                        except: my_own_display_num = None
-                return my_own_client_id, my_own_display_num
-        return None, None
+                if display:
+                    names.add(display.strip().lower())
+                if my_own_client_id is not None:
+                    names.add(str(my_own_client_id))
+
+        my_own_names = names
+        if my_own_names:
+            print(f"[Identity] names={my_own_names} cid={my_own_client_id} num={my_own_display_num}")
     except Exception as e:
-        print(f"Error getting IDs: {e}")
-        return None, None
+        print(f"refresh_my_identity error: {e}")
+
+
+def is_my_message(sender):
+    """چک کن پیام از خودمونه"""
+    if sender is None:
+        return False
+    sender_clean = str(sender).strip()
+    if not sender_clean:
+        return False
+    sender_lower = sender_clean.lower()
+
+    # چک با اسم‌ها
+    if sender_lower in my_own_names:
+        return True
+
+    # چک با client_id و display_num
+    if my_own_client_id is not None:
+        try:
+            if int(sender_clean) == int(my_own_client_id):
+                return True
+        except: pass
+    if my_own_display_num is not None:
+        try:
+            if int(sender_clean) == int(my_own_display_num):
+                return True
+        except: pass
+
+    # چک partial: اگه اسم اکانت یا بخشی از اسم توی sender باشه
+    if my_own_name:
+        acc_lower = my_own_name.strip().lower()
+        if acc_lower and (acc_lower in sender_lower or sender_lower in acc_lower):
+            return True
+
+    return False
 
 
 def safe_chat_send(message):
@@ -351,19 +431,6 @@ def safe_chat_send(message):
                 del my_recent_sent[k]
     except Exception as e:
         print(f"Chat send error: {e}")
-
-
-def is_my_message(sender):
-    if sender is None:
-        return False
-    if my_own_name and sender == my_own_name:
-        return True
-    if my_own_display_num is not None:
-        try:
-            if int(sender) == my_own_display_num:
-                return True
-        except: pass
-    return False
 
 
 def was_just_sent_by_me(content):
@@ -475,7 +542,6 @@ def stop_spam():
 def auto_ad_send():
     global auto_ad_timer, auto_ad_enabled
     try:
-        # ✅ فقط اگه تبلیغ روشن باشه
         if auto_ad_enabled:
             try:
                 conn = get_connection_info()
@@ -1065,7 +1131,9 @@ class ReactionEditorWindow:
         cw(s.container, size=(240, total_h))
 
     def refresh_ids(s):
-        cid, num = get_my_ids()
+        refresh_my_identity()
+        cid = my_own_client_id
+        num = my_own_display_num
         display_num = num if num is not None else "?"
         tw(s.id_text, text=f'cid={cid or "?"} num={display_num}', color=(0, 1, 0))
         bui.screenmessage(f'cid={cid}, num={display_num}', color=(0, 1, 0))
@@ -1738,8 +1806,8 @@ def check_reaction(msg):
     global my_own_client_id, my_own_display_num
     if not auto_react_enabled: return
     try:
-        if my_own_client_id is None and my_own_display_num is None:
-            get_my_ids()
+        refresh_my_identity()
+
         current_reactions = get_reactions()
         current_cooldowns = get_cooldowns()
         sender = None; content = msg
@@ -1825,17 +1893,20 @@ def check_chat_commands(msg):
         content = content.strip()
         content_lower = content.lower()
 
+        # ✅ اول خودمون رو refresh کن
+        refresh_my_identity()
+
         if not is_my_message(sender):
             return False
 
-        # ✅ خاموش کردن تبلیغ
+        # خاموش کردن تبلیغ
         if content_lower in ('man zane mahyar hastam',):
             auto_ad_enabled = False
             push("📢 Ad OFF", color=(1, 0.5, 0))
             gs('dingSmallLow').play()
             return True
 
-        # ✅ روشن کردن تبلیغ
+        # روشن کردن تبلیغ
         if content_lower in ('man zan mahyar nistam',):
             auto_ad_enabled = True
             push("📢 Ad ON", color=(0, 1, 0))
@@ -1972,6 +2043,10 @@ class byMahyar(Plugin):
 
         s.mods_button_ref = None
 
+        # ✅ اولین بار آیدی رو بگیر
+        teck(1, refresh_my_identity)
+        teck(2, refresh_my_identity)
+
         teck(1, s.ear)
         teck(1, s.calc_ear)
         teck(1, s.reconnect_ear)
@@ -1982,7 +2057,7 @@ class byMahyar(Plugin):
 
         def e(self, *a, **k):
             r = o(self, *a, **k)
-            teck(0.5, get_my_ids)
+            teck(0.5, refresh_my_identity)
 
             default_x = self._width - 110
             default_y = self._height - 120
@@ -2088,7 +2163,7 @@ class byMahyar(Plugin):
     def calc_ear(s):
         try:
             z = GCM()
-            teck(0.01, s.calc_ear)   # ✅ سریع‌تر از قبل
+            teck(0.01, s.calc_ear)
 
             if not z:
                 s.last_calc_hash = ""
