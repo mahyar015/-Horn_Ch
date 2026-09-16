@@ -395,8 +395,8 @@ class FLW(Plugin):
             r = o(self, *a, **k)
 
             try:
-                # 30 پیکسل راست‌تر از دکمه Mods
-                flw_x = self._width - 80
+                # 60 پیکسل راست‌تر از موقعیت قبلی
+                flw_x = self._width - 50
                 flw_y = self._height - 155
 
                 b_flw = AR.bw(
