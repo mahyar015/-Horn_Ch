@@ -208,21 +208,19 @@ def auto_msg_send():
 class AddWordWindow:
     def __init__(s, source, parent_window=None):
         s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(260, 160), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(230, 125))
+        s.w = AR.cw(source=source, size=(220, 140), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(190, 105))
 
-        tw(parent=s.w, text='Add Filter Word', scale=0.8, position=(130, 120),
+        tw(parent=s.w, text='Add Word', scale=0.75, position=(110, 100),
            h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text='Word:', scale=0.5, position=(130, 92),
-           h_align='center', color=(1, 1, 1))
 
-        s.input = tw(parent=s.w, text='', editable=True, scale=0.8,
-                     position=(25, 55), size=(210, 28),
+        s.input = tw(parent=s.w, text='', editable=True, scale=0.75,
+                     position=(20, 55), size=(180, 26),
                      h_align='center', color=(0.9, 0.9, 0.9))
 
-        bw(parent=s.w, label='Add', size=(120, 30), position=(70, 10),
+        bw(parent=s.w, label='Add', size=(100, 28), position=(60, 10),
            on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
 
         gs('swish').play()
 
@@ -249,38 +247,38 @@ class AddWordWindow:
 
 class FilterWindow:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(320, 420), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(290, 385))
+        s.w = AR.cw(source=source, size=(240, 320), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(210, 285))
 
-        tw(parent=s.w, text='FLW - Filter Bot', scale=0.9, position=(160, 380),
+        tw(parent=s.w, text='FLW', scale=0.85, position=(120, 280),
            h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.35, position=(160, 365),
+        tw(parent=s.w, text=SIGNATURE, scale=0.3, position=(120, 265),
            h_align='center', color=(0.6, 0.6, 0.8))
 
         s.count_text = tw(parent=s.w, text=f'Words: {len(filter_words)}',
-                          position=(160, 342), h_align='center',
-                          scale=0.5, color=(1, 1, 0))
+                          position=(120, 245), h_align='center',
+                          scale=0.45, color=(1, 1, 0))
 
-        s.scroll = sw(parent=s.w, size=(280, 220), position=(20, 105))
-        s.container = cw(parent=s.scroll, size=(260, 300), background=False)
+        s.scroll = sw(parent=s.w, size=(210, 140), position=(15, 95))
+        s.container = cw(parent=s.scroll, size=(190, 300), background=False)
         s.item_buttons = {}
         s.build_grid()
 
         s.toggle_btn = bw(
             parent=s.w,
             label='ON' if filter_enabled else 'OFF',
-            size=(260, 28),
-            position=(30, 65),
+            size=(210, 26),
+            position=(15, 62),
             on_activate_call=Call(s.toggle),
             color=(0.2, 0.7, 0.2) if filter_enabled else (0.7, 0.2, 0.2),
-            textcolor=(1, 1, 1), button_type='square', text_scale=0.7
+            textcolor=(1, 1, 1), button_type='square', text_scale=0.65
         )
 
-        bw(parent=s.w, label='+ Add', size=(120, 30), position=(30, 25),
+        bw(parent=s.w, label='+ Add', size=(100, 26), position=(15, 28),
            on_activate_call=Call(s.add_new), color=(0.2, 0.7, 0.3),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
-        bw(parent=s.w, label='Clear All', size=(120, 30), position=(170, 25),
+        bw(parent=s.w, label='Clear', size=(100, 26), position=(125, 28),
            on_activate_call=Call(s.clear_all), color=(0.7, 0.3, 0.2),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
@@ -290,25 +288,25 @@ class FilterWindow:
         for child in s.container.get_children(): child.delete()
         s.item_buttons.clear()
         items = list(filter_words)
-        row_height = 30
+        row_height = 26
         total_h = max(len(items) * row_height + 20, 100)
 
         for i, word in enumerate(items):
             y = total_h - (i + 1) * row_height
             btn = bw(parent=s.container, label=word,
-                     size=(200, 24), position=(5, y),
+                     size=(140, 22), position=(5, y),
                      on_activate_call=Call(s.edit_word, word),
                      color=(0.25, 0.4, 0.6),
                      textcolor=(1, 1, 1), button_type='square',
-                     text_scale=0.5)
+                     text_scale=0.45)
             s.item_buttons[word] = btn
-            bw(parent=s.container, label='X', size=(25, 24),
-               position=(210, y),
+            bw(parent=s.container, label='X', size=(22, 22),
+               position=(150, y),
                on_activate_call=Call(s.delete_word, word),
                color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1),
-               button_type='square', text_scale=0.6)
+               button_type='square', text_scale=0.55)
 
-        cw(s.container, size=(260, total_h))
+        cw(s.container, size=(190, total_h))
         try:
             tw(s.count_text, text=f'Words: {len(filter_words)}')
         except: pass
@@ -317,15 +315,13 @@ class FilterWindow:
         AddWordWindow(s.w, parent_window=s)
 
     def edit_word(s, word):
-        s.edit_window = AR.cw(source=s.w, size=(260, 160), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.edit_window, position=(230, 125))
-        tw(parent=s.edit_window, text=f'Edit Word', scale=0.8, position=(130, 120),
+        s.edit_window = AR.cw(source=s.w, size=(220, 140), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.edit_window, position=(190, 105))
+        tw(parent=s.edit_window, text=f'Edit Word', scale=0.75, position=(110, 100),
            h_align='center', color=(1, 1, 0))
-        tw(parent=s.edit_window, text='Word:', scale=0.5, position=(130, 92),
-           h_align='center', color=(1, 1, 1))
 
-        input_w = tw(parent=s.edit_window, text=word, editable=True, scale=0.8,
-                     position=(25, 55), size=(210, 28),
+        input_w = tw(parent=s.edit_window, text=word, editable=True, scale=0.75,
+                     position=(20, 55), size=(180, 26),
                      h_align='center', color=(0.9, 0.9, 0.9))
 
         def do_save():
@@ -347,9 +343,9 @@ class FilterWindow:
             except: pass
             s.build_grid()
 
-        bw(parent=s.edit_window, label='Save', size=(120, 30), position=(70, 10),
+        bw(parent=s.edit_window, label='Save', size=(100, 28), position=(60, 10),
            on_activate_call=do_save, color=(0.2, 0.7, 0.3),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
 
     def delete_word(s, word):
         global filter_words
@@ -399,7 +395,8 @@ class FLW(Plugin):
             r = o(self, *a, **k)
 
             try:
-                flw_x = self._width - 110
+                # 30 پیکسل راست‌تر از دکمه Mods
+                flw_x = self._width - 80
                 flw_y = self._height - 155
 
                 b_flw = AR.bw(
