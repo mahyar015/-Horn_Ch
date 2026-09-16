@@ -1,6 +1,4 @@
-
-#اگه مادرت خرابه اسکی برو و سورس و دستکاری کن
-
+#اگه مادرت خرابه اسکی برو یا دست کاریش کن
 
 
 from babase import Plugin
@@ -36,6 +34,26 @@ filter_words = []
 filter_cooldown = {}
 
 SIGNATURE = "By Mahyar"
+
+
+def get_flw_position(default_x=None, default_y=None):
+    try:
+        x = app.config.get('flw_btn_x', default_x)
+        y = app.config.get('flw_btn_y', default_y)
+        if x is None or y is None:
+            return default_x, default_y
+        return float(x), float(y)
+    except:
+        return default_x, default_y
+
+
+def save_flw_position(x, y):
+    try:
+        app.config['flw_btn_x'] = float(x)
+        app.config['flw_btn_y'] = float(y)
+        app.config.commit()
+    except:
+        pass
 
 
 def load_filter_words():
@@ -250,21 +268,142 @@ class AddWordWindow:
         AR.swish(s.w)
 
 
-class FilterWindow:
-    def __init__(s, source):
-        s.w = AR.cw(source=source, size=(240, 320), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(210, 285))
+class FLWEditPlace:
+    def __init__(s, source, flw_button):
+        s.flw_button = flw_button
+        s.step = 5
 
-        tw(parent=s.w, text='FLW', scale=0.85, position=(120, 280),
+        try:
+            pos = flw_button.get_position()
+            s.current_x, s.current_y = float(pos[0]), float(pos[1])
+        except:
+            s.current_x, s.current_y = 0.0, 0.0
+
+        s.parent_w, s.parent_h = 1920.0, 1080.0
+        try:
+            parent = flw_button.get_parent()
+            if parent:
+                psize = parent.get_size()
+                s.parent_w, s.parent_h = float(psize[0]), float(psize[1])
+        except:
+            pass
+
+        s.w = AR.cw(source=source, size=(280, 340), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(250, 305))
+
+        tw(parent=s.w, text='Edit FLW Place', scale=0.85, position=(140, 300),
            h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.3, position=(120, 265),
+        tw(parent=s.w, text=SIGNATURE, scale=0.3, position=(140, 285),
+           h_align='center', color=(0.6, 0.6, 0.8))
+
+        s.pos_text = tw(parent=s.w, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}',
+                        position=(140, 262), h_align='center', scale=0.55,
+                        color=(1, 1, 0))
+        tw(parent=s.w, text='Each click = 5 pixels',
+           position=(140, 245), h_align='center', scale=0.4,
+           color=(0.7, 0.7, 1))
+
+        arrow_size = (55, 42)
+        arrow_color = (0.3, 0.5, 0.8)
+        cx = 140
+
+        bw(parent=s.w, label='^', size=arrow_size,
+           position=(cx - 27, 195),
+           on_activate_call=lambda: s.move(0, s.step),
+           color=arrow_color, textcolor=(1, 1, 1),
+           button_type='square', text_scale=1.1)
+
+        bw(parent=s.w, label='<', size=arrow_size,
+           position=(cx - 90, 148),
+           on_activate_call=lambda: s.move(-s.step, 0),
+           color=arrow_color, textcolor=(1, 1, 1),
+           button_type='square', text_scale=1.1)
+
+        bw(parent=s.w, label='>', size=arrow_size,
+           position=(cx + 35, 148),
+           on_activate_call=lambda: s.move(s.step, 0),
+           color=arrow_color, textcolor=(1, 1, 1),
+           button_type='square', text_scale=1.1)
+
+        bw(parent=s.w, label='v', size=arrow_size,
+           position=(cx - 27, 101),
+           on_activate_call=lambda: s.move(0, -s.step),
+           color=arrow_color, textcolor=(1, 1, 1),
+           button_type='square', text_scale=1.1)
+
+        bw(parent=s.w, label='Save', size=(180, 30), position=(cx - 90, 50),
+           on_activate_call=s.save, color=(0.2, 0.7, 0.3),
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
+
+        bw(parent=s.w, label='Reset', size=(180, 30), position=(cx - 90, 12),
+           on_activate_call=s.reset, color=(0.7, 0.3, 0.2),
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+
+        gs('swish').play()
+
+    def move(s, dx, dy):
+        try:
+            new_x = s.current_x + dx
+            new_y = s.current_y + dy
+
+            max_x = max(0.0, s.parent_w - 85)
+            max_y = max(0.0, s.parent_h - 25)
+
+            if new_x < 0: new_x = 0.0
+            if new_y < 0: new_y = 0.0
+            if new_x > max_x: new_x = max_x
+            if new_y > max_y: new_y = max_y
+
+            s.current_x = new_x
+            s.current_y = new_y
+
+            bw(s.flw_button, position=(s.current_x, s.current_y))
+            tw(s.pos_text, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}')
+            gs('click01').play()
+        except Exception as e:
+            print(f"[FLW] Move error: {e}")
+
+    def save(s):
+        save_flw_position(s.current_x, s.current_y)
+        push(f'FLW Saved: X={int(s.current_x)} Y={int(s.current_y)}', color=(0, 1, 0))
+        gs('dingSmallHigh').play()
+
+    def reset(s):
+        try:
+            parent = s.flw_button.get_parent()
+            if parent:
+                psize = parent.get_size()
+                s.parent_w, s.parent_h = float(psize[0]), float(psize[1])
+        except:
+            pass
+
+        default_x = s.parent_w - 50
+        default_y = s.parent_h - 155
+
+        s.current_x, s.current_y = float(default_x), float(default_y)
+        bw(s.flw_button, position=(s.current_x, s.current_y))
+        tw(s.pos_text, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}')
+        save_flw_position(s.current_x, s.current_y)
+        push(f'FLW Reset: X={int(s.current_x)} Y={int(s.current_y)}', color=(0, 1, 1))
+        gs('dingSmallHigh').play()
+
+
+class FilterWindow:
+    def __init__(s, source, flw_button=None):
+        s.flw_button = flw_button
+        s.w = AR.cw(source=source, size=(240, 360), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(210, 325))
+
+        tw(parent=s.w, text='FLW', scale=0.85, position=(120, 320),
+           h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text=SIGNATURE, scale=0.3, position=(120, 305),
            h_align='center', color=(0.6, 0.6, 0.8))
 
         s.count_text = tw(parent=s.w, text=f'Words: {len(filter_words)}',
-                          position=(120, 245), h_align='center',
+                          position=(120, 285), h_align='center',
                           scale=0.45, color=(1, 1, 0))
 
-        s.scroll = sw(parent=s.w, size=(210, 140), position=(15, 95))
+        s.scroll = sw(parent=s.w, size=(210, 140), position=(15, 135))
         s.container = cw(parent=s.scroll, size=(190, 300), background=False)
         s.item_buttons = {}
         s.build_grid()
@@ -273,18 +412,22 @@ class FilterWindow:
             parent=s.w,
             label='ON' if filter_enabled else 'OFF',
             size=(210, 26),
-            position=(15, 62),
+            position=(15, 102),
             on_activate_call=Call(s.toggle),
             color=(0.2, 0.7, 0.2) if filter_enabled else (0.7, 0.2, 0.2),
             textcolor=(1, 1, 1), button_type='square', text_scale=0.65
         )
 
-        bw(parent=s.w, label='+ Add', size=(100, 26), position=(15, 28),
+        bw(parent=s.w, label='+ Add', size=(100, 26), position=(15, 68),
            on_activate_call=Call(s.add_new), color=(0.2, 0.7, 0.3),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
-        bw(parent=s.w, label='Clear', size=(100, 26), position=(125, 28),
+        bw(parent=s.w, label='Clear', size=(100, 26), position=(125, 68),
            on_activate_call=Call(s.clear_all), color=(0.7, 0.3, 0.2),
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+
+        bw(parent=s.w, label='Edit Place', size=(210, 26), position=(15, 34),
+           on_activate_call=Call(s.edit_place), color=(0.5, 0.3, 0.7),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
         gs('swish').play()
@@ -318,6 +461,16 @@ class FilterWindow:
 
     def add_new(s):
         AddWordWindow(s.w, parent_window=s)
+
+    def edit_place(s):
+        if s.flw_button is None:
+            AR.err('FLW button not found!')
+            return
+        try:
+            AR.swish(s.w)
+            teck(0.1, lambda: FLWEditPlace(s.w, s.flw_button))
+        except Exception as e:
+            print(f"[FLW] edit_place error: {e}")
 
     def edit_word(s, word):
         s.edit_window = AR.cw(source=s.w, size=(220, 140), ps=AR.UIS() * 0.3)
@@ -400,9 +553,15 @@ class FLW(Plugin):
             r = o(self, *a, **k)
 
             try:
-                # 60 پیکسل راست‌تر از موقعیت قبلی
-                flw_x = self._width - 50
-                flw_y = self._height - 155
+                default_x = self._width - 50
+                default_y = self._height - 155
+                flw_x, flw_y = get_flw_position(default_x, default_y)
+
+                try:
+                    flw_x = float(flw_x)
+                    flw_y = float(flw_y)
+                except:
+                    flw_x, flw_y = float(default_x), float(default_y)
 
                 b_flw = AR.bw(
                     position=(flw_x, flw_y),
@@ -424,7 +583,7 @@ class FLW(Plugin):
     def open_filter(s, source):
         try:
             gs('swish').play()
-            teck(0.1, lambda: FilterWindow(source))
+            teck(0.1, lambda: FilterWindow(source, source))
         except Exception as e:
             print(f"[FLW] open error: {e}")
 
