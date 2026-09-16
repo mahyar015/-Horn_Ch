@@ -1,3 +1,8 @@
+
+#اگه مادرت خرابه اسکی برو و سورس و دستکاری کن
+
+
+
 from babase import Plugin
 from bauiv1 import (
     containerwidget as cw,
