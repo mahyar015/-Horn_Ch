@@ -1,8 +1,17 @@
 """This Mod By @Horn_Ch"""
 
-# ba_meta require api 6
-from _ba import env,get_foreground_host_activity,get_foreground_host_session,get_game_roster,              get_chat_messages,set_party_icon_always_visible, chatmessage as cmsg,          screenmessage as smsg
-import ba
+# ba_meta require api 9
+from babase import (
+    get_foreground_host_activity,
+    get_foreground_host_session,
+    get_game_roster,
+    get_chat_messages,
+    set_party_icon_always_visible,
+    chatmessage as cmsg,
+    screenmessage as smsg
+)
+import bascenev1 as ba
+
 px=''
 a=''
 ok='Syydooh'
@@ -675,6 +684,6 @@ def bomb():
 	cmsg("This Mod By @Horn_Ch")
 	ba.timer(0, _cmds._process_cmd, True)
 
-# ba_meta export plugin
-class Horn_Ch(ba.Plugin):
+# ba_meta export babase.Plugin
+class Horn_Ch(Plugin):
 	bomb()
