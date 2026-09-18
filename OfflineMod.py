@@ -8,7 +8,8 @@ from babase import (
     get_chat_messages,
     set_party_icon_always_visible,
     chatmessage as cmsg,
-    screenmessage as smsg
+    screenmessage as smsg,
+    Plugin
 )
 import bascenev1 as ba
 
