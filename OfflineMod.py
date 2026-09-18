@@ -1,472 +1,901 @@
-from babase import Plugin
-import bascenev1 as bs
-from bauiv1 import apptimer as teck, screenmessage as push, getsound as gs
-import re
-
-_p_activity = None
-_p_session = None
-
-def _get_players():
-    global _p_activity
-    try:
-        _p_activity = bs.get_foreground_host_activity()
-        if _p_activity and _p_activity.players:
-            return list(_p_activity.players)
-    except: pass
-    return []
-
-def _get_session_players():
-    global _p_session
-    try:
-        _p_session = bs.get_foreground_host_session()
-        if _p_session and _p_session.sessionplayers:
-            return list(_p_session.sessionplayers)
-    except: pass
-    return []
-
-def _send(msg):
-    try: bs.chatmessage(msg)
-    except: pass
-
-def _find_player(arg):
-    players = _get_players()
-    if not players: return None
-    if not arg:
-        return players[0] if players else None
-    if arg.lower() == 'a':
-        return 'ALL'
-    try:
-        idx = int(arg)
-        if 0 <= idx < len(players):
-            return players[idx]
-    except: pass
-    return None
-
-def _apply_to_targets(target, callback):
-    if target == 'ALL':
-        for p in _get_players():
-            try: callback(p)
-            except: pass
-    elif target:
-        try: callback(target)
-        except: pass
-
-# ============================================
-# 🎯 HANDLERS
-# ============================================
-
-def cmd_h(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def heal(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'node'):
-                node = pl.actor.node
-                if hasattr(node, 'heal'):
-                    node.heal()
-                elif hasattr(pl.actor, 'hitpoints'):
-                    pl.actor.hitpoints = 1000
-        except: pass
-    _apply_to_targets(target, heal)
-    _send("Healed!")
-
-def cmd_d(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def kill(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'node'):
-                pl.actor.node.handle_message({'type': 'die'})
-        except: pass
-    _apply_to_targets(target, kill)
-    _send("Killed!")
-
-def cmd_g(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def god(pl):
-        try:
-            if pl.actor:
-                if hasattr(pl.actor, 'hitpoints'):
-                    pl.actor.hitpoints = 999999
-                if hasattr(pl.actor, 'punch_power'):
-                    pl.actor.punch_power = 10.0
-        except: pass
-    _apply_to_targets(target, god)
-    _send("God mode ON!")
-
-def cmd_z(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def shield(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'equip_shields'):
-                pl.actor.equip_shields()
-        except: pass
-    _apply_to_targets(target, shield)
-    _send("Shield ON!")
-
-def cmd_sp(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def speed(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'node'):
-                pl.actor.node.speed_scale = 2.0
-        except: pass
-    _apply_to_targets(target, speed)
-    _send("Speed up!")
-
-def cmd_sm(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def slow(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'node'):
-                pl.actor.node.speed_scale = 0.4
-        except: pass
-    _apply_to_targets(target, slow)
-    _send("Slow motion!")
-
-def cmd_cu(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def curse(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'curse'):
-                pl.actor.curse()
-        except: pass
-    _apply_to_targets(target, curse)
-    _send("Cursed!")
-
-def cmd_sl(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def sleep(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'node'):
-                pl.actor.node.handle_message({'type': 'knockout'})
-        except: pass
-    _apply_to_targets(target, sleep)
-    _send("Sleeping!")
-
-def cmd_hed(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def headless(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'node'):
-                pl.actor.node.head_scale = 0.01
-        except: pass
-    _apply_to_targets(target, headless)
-    _send("Headless!")
-
-def cmd_v(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def invis(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'node'):
-                pl.actor.node.color = (1, 1, 1, 0.05)
-        except: pass
-    _apply_to_targets(target, invis)
-    _send("Invisible!")
-
-def cmd_r(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def remove(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'node'):
-                pl.actor.node.delete()
-        except: pass
-    _apply_to_targets(target, remove)
-    _send("Removed!")
-
-def cmd_fr(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def freeze(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'node'):
-                pl.actor.node.frozen = True
-        except: pass
-    _apply_to_targets(target, freeze)
-    _send("Frozen!")
-
-def cmd_u(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def thaw(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'node'):
-                pl.actor.node.frozen = False
-        except: pass
-    _apply_to_targets(target, thaw)
-    _send("Thawed!")
-
-def cmd_cel(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    _send(":)")
-
-def cmd_fl(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def fly(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'node'):
-                pl.actor.node.fly = True
-        except: pass
-    _apply_to_targets(target, fly)
-    _send("Flying!")
-
-def cmd_fall(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def fall(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'node'):
-                pl.actor.node.position = (0, 0, 0)
-        except: pass
-    _apply_to_targets(target, fall)
-    _send("Teleported to 0,0,0!")
-
-def cmd_pun(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def punch(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'punch_power'):
-                pl.actor.punch_power = 1.0
-        except: pass
-    _apply_to_targets(target, punch)
-    _send("Punch normal!")
-
-def cmd_sh(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def shield(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'equip_shields'):
-                pl.actor.equip_shields()
-        except: pass
-    _apply_to_targets(target, shield)
-    _send("Shield!")
-
-def cmd_superpunch(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def sp(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'punch_power'):
-                pl.actor.punch_power = 10.0
-        except: pass
-    _apply_to_targets(target, sp)
-    _send("Super punch!")
-
-def cmd_spun(p, arg=None):
-    _send("spun: use 'spun <power>' (not fully supported)")
-
-# Bombs
-def cmd_bm(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def bm(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'default_bomb_type'):
-                pl.actor.default_bomb_type = 'normal'
-        except: pass
-    _apply_to_targets(target, bm)
-    _send("Bomb: Normal")
-
-def cmd_bs(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def bs(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'default_bomb_type'):
-                pl.actor.default_bomb_type = 'sticky'
-        except: pass
-    _apply_to_targets(target, bs)
-    _send("Bomb: Sticky")
-
-def cmd_bi(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def bi(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'default_bomb_type'):
-                pl.actor.default_bomb_type = 'ice'
-        except: pass
-    _apply_to_targets(target, bi)
-    _send("Bomb: Ice")
-
-def cmd_bt(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def bt(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'default_bomb_type'):
-                pl.actor.default_bomb_type = 'impact'
-        except: pass
-    _apply_to_targets(target, bt)
-    _send("Bomb: Impact")
-
-def cmd_tn(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def tn(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'default_bomb_type'):
-                pl.actor.default_bomb_type = 'tnt'
-        except: pass
-    _apply_to_targets(target, tn)
-    _send("Bomb: TNT")
-
-def cmd_bomb(p, arg=None):
-    _send("bomb: set default bomb type")
-
-def cmd_tb(p, arg=None):
-    target = _find_player(arg)
-    if not target: _send("Player not found!"); return
-    def tb(pl):
-        try:
-            if pl.actor and hasattr(pl.actor, 'max_bombs'):
-                pl.actor.max_bombs = 3
-        except: pass
-    _apply_to_targets(target, tb)
-    _send("Max bombs: 3")
-
-# Environment
-def cmd_day(p, arg=None):
-    try:
-        act = bs.get_foreground_host_activity()
-        if act and hasattr(act, 'globalsnode'):
-            act.globalsnode.tint = (1, 1, 1)
-    except: pass
-    _send("Day!")
-
-def cmd_n(p, arg=None):
-    try:
-        act = bs.get_foreground_host_activity()
-        if act and hasattr(act, 'globalsnode'):
-            act.globalsnode.tint = (0.3, 0.3, 0.5)
-    except: pass
-    _send("Night!")
-
-def cmd_red(p, arg=None):
-    try:
-        act = bs.get_foreground_host_activity()
-        if act and hasattr(act, 'globalsnode'):
-            act.globalsnode.tint = (1, 0.2, 0.2)
-    except: pass
-    _send("Red!")
-
-def cmd_dark(p, arg=None):
-    try:
-        act = bs.get_foreground_host_activity()
-        if act and hasattr(act, 'globalsnode'):
-            act.globalsnode.tint = (0.1, 0.1, 0.1)
-    except: pass
-    _send("Dark!")
-
-def cmd_t(p, arg=None):
-    _send("t: set sky color")
-
-def cmd_pas(p, arg=None):
-    try:
-        act = bs.get_foreground_host_activity()
-        if act:
-            act.paused = not act.paused
-    except: pass
-    _send("Pause toggled!")
-
-def cmd_camera(p, arg=None):
-    try:
-        act = bs.get_foreground_host_activity()
-        if act and hasattr(act, 'globalsnode'):
-            act.globalsnode.camera_mode = 'rotate'
-    except: pass
-    _send("Camera rotate!")
-
-def cmd_e(p, arg=None):
-    try:
-        act = bs.get_foreground_host_activity()
-        if act and hasattr(act, 'end'):
-            act.end()
-    except: pass
-    _send("Game ended!")
-
-# Info
-def cmd_help(p, arg=None):
-    _send("Commands: h d g z sp sm cu sl hed v r fr u cel fl fall pun sh superpunch bm bs bi bt tn tb day n red dark pas camera e id")
-
-def cmd_id(p, arg=None):
-    try:
-        sp = _get_session_players()
-        ap = _get_players()
-        if sp and ap:
-            for i, s in enumerate(sp):
-                name = s.get_name() if hasattr(s, 'get_name') else '?'
-                _send(f"[{i}] {name}")
-    except: pass
-
-# ============================================
-# 🎯 COMMAND MAP
-# ============================================
-COMMANDS = {
-    'h': cmd_h, 'd': cmd_d, 'g': cmd_g, 'z': cmd_z,
-    'sp': cmd_sp, 'sm': cmd_sm, 'cu': cmd_cu, 'sl': cmd_sl,
-    'hed': cmd_hed, 'v': cmd_v, 'r': cmd_r, 'fr': cmd_fr,
-    'u': cmd_u, 'cel': cmd_cel, 'fl': cmd_fl, 'fall': cmd_fall,
-    'pun': cmd_pun, 'sh': cmd_sh, 'superpunch': cmd_superpunch,
-    'spun': cmd_spun, 'bm': cmd_bm, 'bs': cmd_bs, 'bi': cmd_bi,
-    'bt': cmd_bt, 'tn': cmd_tn, 'bomb': cmd_bomb, 'tb': cmd_tb,
-    'day': cmd_day, 'n': cmd_n, 'red': cmd_red, 'dark': cmd_dark,
-    't': cmd_t, 'pas': cmd_pas, 'camera': cmd_camera, 'e': cmd_e,
-    'help': cmd_help, 'id': cmd_id,
-}
-
-# ============================================
-# 🎯 CHAT LISTENER
-# ============================================
-_last_msg = ""
-
-def chat_ear():
-    global _last_msg
-    try:
-        teck(0.2, chat_ear)
-        msgs = bs.get_chat_messages()
-        if not msgs: return
-        last = msgs[-1]
-        if last == _last_msg: return
-        _last_msg = last
-
-        # جدا کردن متن
-        content = last
-        if ': ' in last:
-            _, content = last.split(': ', 1)
-        content = content.strip()
-
-        parts = content.split()
-        if not parts: return
-
-        cmd = parts[0].lower()
-        arg = parts[1] if len(parts) > 1 else None
-
-        if cmd in COMMANDS:
-            COMMANDS[cmd](None, arg)
-    except: 
-        try: teck(0.2, chat_ear)
-        except: pass
-
-# ============================================
-# 🎯 PLUGIN
-# ============================================
 # ba_meta require api 9
 # ba_meta export babase.Plugin
-class AdminPanel(Plugin):
+
+from bauiv1 import (
+    apptimer as teck,
+    screenmessage as smsg,
+    getsound as gs
+)
+from bascenev1 import (
+    chatmessage as cmsg,
+    get_foreground_host_activity,
+    get_foreground_host_session,
+    get_game_roster,
+    get_chat_messages,
+    set_party_icon_always_visible
+)
+import bascenev1 as bs
+import babase
+
+px = ''
+ok = 'Syydooh'
+a = ''
+ab = 'lotfa id on Player ra moshakhas Konid'
+
+_last_msg = ""
+
+
+class _cmds:
+
+    @staticmethod
+    def _get_players():
+        try:
+            activity = get_foreground_host_activity()
+            if activity and activity.players:
+                return list(activity.players)
+        except:
+            pass
+        return []
+
+    @staticmethod
+    def _get_session_players():
+        try:
+            session = get_foreground_host_session()
+            if session and session.sessionplayers:
+                return list(session.sessionplayers)
+        except:
+            pass
+        return []
+
+    @staticmethod
+    def _parse_chat():
+        try:
+            msgs = get_chat_messages()
+            if not msgs:
+                return None, None, []
+            last = msgs[-1]
+            if ': ' in last:
+                _, content = last.split(': ', 1)
+            else:
+                content = last
+            content = content.strip()
+            parts = content.split()
+            if not parts:
+                return None, None, []
+            cmd = parts[0]
+            args = parts[1:]
+            return content, cmd, args
+        except:
+            return None, None, []
+
+    @staticmethod
+    def _process_cmd():
+        try:
+            msgs = get_chat_messages()
+            if not msgs:
+                return
+            last = msgs[-1]
+            if last == getattr(_cmds, '_last', None):
+                return
+            _cmds._last = last
+
+            content, cmd, args = _cmds._parse_chat()
+            if not cmd:
+                return
+            if cmd.startswith(px):
+                _cmds._handle(cmd, args)
+        except:
+            pass
+
+    @staticmethod
+    def _handle(m, n):
+        try:
+            set_party_icon_always_visible(True)
+        except:
+            pass
+
+        roster = get_game_roster()
+        session_players = _cmds._get_session_players()
+        activity_players = _cmds._get_players()
+
+        n1 = n[1:] if len(n) > 1 else []
+        n2 = n[2:] if len(n) > 2 else []
+
+        # ============ HELP ============
+        if m == px + ok:
+            cmsg(px + 'help for help')
+
+        elif m == px + 'help':
+            if n == []:
+                cmsg('===========================================')
+                cmsg('id = مشخص کننده ایدی های پلیر ها')
+                cmsg('h = پر کردن جون به صد در صد')
+                cmsg('d = کشتن')
+                cmsg('g = GOD MODE')
+                cmsg('sp = سرعت راه رفتن')
+                cmsg('cu = سمی کردن')
+                cmsg('sl = خوابیدن یا بیهوش کردن')
+                cmsg('hed = محو شدن سر بازیکن')
+                cmsg('v = نامرعی شدن')
+                cmsg('r = حذف کردن پلیر')
+                cmsg('sm = حرکت اهسته')
+                cmsg('n = شب کردن مپ')
+                cmsg('e = پایان دادن به بازی')
+                cmsg('pun = مشت یا کمکی بکس')
+                cmsg('sh = شیلد یا محافظ')
+                cmsg('fr = یخ زدن')
+                cmsg('u = آب شدن یا همون آن فریز')
+                cmsg('cel = خوشحالی')
+                cmsg('fl = پرواز دو بعدی')
+                cmsg('bm = انداختن مین به جای بمب')
+                cmsg('bs = انداختن بمب چسبناک به جای بمب')
+                cmsg('bi = اندتختن بمب یخی به جای بمب')
+                cmsg('bt = انداختن بمب کرونایی به جای بمب')
+                cmsg('t = تنظیم رنگ هوا')
+                cmsg('======= New command =======')
+                cmsg('day = روز')
+                cmsg('red = هوای قرمز یا خونی')
+                cmsg('dark = هوای سیاه و تاریک')
+                cmsg('pas = متوقف کردن بازی')
+                cmsg('superpunch = مشت گودرت مند')
+                cmsg('fall = تلپورت به ادرس ۰,۰,۰')
+                cmsg('camera = چرخیدن دوربین')
+                cmsg('tb = ثبت تعداد حداکثر انداختن بمب')
+                cmsg('bomb = ثبت نوع بمب')
+                cmsg('tn = انداختن تی ان تی به جای بمب')
+                cmsg('spun = تنظیم قدرت مشت')
+                cmsg('Q = خروج از بازی (حرف بزرگ نوشته شود!)')
+                cmsg('===========================================')
+
+        # ============ ID ============
+        elif m == px + 'id':
+            cmsg('======= id ======')
+            for i in session_players:
+                try:
+                    cmsg(i.getname() + ' -->  ' + str(session_players.index(i)) + '\n')
+                except:
+                    pass
+            if roster:
+                for i in roster:
+                    cmsg(f'======For {px}kick only======')
+                    try:
+                        cmsg(str(i['players'][0]['name_full']) + '   -   ' + str(i['client_id']))
+                    except:
+                        pass
+
+        # ============ Q ============
+        elif m == px + 'Q':
+            cmsg("پیدرت")
+
+        # ============ ENVIRONMENT ============
+        elif m == px + 'day':
+            try:
+                activity = get_foreground_host_activity()
+                activity.globalsnode.tint = (1.1, 1.2, 1.1)
+            except:
+                pass
+
+        elif m in [px + 'n', px + 'night']:
+            try:
+                activity = get_foreground_host_activity()
+                activity.globalsnode.tint = (0.5, 0.7, 1.0)
+            except:
+                pass
+
+        elif m == px + 'red':
+            try:
+                activity = get_foreground_host_activity()
+                activity.globalsnode.tint = (0.8, 0.0, 0.0)
+            except:
+                pass
+
+        elif m == px + 'dark':
+            try:
+                activity = get_foreground_host_activity()
+                activity.globalsnode.tint = (0.3, 0.3, 0.3)
+            except:
+                pass
+
+        # ============ END GAME ============
+        elif m in [px + 'end', px + 'e']:
+            if n == []:
+                try:
+                    activity = get_foreground_host_activity()
+                    for i in activity.players:
+                        try:
+                            i.actor.node.handlemessage(bs.DieMessage())
+                        except:
+                            pass
+                    activity.end_game()
+                except:
+                    pass
+
+        # ============ SLOW MOTION ============
+        elif m in [px + 'sm', px + 'slow']:
+            if n == []:
+                try:
+                    activity = get_foreground_host_activity()
+                    if not activity.globalsnode.slow_motion:
+                        activity.globalsnode.slow_motion = True
+                        cmsg('Slow mode = on')
+                    else:
+                        activity.globalsnode.slow_motion = False
+                        cmsg('Slow mode = off')
+                except:
+                    pass
+
+        # ============ Z (INVINCIBLE) ============
+        elif m == px + 'z':
+            if n == []:
+                try:
+                    activity_players[0].actor.node.invincible = True
+                    cmsg('Anti-punch ON')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.invincible = True
+                    cmsg('Anti-punch ON (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.invincible = True
+                    cmsg('Anti-punch ON')
+                except:
+                    pass
+
+        # ============ T (TINT) ============
+        elif m in [px + 't', px + 'T']:
+            if n == []:
+                try:
+                    for i in activity_players:
+                        i.actor.bomb_scale = 6
+                except:
+                    pass
+            else:
+                try:
+                    e1 = float(n[0])
+                    e2 = float(n1[0])
+                    e3 = float(n2[0])
+                    activity = get_foreground_host_activity()
+                    activity.globalsnode.tint = (e1, e2, e3)
+                    cmsg('Tint set')
+                except:
+                    pass
+
+        # ============ SPUN ============
+        elif m in [px + 'spun', px + 'Spun', px + 'Gpun', px + 'gpun']:
+            if n == []:
+                cmsg('Mesal: spun 10')
+            else:
+                try:
+                    for i in activity_players:
+                        i.actor._punch_power_scale = int(n[0])
+                    cmsg('Punch power = ' + str(n[0]))
+                except:
+                    pass
+
+        # ============ PAS (PAUSE) ============
+        elif m == px + 'pas':
+            if n == []:
+                try:
+                    activity = get_foreground_host_activity()
+                    if not activity.globalsnode.paused:
+                        activity.globalsnode.paused = True
+                        cmsg('Game Paused')
+                    else:
+                        activity.globalsnode.paused = False
+                        cmsg('Game un-paused')
+                except:
+                    pass
+
+        # ============ CAMERA ============
+        elif m == px + 'camera':
+            if n == []:
+                try:
+                    activity = get_foreground_host_activity()
+                    if activity.globalsnode.camera_mode != 'rotate':
+                        activity.globalsnode.camera_mode = 'rotate'
+                        cmsg('Camera rotate')
+                    else:
+                        activity.globalsnode.camera_mode = 'follow'
+                        cmsg('Camera follow')
+                except:
+                    pass
+
+        # ============ REMOVE ============
+        elif m in [px + 'r', px + 'remove']:
+            if n == []:
+                try:
+                    session_players[0].remove_from_game()
+                    cmsg('Player removed')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in session_players:
+                        i.remove_from_game()
+                    cmsg('All removed')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    session_players[idx].remove_from_game()
+                    cmsg('Player removed')
+                except:
+                    pass
+
+        # ============ V (INVISIBLE BODY) ============
+        elif m == px + 'v':
+            if n == []:
+                try:
+                    body = activity_players[0].actor.node
+                    body.head_model = None
+                    body.torso_model = None
+                    body.upper_arm_model = None
+                    body.forearm_model = None
+                    body.pelvis_model = None
+                    body.hand_model = None
+                    body.toes_model = None
+                    body.upper_leg_model = None
+                    body.lower_leg_model = None
+                    body.style = 'cyborg'
+                    cmsg('Invisible ON')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        body = i.actor.node
+                        body.head_model = None
+                        body.torso_model = None
+                        body.upper_arm_model = None
+                        body.forearm_model = None
+                        body.pelvis_model = None
+                        body.hand_model = None
+                        body.toes_model = None
+                        body.upper_leg_model = None
+                        body.lower_leg_model = None
+                        body.style = 'cyborg'
+                    cmsg('Invisible ON (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    body = activity_players[idx].actor.node
+                    body.head_model = None
+                    body.torso_model = None
+                    body.upper_arm_model = None
+                    body.forearm_model = None
+                    body.pelvis_model = None
+                    body.hand_model = None
+                    body.toes_model = None
+                    body.upper_leg_model = None
+                    body.lower_leg_model = None
+                    body.style = 'cyborg'
+                    cmsg('Invisible ON')
+                except:
+                    pass
+
+        # ============ SP (SPEED) ============
+        elif m == px + 'sp':
+            if n == []:
+                try:
+                    activity_players[0].actor.node.hockey = True
+                    cmsg('Speed ON')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.hockey = True
+                    cmsg('Speed ON (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.hockey = True
+                    cmsg('Speed ON')
+                except:
+                    pass
+
+        # ============ HED (HEADLESS) ============
+        elif m == px + 'hed':
+            if n == []:
+                try:
+                    activity_players[0].actor.node.head_model = None
+                    cmsg('Headless ON')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.head_model = None
+                    cmsg('Headless ON (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.head_model = None
+                    cmsg('Headless ON')
+                except:
+                    pass
+
+        # ============ D (KILL) ============
+        elif m in [px + 'd', px + 'D']:
+            if n == []:
+                try:
+                    activity_players[0].actor.node.handlemessage(bs.DieMessage())
+                    cmsg('Killed')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.handlemessage(bs.DieMessage())
+                    cmsg('All killed')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.handlemessage(bs.DieMessage())
+                    cmsg('Killed')
+                except:
+                    pass
+
+        # ============ H (HEAL) ============
+        elif m in [px + 'h', px + 'H']:
+            if n == []:
+                try:
+                    activity_players[0].actor.node.handlemessage(
+                        bs.PowerupMessage(poweruptype='health'))
+                    cmsg('Healed')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.handlemessage(
+                            bs.PowerupMessage(poweruptype='health'))
+                    cmsg('Healed (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.handlemessage(
+                        bs.PowerupMessage(poweruptype='health'))
+                    cmsg('Healed')
+                except:
+                    pass
+
+        # ============ CU (CURSE) ============
+        elif m in [px + 'cu', px + 'Cu']:
+            if n == []:
+                try:
+                    activity_players[0].actor.node.handlemessage(
+                        bs.PowerupMessage(poweruptype='curse'))
+                    cmsg('Cursed')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.handlemessage(
+                            bs.PowerupMessage(poweruptype='curse'))
+                    cmsg('Cursed (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.handlemessage(
+                        bs.PowerupMessage(poweruptype='curse'))
+                    cmsg('Cursed')
+                except:
+                    pass
+
+        # ============ SL (SLEEP) ============
+        elif m == px + 'sl':
+            if n == []:
+                try:
+                    activity_players[0].actor.node.handlemessage('knockout', 8000)
+                    cmsg('Sleeping')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.handlemessage('knockout', 8000)
+                    cmsg('Sleeping (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.handlemessage('knockout', 8000)
+                    cmsg('Sleeping')
+                except:
+                    pass
+
+        # ============ SUPERPUNCH ============
+        elif m == px + 'superpunch':
+            if n == []:
+                try:
+                    activity_players[0].actor._punch_power_scale = 15
+                    activity_players[0].actor._punch_cooldown = 0
+                    cmsg('Super punch ON')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor._punch_power_scale = 15
+                        i.actor._punch_cooldown = 0
+                    cmsg('Super punch ON (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor._punch_power_scale = 15
+                    activity_players[idx].actor._punch_cooldown = 0
+                    cmsg('Super punch ON')
+                except:
+                    pass
+
+        # ============ TN (TNT) ============
+        elif m in [px + 'tn', px + 'tnt']:
+            if n == []:
+                try:
+                    activity_players[0].actor.bomb_type = 'tnt'
+                    cmsg('TNT given')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.bomb_type = 'tnt'
+                    cmsg('TNT given (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.bomb_type = 'tnt'
+                    cmsg('TNT given')
+                except:
+                    pass
+
+        # ============ BT (IMPACT) ============
+        elif m == px + 'bt':
+            if n == []:
+                try:
+                    activity_players[0].actor.bomb_type = 'impact'
+                    cmsg('Impact bomb given')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.bomb_type = 'impact'
+                    cmsg('Impact bomb given (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.bomb_type = 'impact'
+                    cmsg('Impact bomb given')
+                except:
+                    pass
+
+        # ============ BS (STICKY) ============
+        elif m == px + 'bs':
+            if n == []:
+                try:
+                    activity_players[0].actor.bomb_type = 'sticky'
+                    cmsg('Sticky bomb given')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.bomb_type = 'sticky'
+                    cmsg('Sticky bomb given (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.bomb_type = 'sticky'
+                    cmsg('Sticky bomb given')
+                except:
+                    pass
+
+        # ============ BI (ICE) ============
+        elif m == px + 'bi':
+            if n == []:
+                try:
+                    activity_players[0].actor.bomb_type = 'ice'
+                    cmsg('Ice bomb given')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.bomb_type = 'ice'
+                    cmsg('Ice bomb given (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.bomb_type = 'ice'
+                    cmsg('Ice bomb given')
+                except:
+                    pass
+
+        # ============ BM (MINE) ============
+        elif m == px + 'bm':
+            if n == []:
+                try:
+                    activity_players[0].actor.bomb_type = 'land_mine'
+                    cmsg('Mine given')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.bomb_type = 'land_mine'
+                    cmsg('Mine given (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.bomb_type = 'land_mine'
+                    cmsg('Mine given')
+                except:
+                    pass
+
+        # ============ PUN (PUNCH) ============
+        elif m == px + 'pun':
+            if n == []:
+                try:
+                    activity_players[0].actor.node.handlemessage(
+                        bs.PowerupMessage(poweruptype='punch'))
+                    cmsg('Punch given')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.handlemessage(
+                            bs.PowerupMessage(poweruptype='punch'))
+                    cmsg('Punch given (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.handlemessage(
+                        bs.PowerupMessage(poweruptype='punch'))
+                    cmsg('Punch given')
+                except:
+                    pass
+
+        # ============ SH (SHIELD) ============
+        elif m == px + 'sh':
+            if n == []:
+                try:
+                    activity_players[0].actor.node.handlemessage(
+                        bs.PowerupMessage(poweruptype='shield'))
+                    cmsg('Shield given')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.handlemessage(
+                            bs.PowerupMessage(poweruptype='shield'))
+                    cmsg('Shield given (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.handlemessage(
+                        bs.PowerupMessage(poweruptype='shield'))
+                    cmsg('Shield given')
+                except:
+                    pass
+
+        # ============ FR (FREEZE) ============
+        elif m == px + 'fr':
+            if n == []:
+                try:
+                    activity_players[0].actor.node.handlemessage(bs.FreezeMessage())
+                    cmsg('Frozen')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.handlemessage(bs.FreezeMessage())
+                    cmsg('Frozen (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.handlemessage(bs.FreezeMessage())
+                    cmsg('Frozen')
+                except:
+                    pass
+
+        # ============ U (THAW) ============
+        elif m == px + 'u':
+            if n == []:
+                try:
+                    activity_players[0].actor.node.handlemessage(bs.ThawMessage())
+                    cmsg('Thawed')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.handlemessage(bs.ThawMessage())
+                    cmsg('Thawed (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.handlemessage(bs.ThawMessage())
+                    cmsg('Thawed')
+                except:
+                    pass
+
+        # ============ FALL (TELEPORT) ============
+        elif m == px + 'fall':
+            if n == []:
+                try:
+                    activity_players[0].actor.node.handlemessage(bs.StandMessage())
+                    cmsg('Teleported')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.handlemessage(bs.StandMessage())
+                    cmsg('Teleported (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.handlemessage(bs.StandMessage())
+                    cmsg('Teleported')
+                except:
+                    pass
+
+        # ============ CEL (CELEBRATE) ============
+        elif m == px + 'cel':
+            if n == []:
+                try:
+                    activity_players[0].actor.node.handlemessage(bs.CelebrateMessage())
+                    cmsg('Celebrated')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.handlemessage(bs.CelebrateMessage())
+                    cmsg('Celebrated (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.handlemessage(bs.CelebrateMessage())
+                    cmsg('Celebrated')
+                except:
+                    pass
+
+        # ============ FL (FLY) ============
+        elif m == px + 'fl':
+            if n == []:
+                try:
+                    activity_players[0].actor.node.fly = True
+                    cmsg('Fly ON')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.fly = True
+                    cmsg('Fly ON (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.fly = True
+                    cmsg('Fly ON')
+                except:
+                    pass
+
+        # ============ G (GOD MODE) ============
+        elif m == px + 'g':
+            if n == []:
+                try:
+                    activity_players[0].actor.node.invincible = True
+                    activity_players[0].actor._punch_power_scale = 7
+                    cmsg('God mod on')
+                except:
+                    pass
+            elif n[0] == 'a':
+                try:
+                    for i in activity_players:
+                        i.actor.node.invincible = True
+                        i.actor._punch_power_scale = 7
+                    cmsg('God mod on (all)')
+                except:
+                    pass
+            else:
+                try:
+                    idx = int(n[0])
+                    activity_players[idx].actor.node.invincible = True
+                    activity_players[idx].actor._punch_power_scale = 7
+                    cmsg('God mod on')
+                except:
+                    pass
+
+        # ============ BOMB ============
+        elif m in [px + 'bomb', px + 'default_bomb']:
+            if n == []:
+                cmsg('bomb: ice / impact / land_mine / normal / sticky / tnt')
+            elif n[0] == 'help':
+                cmsg("bombtypes: ice / impact / land_mine / normal / sticky / tnt")
+            elif n[0] in ['ice', 'impact', 'land_mine', 'normal', 'sticky', 'tnt']:
+                try:
+                    for i in activity_players:
+                        i.actor.bomb_type = n[0]
+                    cmsg('Bomb type = ' + n[0])
+                except:
+                    pass
+            else:
+                cmsg('Bomb: ice / impact / land_mine / normal / sticky / tnt')
+
+        # ============ TB (BOMB COUNT) ============
+        elif m == px + 'tb':
+            if n == []:
+                cmsg('Mesal: tb 3')
+            else:
+                try:
+                    for i in activity_players:
+                        i.actor.set_bomb_count(int(n[0]))
+                    cmsg('Bomb count = ' + str(n[0]))
+                except:
+                    pass
+
+
+def _run():
+    cmsg("CMD Mod - By @bombsquad_mod1")
+    bs.timer(0, _cmds._process_cmd, True)
+
+
+# ba_meta require api 9
+# ba_meta export babase.Plugin
+class CMD(bs.Plugin):
     def __init__(s):
-        teck(1, chat_ear)
-        teck(2.0, lambda: push("Admin Panel Loaded - By Mahyar", color=(0.4, 0.8, 1.0)))
+        _run()
