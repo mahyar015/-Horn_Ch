@@ -1,6 +1,7 @@
 # ba_meta require api 9
 # ba_meta export babase.Plugin
 
+from babase import Plugin
 from bauiv1 import (
     apptimer as teck,
     screenmessage as smsg,
@@ -12,15 +13,18 @@ from bascenev1 import (
     get_foreground_host_session,
     get_game_roster,
     get_chat_messages,
-    set_party_icon_always_visible
+    set_party_icon_always_visible,
+    DieMessage,
+    FreezeMessage,
+    ThawMessage,
+    StandMessage,
+    CelebrateMessage,
+    PowerupMessage
 )
-import bascenev1 as bs
-import babase
 
 px = ''
 ok = 'Syydooh'
 a = ''
-ab = 'lotfa id on Player ra moshakhas Konid'
 
 _last_msg = ""
 
@@ -101,9 +105,8 @@ class _cmds:
         n1 = n[1:] if len(n) > 1 else []
         n2 = n[2:] if len(n) > 2 else []
 
-        # ============ HELP ============
         if m == px + ok:
-            cmsg(px + 'help for help')
+            cmsg('help for help')
 
         elif m == px + 'help':
             if n == []:
@@ -147,7 +150,6 @@ class _cmds:
                 cmsg('Q = خروج از بازی (حرف بزرگ نوشته شود!)')
                 cmsg('===========================================')
 
-        # ============ ID ============
         elif m == px + 'id':
             cmsg('======= id ======')
             for i in session_players:
@@ -163,11 +165,9 @@ class _cmds:
                     except:
                         pass
 
-        # ============ Q ============
         elif m == px + 'Q':
             cmsg("پیدرت")
 
-        # ============ ENVIRONMENT ============
         elif m == px + 'day':
             try:
                 activity = get_foreground_host_activity()
@@ -196,21 +196,19 @@ class _cmds:
             except:
                 pass
 
-        # ============ END GAME ============
         elif m in [px + 'end', px + 'e']:
             if n == []:
                 try:
                     activity = get_foreground_host_activity()
                     for i in activity.players:
                         try:
-                            i.actor.node.handlemessage(bs.DieMessage())
+                            i.actor.node.handlemessage(DieMessage())
                         except:
                             pass
                     activity.end_game()
                 except:
                     pass
 
-        # ============ SLOW MOTION ============
         elif m in [px + 'sm', px + 'slow']:
             if n == []:
                 try:
@@ -224,7 +222,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ Z (INVINCIBLE) ============
         elif m == px + 'z':
             if n == []:
                 try:
@@ -247,7 +244,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ T (TINT) ============
         elif m in [px + 't', px + 'T']:
             if n == []:
                 try:
@@ -266,7 +262,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ SPUN ============
         elif m in [px + 'spun', px + 'Spun', px + 'Gpun', px + 'gpun']:
             if n == []:
                 cmsg('Mesal: spun 10')
@@ -278,7 +273,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ PAS (PAUSE) ============
         elif m == px + 'pas':
             if n == []:
                 try:
@@ -292,7 +286,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ CAMERA ============
         elif m == px + 'camera':
             if n == []:
                 try:
@@ -306,7 +299,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ REMOVE ============
         elif m in [px + 'r', px + 'remove']:
             if n == []:
                 try:
@@ -329,7 +321,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ V (INVISIBLE BODY) ============
         elif m == px + 'v':
             if n == []:
                 try:
@@ -382,7 +373,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ SP (SPEED) ============
         elif m == px + 'sp':
             if n == []:
                 try:
@@ -405,7 +395,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ HED (HEADLESS) ============
         elif m == px + 'hed':
             if n == []:
                 try:
@@ -428,35 +417,33 @@ class _cmds:
                 except:
                     pass
 
-        # ============ D (KILL) ============
         elif m in [px + 'd', px + 'D']:
             if n == []:
                 try:
-                    activity_players[0].actor.node.handlemessage(bs.DieMessage())
+                    activity_players[0].actor.node.handlemessage(DieMessage())
                     cmsg('Killed')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
-                        i.actor.node.handlemessage(bs.DieMessage())
+                        i.actor.node.handlemessage(DieMessage())
                     cmsg('All killed')
                 except:
                     pass
             else:
                 try:
                     idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(bs.DieMessage())
+                    activity_players[idx].actor.node.handlemessage(DieMessage())
                     cmsg('Killed')
                 except:
                     pass
 
-        # ============ H (HEAL) ============
         elif m in [px + 'h', px + 'H']:
             if n == []:
                 try:
                     activity_players[0].actor.node.handlemessage(
-                        bs.PowerupMessage(poweruptype='health'))
+                        PowerupMessage(poweruptype='health'))
                     cmsg('Healed')
                 except:
                     pass
@@ -464,7 +451,7 @@ class _cmds:
                 try:
                     for i in activity_players:
                         i.actor.node.handlemessage(
-                            bs.PowerupMessage(poweruptype='health'))
+                            PowerupMessage(poweruptype='health'))
                     cmsg('Healed (all)')
                 except:
                     pass
@@ -472,17 +459,16 @@ class _cmds:
                 try:
                     idx = int(n[0])
                     activity_players[idx].actor.node.handlemessage(
-                        bs.PowerupMessage(poweruptype='health'))
+                        PowerupMessage(poweruptype='health'))
                     cmsg('Healed')
                 except:
                     pass
 
-        # ============ CU (CURSE) ============
         elif m in [px + 'cu', px + 'Cu']:
             if n == []:
                 try:
                     activity_players[0].actor.node.handlemessage(
-                        bs.PowerupMessage(poweruptype='curse'))
+                        PowerupMessage(poweruptype='curse'))
                     cmsg('Cursed')
                 except:
                     pass
@@ -490,7 +476,7 @@ class _cmds:
                 try:
                     for i in activity_players:
                         i.actor.node.handlemessage(
-                            bs.PowerupMessage(poweruptype='curse'))
+                            PowerupMessage(poweruptype='curse'))
                     cmsg('Cursed (all)')
                 except:
                     pass
@@ -498,12 +484,11 @@ class _cmds:
                 try:
                     idx = int(n[0])
                     activity_players[idx].actor.node.handlemessage(
-                        bs.PowerupMessage(poweruptype='curse'))
+                        PowerupMessage(poweruptype='curse'))
                     cmsg('Cursed')
                 except:
                     pass
 
-        # ============ SL (SLEEP) ============
         elif m == px + 'sl':
             if n == []:
                 try:
@@ -526,7 +511,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ SUPERPUNCH ============
         elif m == px + 'superpunch':
             if n == []:
                 try:
@@ -552,7 +536,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ TN (TNT) ============
         elif m in [px + 'tn', px + 'tnt']:
             if n == []:
                 try:
@@ -575,7 +558,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ BT (IMPACT) ============
         elif m == px + 'bt':
             if n == []:
                 try:
@@ -598,7 +580,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ BS (STICKY) ============
         elif m == px + 'bs':
             if n == []:
                 try:
@@ -621,7 +602,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ BI (ICE) ============
         elif m == px + 'bi':
             if n == []:
                 try:
@@ -644,7 +624,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ BM (MINE) ============
         elif m == px + 'bm':
             if n == []:
                 try:
@@ -667,12 +646,11 @@ class _cmds:
                 except:
                     pass
 
-        # ============ PUN (PUNCH) ============
         elif m == px + 'pun':
             if n == []:
                 try:
                     activity_players[0].actor.node.handlemessage(
-                        bs.PowerupMessage(poweruptype='punch'))
+                        PowerupMessage(poweruptype='punch'))
                     cmsg('Punch given')
                 except:
                     pass
@@ -680,7 +658,7 @@ class _cmds:
                 try:
                     for i in activity_players:
                         i.actor.node.handlemessage(
-                            bs.PowerupMessage(poweruptype='punch'))
+                            PowerupMessage(poweruptype='punch'))
                     cmsg('Punch given (all)')
                 except:
                     pass
@@ -688,17 +666,16 @@ class _cmds:
                 try:
                     idx = int(n[0])
                     activity_players[idx].actor.node.handlemessage(
-                        bs.PowerupMessage(poweruptype='punch'))
+                        PowerupMessage(poweruptype='punch'))
                     cmsg('Punch given')
                 except:
                     pass
 
-        # ============ SH (SHIELD) ============
         elif m == px + 'sh':
             if n == []:
                 try:
                     activity_players[0].actor.node.handlemessage(
-                        bs.PowerupMessage(poweruptype='shield'))
+                        PowerupMessage(poweruptype='shield'))
                     cmsg('Shield given')
                 except:
                     pass
@@ -706,7 +683,7 @@ class _cmds:
                 try:
                     for i in activity_players:
                         i.actor.node.handlemessage(
-                            bs.PowerupMessage(poweruptype='shield'))
+                            PowerupMessage(poweruptype='shield'))
                     cmsg('Shield given (all)')
                 except:
                     pass
@@ -714,104 +691,99 @@ class _cmds:
                 try:
                     idx = int(n[0])
                     activity_players[idx].actor.node.handlemessage(
-                        bs.PowerupMessage(poweruptype='shield'))
+                        PowerupMessage(poweruptype='shield'))
                     cmsg('Shield given')
                 except:
                     pass
 
-        # ============ FR (FREEZE) ============
         elif m == px + 'fr':
             if n == []:
                 try:
-                    activity_players[0].actor.node.handlemessage(bs.FreezeMessage())
+                    activity_players[0].actor.node.handlemessage(FreezeMessage())
                     cmsg('Frozen')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
-                        i.actor.node.handlemessage(bs.FreezeMessage())
+                        i.actor.node.handlemessage(FreezeMessage())
                     cmsg('Frozen (all)')
                 except:
                     pass
             else:
                 try:
                     idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(bs.FreezeMessage())
+                    activity_players[idx].actor.node.handlemessage(FreezeMessage())
                     cmsg('Frozen')
                 except:
                     pass
 
-        # ============ U (THAW) ============
         elif m == px + 'u':
             if n == []:
                 try:
-                    activity_players[0].actor.node.handlemessage(bs.ThawMessage())
+                    activity_players[0].actor.node.handlemessage(ThawMessage())
                     cmsg('Thawed')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
-                        i.actor.node.handlemessage(bs.ThawMessage())
+                        i.actor.node.handlemessage(ThawMessage())
                     cmsg('Thawed (all)')
                 except:
                     pass
             else:
                 try:
                     idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(bs.ThawMessage())
+                    activity_players[idx].actor.node.handlemessage(ThawMessage())
                     cmsg('Thawed')
                 except:
                     pass
 
-        # ============ FALL (TELEPORT) ============
         elif m == px + 'fall':
             if n == []:
                 try:
-                    activity_players[0].actor.node.handlemessage(bs.StandMessage())
+                    activity_players[0].actor.node.handlemessage(StandMessage())
                     cmsg('Teleported')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
-                        i.actor.node.handlemessage(bs.StandMessage())
+                        i.actor.node.handlemessage(StandMessage())
                     cmsg('Teleported (all)')
                 except:
                     pass
             else:
                 try:
                     idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(bs.StandMessage())
+                    activity_players[idx].actor.node.handlemessage(StandMessage())
                     cmsg('Teleported')
                 except:
                     pass
 
-        # ============ CEL (CELEBRATE) ============
         elif m == px + 'cel':
             if n == []:
                 try:
-                    activity_players[0].actor.node.handlemessage(bs.CelebrateMessage())
+                    activity_players[0].actor.node.handlemessage(CelebrateMessage())
                     cmsg('Celebrated')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
-                        i.actor.node.handlemessage(bs.CelebrateMessage())
+                        i.actor.node.handlemessage(CelebrateMessage())
                     cmsg('Celebrated (all)')
                 except:
                     pass
             else:
                 try:
                     idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(bs.CelebrateMessage())
+                    activity_players[idx].actor.node.handlemessage(CelebrateMessage())
                     cmsg('Celebrated')
                 except:
                     pass
 
-        # ============ FL (FLY) ============
         elif m == px + 'fl':
             if n == []:
                 try:
@@ -834,7 +806,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ G (GOD MODE) ============
         elif m == px + 'g':
             if n == []:
                 try:
@@ -860,7 +831,6 @@ class _cmds:
                 except:
                     pass
 
-        # ============ BOMB ============
         elif m in [px + 'bomb', px + 'default_bomb']:
             if n == []:
                 cmsg('bomb: ice / impact / land_mine / normal / sticky / tnt')
@@ -876,7 +846,6 @@ class _cmds:
             else:
                 cmsg('Bomb: ice / impact / land_mine / normal / sticky / tnt')
 
-        # ============ TB (BOMB COUNT) ============
         elif m == px + 'tb':
             if n == []:
                 cmsg('Mesal: tb 3')
@@ -889,13 +858,9 @@ class _cmds:
                     pass
 
 
-def _run():
-    cmsg("CMD Mod - By @bombsquad_mod1")
-    bs.timer(0, _cmds._process_cmd, True)
-
-
 # ba_meta require api 9
 # ba_meta export babase.Plugin
-class CMD(bs.Plugin):
+class CMD(Plugin):
     def __init__(s):
-        _run()
+        cmsg("CMD Mod - By @bombsquad_mod1")
+        teck(0, _cmds._process_cmd)
