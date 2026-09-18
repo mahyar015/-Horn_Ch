@@ -75,20 +75,16 @@ class _cmds:
     def _process_cmd():
         try:
             msgs = get_chat_messages()
-            if not msgs:
-                return
-            last = msgs[-1]
-            if last == getattr(_cmds, '_last', None):
-                return
-            _cmds._last = last
-
-            content, cmd, args = _cmds._parse_chat()
-            if not cmd:
-                return
-            if cmd.startswith(px):
-                _cmds._handle(cmd, args)
+            if msgs:
+                last = msgs[-1]
+                if last != getattr(_cmds, '_last', None):
+                    _cmds._last = last
+                    content, cmd, args = _cmds._parse_chat()
+                    if cmd and cmd.startswith(px):
+                        _cmds._handle(cmd, args)
         except:
             pass
+        teck(0.2, _cmds._process_cmd)
 
     @staticmethod
     def _handle(m, n):
