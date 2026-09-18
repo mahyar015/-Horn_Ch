@@ -13,7 +13,6 @@ from bascenev1 import (
     get_foreground_host_session,
     get_game_roster,
     get_chat_messages,
-    set_party_icon_always_visible,
     DieMessage,
     FreezeMessage,
     ThawMessage,
@@ -93,11 +92,6 @@ class _cmds:
 
     @staticmethod
     def _handle(m, n):
-        try:
-            set_party_icon_always_visible(True)
-        except:
-            pass
-
         roster = get_game_roster()
         session_players = _cmds._get_session_players()
         activity_players = _cmds._get_players()
@@ -110,56 +104,53 @@ class _cmds:
 
         elif m == px + 'help':
             if n == []:
-                cmsg('===========================================')
-                cmsg('id = مشخص کننده ایدی های پلیر ها')
-                cmsg('h = پر کردن جون به صد در صد')
-                cmsg('d = کشتن')
-                cmsg('g = GOD MODE')
-                cmsg('sp = سرعت راه رفتن')
-                cmsg('cu = سمی کردن')
-                cmsg('sl = خوابیدن یا بیهوش کردن')
-                cmsg('hed = محو شدن سر بازیکن')
-                cmsg('v = نامرعی شدن')
-                cmsg('r = حذف کردن پلیر')
-                cmsg('sm = حرکت اهسته')
-                cmsg('n = شب کردن مپ')
-                cmsg('e = پایان دادن به بازی')
-                cmsg('pun = مشت یا کمکی بکس')
-                cmsg('sh = شیلد یا محافظ')
-                cmsg('fr = یخ زدن')
-                cmsg('u = آب شدن یا همون آن فریز')
-                cmsg('cel = خوشحالی')
-                cmsg('fl = پرواز دو بعدی')
-                cmsg('bm = انداختن مین به جای بمب')
-                cmsg('bs = انداختن بمب چسبناک به جای بمب')
-                cmsg('bi = اندتختن بمب یخی به جای بمب')
-                cmsg('bt = انداختن بمب کرونایی به جای بمب')
-                cmsg('t = تنظیم رنگ هوا')
-                cmsg('======= New command =======')
-                cmsg('day = روز')
-                cmsg('red = هوای قرمز یا خونی')
-                cmsg('dark = هوای سیاه و تاریک')
-                cmsg('pas = متوقف کردن بازی')
-                cmsg('superpunch = مشت گودرت مند')
-                cmsg('fall = تلپورت به ادرس ۰,۰,۰')
-                cmsg('camera = چرخیدن دوربین')
-                cmsg('tb = ثبت تعداد حداکثر انداختن بمب')
-                cmsg('bomb = ثبت نوع بمب')
-                cmsg('tn = انداختن تی ان تی به جای بمب')
-                cmsg('spun = تنظیم قدرت مشت')
-                cmsg('Q = خروج از بازی (حرف بزرگ نوشته شود!)')
-                cmsg('===========================================')
+                cmsg('========== HELP ==========')
+                cmsg('h = heal')
+                cmsg('d = kill')
+                cmsg('g = god mode')
+                cmsg('sp = speed')
+                cmsg('cu = curse')
+                cmsg('sl = sleep')
+                cmsg('hed = headless')
+                cmsg('v = invisible')
+                cmsg('r = remove')
+                cmsg('sm = slow motion')
+                cmsg('n = night')
+                cmsg('e = end game')
+                cmsg('pun = punch')
+                cmsg('sh = shield')
+                cmsg('fr = freeze')
+                cmsg('u = thaw')
+                cmsg('cel = celebrate')
+                cmsg('fl = fly')
+                cmsg('bm = mine')
+                cmsg('bs = sticky bomb')
+                cmsg('bi = ice bomb')
+                cmsg('bt = impact bomb')
+                cmsg('t = tint color')
+                cmsg('day = day')
+                cmsg('red = red sky')
+                cmsg('dark = dark sky')
+                cmsg('pas = pause')
+                cmsg('superpunch = super punch')
+                cmsg('fall = teleport to 0,0,0')
+                cmsg('camera = camera rotate')
+                cmsg('tb = max bombs')
+                cmsg('bomb = bomb type')
+                cmsg('tn = tnt bomb')
+                cmsg('spun = punch power')
+                cmsg('id = show players id')
+                cmsg('========== HELP ==========')
 
         elif m == px + 'id':
             cmsg('======= id ======')
             for i in session_players:
                 try:
-                    cmsg(i.getname() + ' -->  ' + str(session_players.index(i)) + '\n')
+                    cmsg(i.getname() + ' -->  ' + str(session_players.index(i)))
                 except:
                     pass
             if roster:
                 for i in roster:
-                    cmsg(f'======For {px}kick only======')
                     try:
                         cmsg(str(i['players'][0]['name_full']) + '   -   ' + str(i['client_id']))
                     except:
@@ -862,5 +853,4 @@ class _cmds:
 # ba_meta export babase.Plugin
 class CMD(Plugin):
     def __init__(s):
-        cmsg("CMD Mod - By @bombsquad_mod1")
-        teck(0, _cmds._process_cmd)
+        teck(1, _cmds._process_cmd)
