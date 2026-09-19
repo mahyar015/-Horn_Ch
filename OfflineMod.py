@@ -2,11 +2,7 @@
 # ba_meta export babase.Plugin
 
 from babase import Plugin
-from bauiv1 import (
-    apptimer as teck,
-    screenmessage as smsg,
-    getsound as gs
-)
+from bauiv1 import apptimer as teck
 from bascenev1 import (
     chatmessage as cmsg,
     get_foreground_host_activity,
@@ -23,9 +19,6 @@ from bascenev1 import (
 
 px = ''
 ok = 'Syydooh'
-a = ''
-
-_last_msg = ""
 
 
 class _cmds:
@@ -55,7 +48,7 @@ class _cmds:
         try:
             msgs = get_chat_messages()
             if not msgs:
-                return None, None, []
+                return None, []
             last = msgs[-1]
             if ': ' in last:
                 _, content = last.split(': ', 1)
@@ -64,12 +57,10 @@ class _cmds:
             content = content.strip()
             parts = content.split()
             if not parts:
-                return None, None, []
-            cmd = parts[0]
-            args = parts[1:]
-            return content, cmd, args
+                return None, []
+            return parts[0], parts[1:]
         except:
-            return None, None, []
+            return None, []
 
     @staticmethod
     def _process_cmd():
@@ -79,7 +70,7 @@ class _cmds:
                 last = msgs[-1]
                 if last != getattr(_cmds, '_last', None):
                     _cmds._last = last
-                    content, cmd, args = _cmds._parse_chat()
+                    cmd, args = _cmds._parse_chat()
                     if cmd and cmd.startswith(px):
                         _cmds._handle(cmd, args)
         except:
@@ -100,43 +91,14 @@ class _cmds:
 
         elif m == px + 'help':
             if n == []:
-                cmsg('========== HELP ==========')
-                cmsg('h = heal')
-                cmsg('d = kill')
-                cmsg('g = god mode')
-                cmsg('sp = speed')
-                cmsg('cu = curse')
-                cmsg('sl = sleep')
-                cmsg('hed = headless')
-                cmsg('v = invisible')
-                cmsg('r = remove')
-                cmsg('sm = slow motion')
-                cmsg('n = night')
-                cmsg('e = end game')
-                cmsg('pun = punch')
-                cmsg('sh = shield')
-                cmsg('fr = freeze')
-                cmsg('u = thaw')
-                cmsg('cel = celebrate')
-                cmsg('fl = fly')
-                cmsg('bm = mine')
-                cmsg('bs = sticky bomb')
-                cmsg('bi = ice bomb')
-                cmsg('bt = impact bomb')
-                cmsg('t = tint color')
-                cmsg('day = day')
-                cmsg('red = red sky')
-                cmsg('dark = dark sky')
-                cmsg('pas = pause')
-                cmsg('superpunch = super punch')
-                cmsg('fall = teleport to 0,0,0')
-                cmsg('camera = camera rotate')
-                cmsg('tb = max bombs')
-                cmsg('bomb = bomb type')
-                cmsg('tn = tnt bomb')
-                cmsg('spun = punch power')
-                cmsg('id = show players id')
-                cmsg('========== HELP ==========')
+                cmsg('===== HELP =====')
+                cmsg('h d g sp cu sl hed v r sm')
+                cmsg('n e pun sh fr u cel fl')
+                cmsg('bm bs bi bt tn')
+                cmsg('day red dark pas camera')
+                cmsg('superpunch fall tb bomb')
+                cmsg('spun id Q')
+                cmsg('===== HELP =====')
 
         elif m == px + 'id':
             cmsg('======= id ======')
@@ -145,20 +107,15 @@ class _cmds:
                     cmsg(i.getname() + ' -->  ' + str(session_players.index(i)))
                 except:
                     pass
-            if roster:
-                for i in roster:
-                    try:
-                        cmsg(str(i['players'][0]['name_full']) + '   -   ' + str(i['client_id']))
-                    except:
-                        pass
 
         elif m == px + 'Q':
-            cmsg("پیدرت")
+            cmsg("bye")
 
         elif m == px + 'day':
             try:
                 activity = get_foreground_host_activity()
                 activity.globalsnode.tint = (1.1, 1.2, 1.1)
+                cmsg('day')
             except:
                 pass
 
@@ -166,6 +123,7 @@ class _cmds:
             try:
                 activity = get_foreground_host_activity()
                 activity.globalsnode.tint = (0.5, 0.7, 1.0)
+                cmsg('night')
             except:
                 pass
 
@@ -173,6 +131,7 @@ class _cmds:
             try:
                 activity = get_foreground_host_activity()
                 activity.globalsnode.tint = (0.8, 0.0, 0.0)
+                cmsg('red')
             except:
                 pass
 
@@ -180,6 +139,7 @@ class _cmds:
             try:
                 activity = get_foreground_host_activity()
                 activity.globalsnode.tint = (0.3, 0.3, 0.3)
+                cmsg('dark')
             except:
                 pass
 
@@ -202,10 +162,10 @@ class _cmds:
                     activity = get_foreground_host_activity()
                     if not activity.globalsnode.slow_motion:
                         activity.globalsnode.slow_motion = True
-                        cmsg('Slow mode = on')
+                        cmsg('Slow on')
                     else:
                         activity.globalsnode.slow_motion = False
-                        cmsg('Slow mode = off')
+                        cmsg('Slow off')
                 except:
                     pass
 
@@ -213,21 +173,20 @@ class _cmds:
             if n == []:
                 try:
                     activity_players[0].actor.node.invincible = True
-                    cmsg('Anti-punch ON')
+                    cmsg('Anti-punch on')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
                         i.actor.node.invincible = True
-                    cmsg('Anti-punch ON (all)')
+                    cmsg('Anti-punch on all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.invincible = True
-                    cmsg('Anti-punch ON')
+                    activity_players[int(n[0])].actor.node.invincible = True
+                    cmsg('Anti-punch on')
                 except:
                     pass
 
@@ -236,6 +195,7 @@ class _cmds:
                 try:
                     for i in activity_players:
                         i.actor.bomb_scale = 6
+                    cmsg('Bomb scale set')
                 except:
                     pass
             else:
@@ -249,14 +209,14 @@ class _cmds:
                 except:
                     pass
 
-        elif m in [px + 'spun', px + 'Spun', px + 'Gpun', px + 'gpun']:
+        elif m in [px + 'spun', px + 'Spun']:
             if n == []:
-                cmsg('Mesal: spun 10')
+                cmsg('spun 10')
             else:
                 try:
                     for i in activity_players:
                         i.actor._punch_power_scale = int(n[0])
-                    cmsg('Punch power = ' + str(n[0]))
+                    cmsg('Punch power ' + str(n[0]))
                 except:
                     pass
 
@@ -266,10 +226,10 @@ class _cmds:
                     activity = get_foreground_host_activity()
                     if not activity.globalsnode.paused:
                         activity.globalsnode.paused = True
-                        cmsg('Game Paused')
+                        cmsg('Paused')
                     else:
                         activity.globalsnode.paused = False
-                        cmsg('Game un-paused')
+                        cmsg('Unpaused')
                 except:
                     pass
 
@@ -279,10 +239,10 @@ class _cmds:
                     activity = get_foreground_host_activity()
                     if activity.globalsnode.camera_mode != 'rotate':
                         activity.globalsnode.camera_mode = 'rotate'
-                        cmsg('Camera rotate')
+                        cmsg('Rotate')
                     else:
                         activity.globalsnode.camera_mode = 'follow'
-                        cmsg('Camera follow')
+                        cmsg('Follow')
                 except:
                     pass
 
@@ -290,7 +250,7 @@ class _cmds:
             if n == []:
                 try:
                     session_players[0].remove_from_game()
-                    cmsg('Player removed')
+                    cmsg('Removed')
                 except:
                     pass
             elif n[0] == 'a':
@@ -302,61 +262,41 @@ class _cmds:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    session_players[idx].remove_from_game()
-                    cmsg('Player removed')
+                    session_players[int(n[0])].remove_from_game()
+                    cmsg('Removed')
                 except:
                     pass
 
         elif m == px + 'v':
+            def make_inv(player):
+                body = player.actor.node
+                body.head_model = None
+                body.torso_model = None
+                body.upper_arm_model = None
+                body.forearm_model = None
+                body.pelvis_model = None
+                body.hand_model = None
+                body.toes_model = None
+                body.upper_leg_model = None
+                body.lower_leg_model = None
+                body.style = 'cyborg'
             if n == []:
                 try:
-                    body = activity_players[0].actor.node
-                    body.head_model = None
-                    body.torso_model = None
-                    body.upper_arm_model = None
-                    body.forearm_model = None
-                    body.pelvis_model = None
-                    body.hand_model = None
-                    body.toes_model = None
-                    body.upper_leg_model = None
-                    body.lower_leg_model = None
-                    body.style = 'cyborg'
-                    cmsg('Invisible ON')
+                    make_inv(activity_players[0])
+                    cmsg('Invisible on')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
-                        body = i.actor.node
-                        body.head_model = None
-                        body.torso_model = None
-                        body.upper_arm_model = None
-                        body.forearm_model = None
-                        body.pelvis_model = None
-                        body.hand_model = None
-                        body.toes_model = None
-                        body.upper_leg_model = None
-                        body.lower_leg_model = None
-                        body.style = 'cyborg'
-                    cmsg('Invisible ON (all)')
+                        make_inv(i)
+                    cmsg('Invisible on all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    body = activity_players[idx].actor.node
-                    body.head_model = None
-                    body.torso_model = None
-                    body.upper_arm_model = None
-                    body.forearm_model = None
-                    body.pelvis_model = None
-                    body.hand_model = None
-                    body.toes_model = None
-                    body.upper_leg_model = None
-                    body.lower_leg_model = None
-                    body.style = 'cyborg'
-                    cmsg('Invisible ON')
+                    make_inv(activity_players[int(n[0])])
+                    cmsg('Invisible on')
                 except:
                     pass
 
@@ -364,21 +304,20 @@ class _cmds:
             if n == []:
                 try:
                     activity_players[0].actor.node.hockey = True
-                    cmsg('Speed ON')
+                    cmsg('Speed on')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
                         i.actor.node.hockey = True
-                    cmsg('Speed ON (all)')
+                    cmsg('Speed on all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.hockey = True
-                    cmsg('Speed ON')
+                    activity_players[int(n[0])].actor.node.hockey = True
+                    cmsg('Speed on')
                 except:
                     pass
 
@@ -386,21 +325,20 @@ class _cmds:
             if n == []:
                 try:
                     activity_players[0].actor.node.head_model = None
-                    cmsg('Headless ON')
+                    cmsg('Headless on')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
                         i.actor.node.head_model = None
-                    cmsg('Headless ON (all)')
+                    cmsg('Headless on all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.head_model = None
-                    cmsg('Headless ON')
+                    activity_players[int(n[0])].actor.node.head_model = None
+                    cmsg('Headless on')
                 except:
                     pass
 
@@ -420,8 +358,7 @@ class _cmds:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(DieMessage())
+                    activity_players[int(n[0])].actor.node.handlemessage(DieMessage())
                     cmsg('Killed')
                 except:
                     pass
@@ -439,13 +376,12 @@ class _cmds:
                     for i in activity_players:
                         i.actor.node.handlemessage(
                             PowerupMessage(poweruptype='health'))
-                    cmsg('Healed (all)')
+                    cmsg('Healed all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(
+                    activity_players[int(n[0])].actor.node.handlemessage(
                         PowerupMessage(poweruptype='health'))
                     cmsg('Healed')
                 except:
@@ -464,13 +400,12 @@ class _cmds:
                     for i in activity_players:
                         i.actor.node.handlemessage(
                             PowerupMessage(poweruptype='curse'))
-                    cmsg('Cursed (all)')
+                    cmsg('Cursed all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(
+                    activity_players[int(n[0])].actor.node.handlemessage(
                         PowerupMessage(poweruptype='curse'))
                     cmsg('Cursed')
                 except:
@@ -487,13 +422,12 @@ class _cmds:
                 try:
                     for i in activity_players:
                         i.actor.node.handlemessage('knockout', 8000)
-                    cmsg('Sleeping (all)')
+                    cmsg('Sleeping all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage('knockout', 8000)
+                    activity_players[int(n[0])].actor.node.handlemessage('knockout', 8000)
                     cmsg('Sleeping')
                 except:
                     pass
@@ -503,7 +437,7 @@ class _cmds:
                 try:
                     activity_players[0].actor._punch_power_scale = 15
                     activity_players[0].actor._punch_cooldown = 0
-                    cmsg('Super punch ON')
+                    cmsg('Super punch on')
                 except:
                     pass
             elif n[0] == 'a':
@@ -511,15 +445,14 @@ class _cmds:
                     for i in activity_players:
                         i.actor._punch_power_scale = 15
                         i.actor._punch_cooldown = 0
-                    cmsg('Super punch ON (all)')
+                    cmsg('Super punch all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor._punch_power_scale = 15
-                    activity_players[idx].actor._punch_cooldown = 0
-                    cmsg('Super punch ON')
+                    activity_players[int(n[0])].actor._punch_power_scale = 15
+                    activity_players[int(n[0])].actor._punch_cooldown = 0
+                    cmsg('Super punch on')
                 except:
                     pass
 
@@ -534,13 +467,12 @@ class _cmds:
                 try:
                     for i in activity_players:
                         i.actor.bomb_type = 'tnt'
-                    cmsg('TNT given (all)')
+                    cmsg('TNT all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.bomb_type = 'tnt'
+                    activity_players[int(n[0])].actor.bomb_type = 'tnt'
                     cmsg('TNT given')
                 except:
                     pass
@@ -549,21 +481,20 @@ class _cmds:
             if n == []:
                 try:
                     activity_players[0].actor.bomb_type = 'impact'
-                    cmsg('Impact bomb given')
+                    cmsg('Impact given')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
                         i.actor.bomb_type = 'impact'
-                    cmsg('Impact bomb given (all)')
+                    cmsg('Impact all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.bomb_type = 'impact'
-                    cmsg('Impact bomb given')
+                    activity_players[int(n[0])].actor.bomb_type = 'impact'
+                    cmsg('Impact given')
                 except:
                     pass
 
@@ -571,21 +502,20 @@ class _cmds:
             if n == []:
                 try:
                     activity_players[0].actor.bomb_type = 'sticky'
-                    cmsg('Sticky bomb given')
+                    cmsg('Sticky given')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
                         i.actor.bomb_type = 'sticky'
-                    cmsg('Sticky bomb given (all)')
+                    cmsg('Sticky all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.bomb_type = 'sticky'
-                    cmsg('Sticky bomb given')
+                    activity_players[int(n[0])].actor.bomb_type = 'sticky'
+                    cmsg('Sticky given')
                 except:
                     pass
 
@@ -593,21 +523,20 @@ class _cmds:
             if n == []:
                 try:
                     activity_players[0].actor.bomb_type = 'ice'
-                    cmsg('Ice bomb given')
+                    cmsg('Ice given')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
                         i.actor.bomb_type = 'ice'
-                    cmsg('Ice bomb given (all)')
+                    cmsg('Ice all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.bomb_type = 'ice'
-                    cmsg('Ice bomb given')
+                    activity_players[int(n[0])].actor.bomb_type = 'ice'
+                    cmsg('Ice given')
                 except:
                     pass
 
@@ -622,13 +551,12 @@ class _cmds:
                 try:
                     for i in activity_players:
                         i.actor.bomb_type = 'land_mine'
-                    cmsg('Mine given (all)')
+                    cmsg('Mine all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.bomb_type = 'land_mine'
+                    activity_players[int(n[0])].actor.bomb_type = 'land_mine'
                     cmsg('Mine given')
                 except:
                     pass
@@ -646,13 +574,12 @@ class _cmds:
                     for i in activity_players:
                         i.actor.node.handlemessage(
                             PowerupMessage(poweruptype='punch'))
-                    cmsg('Punch given (all)')
+                    cmsg('Punch all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(
+                    activity_players[int(n[0])].actor.node.handlemessage(
                         PowerupMessage(poweruptype='punch'))
                     cmsg('Punch given')
                 except:
@@ -671,13 +598,12 @@ class _cmds:
                     for i in activity_players:
                         i.actor.node.handlemessage(
                             PowerupMessage(poweruptype='shield'))
-                    cmsg('Shield given (all)')
+                    cmsg('Shield all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(
+                    activity_players[int(n[0])].actor.node.handlemessage(
                         PowerupMessage(poweruptype='shield'))
                     cmsg('Shield given')
                 except:
@@ -694,13 +620,12 @@ class _cmds:
                 try:
                     for i in activity_players:
                         i.actor.node.handlemessage(FreezeMessage())
-                    cmsg('Frozen (all)')
+                    cmsg('Frozen all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(FreezeMessage())
+                    activity_players[int(n[0])].actor.node.handlemessage(FreezeMessage())
                     cmsg('Frozen')
                 except:
                     pass
@@ -716,13 +641,12 @@ class _cmds:
                 try:
                     for i in activity_players:
                         i.actor.node.handlemessage(ThawMessage())
-                    cmsg('Thawed (all)')
+                    cmsg('Thawed all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(ThawMessage())
+                    activity_players[int(n[0])].actor.node.handlemessage(ThawMessage())
                     cmsg('Thawed')
                 except:
                     pass
@@ -738,13 +662,12 @@ class _cmds:
                 try:
                     for i in activity_players:
                         i.actor.node.handlemessage(StandMessage())
-                    cmsg('Teleported (all)')
+                    cmsg('Teleport all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(StandMessage())
+                    activity_players[int(n[0])].actor.node.handlemessage(StandMessage())
                     cmsg('Teleported')
                 except:
                     pass
@@ -753,21 +676,20 @@ class _cmds:
             if n == []:
                 try:
                     activity_players[0].actor.node.handlemessage(CelebrateMessage())
-                    cmsg('Celebrated')
+                    cmsg('Celebrate')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
                         i.actor.node.handlemessage(CelebrateMessage())
-                    cmsg('Celebrated (all)')
+                    cmsg('Celebrate all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.handlemessage(CelebrateMessage())
-                    cmsg('Celebrated')
+                    activity_players[int(n[0])].actor.node.handlemessage(CelebrateMessage())
+                    cmsg('Celebrate')
                 except:
                     pass
 
@@ -775,21 +697,20 @@ class _cmds:
             if n == []:
                 try:
                     activity_players[0].actor.node.fly = True
-                    cmsg('Fly ON')
+                    cmsg('Fly on')
                 except:
                     pass
             elif n[0] == 'a':
                 try:
                     for i in activity_players:
                         i.actor.node.fly = True
-                    cmsg('Fly ON (all)')
+                    cmsg('Fly on all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.fly = True
-                    cmsg('Fly ON')
+                    activity_players[int(n[0])].actor.node.fly = True
+                    cmsg('Fly on')
                 except:
                     pass
 
@@ -806,41 +727,36 @@ class _cmds:
                     for i in activity_players:
                         i.actor.node.invincible = True
                         i.actor._punch_power_scale = 7
-                    cmsg('God mod on (all)')
+                    cmsg('God mod on all')
                 except:
                     pass
             else:
                 try:
-                    idx = int(n[0])
-                    activity_players[idx].actor.node.invincible = True
-                    activity_players[idx].actor._punch_power_scale = 7
+                    activity_players[int(n[0])].actor.node.invincible = True
+                    activity_players[int(n[0])].actor._punch_power_scale = 7
                     cmsg('God mod on')
                 except:
                     pass
 
         elif m in [px + 'bomb', px + 'default_bomb']:
             if n == []:
-                cmsg('bomb: ice / impact / land_mine / normal / sticky / tnt')
-            elif n[0] == 'help':
-                cmsg("bombtypes: ice / impact / land_mine / normal / sticky / tnt")
+                cmsg('bomb: ice impact land_mine normal sticky tnt')
             elif n[0] in ['ice', 'impact', 'land_mine', 'normal', 'sticky', 'tnt']:
                 try:
                     for i in activity_players:
                         i.actor.bomb_type = n[0]
-                    cmsg('Bomb type = ' + n[0])
+                    cmsg('Bomb ' + n[0])
                 except:
                     pass
-            else:
-                cmsg('Bomb: ice / impact / land_mine / normal / sticky / tnt')
 
         elif m == px + 'tb':
             if n == []:
-                cmsg('Mesal: tb 3')
+                cmsg('tb 3')
             else:
                 try:
                     for i in activity_players:
                         i.actor.set_bomb_count(int(n[0]))
-                    cmsg('Bomb count = ' + str(n[0]))
+                    cmsg('Bomb count ' + str(n[0]))
                 except:
                     pass
 
