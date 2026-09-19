@@ -1,6 +1,8 @@
 # ba_meta require api 9
 # ba_meta export babase.Plugin
 
+print("=== CMD.PY LOADING ===")
+
 from babase import Plugin
 from bauiv1 import apptimer as teck
 from bascenev1 import (
@@ -16,6 +18,8 @@ from bascenev1 import (
     CelebrateMessage,
     PowerupMessage
 )
+
+print("=== IMPORTS OK ===")
 
 px = ''
 ok = 'Syydooh'
@@ -761,8 +765,7 @@ class _cmds:
                     pass
 
 
-# ba_meta require api 9
-# ba_meta export babase.Plugin
 class CMD(Plugin):
     def __init__(s):
+        print("=== CMD INIT ===")
         teck(1, _cmds._process_cmd)
