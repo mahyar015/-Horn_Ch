@@ -443,79 +443,99 @@ class SpamWindow:
            h_align='center', color=(1, 0.5, 0.5))
 
         s.main_scroll = sw(parent=s.w, size=(270, 270), position=(10, 15))
-        s.main_container = cw(parent=s.main_scroll, size=(250, 700), background=False)
+        s.main_container = cw(parent=s.main_scroll, size=(250, 800), background=False)
 
         s.status = tw(parent=s.main_container, text='اسپم نمی‌کنه',
-                      position=(125, 680), h_align='center',
+                      position=(125, 775), h_align='center',
                       scale=0.45, color=(1, 1, 0))
 
-        tw(parent=s.main_container, text='━━━ اسپم سریع ━━━', scale=0.42,
-           position=(125, 658), h_align='center', color=(0.8, 0.8, 1))
+        # ═══════ بخش ۱: اسپم سریع ═══════
+        tw(parent=s.main_container, text='━━━━━ اسپم سریع ━━━━━', scale=0.45,
+           position=(125, 750), h_align='center', color=(1, 0.6, 0.3))
+
+        tw(parent=s.main_container, text='متن:', scale=0.4, position=(35, 725),
+           h_align='center', color=(0.8, 0.8, 1))
 
         s.text_input = tw(parent=s.main_container, text=spam_single_msg, editable=True, scale=0.68,
-                          position=(15, 630), size=(220, 24),
+                          position=(15, 700), size=(220, 24),
                           h_align='center', color=(0.9, 0.9, 0.9))
 
+        tw(parent=s.main_container, text='تاخیر:', scale=0.4, position=(35, 678),
+           h_align='center', color=(0.8, 0.8, 1))
+
         s.delay_input = tw(parent=s.main_container, text=str(spam_single_delay), editable=True, scale=0.68,
-                           position=(15, 602), size=(95, 24),
+                           position=(15, 655), size=(140, 24),
                            h_align='center', color=(0.9, 0.9, 0.9))
 
-        tw(parent=s.main_container, text='ثانیه', scale=0.42, position=(135, 614),
+        tw(parent=s.main_container, text='ثانیه', scale=0.42, position=(170, 667),
            h_align='center', color=(1, 1, 1))
 
-        bw(parent=s.main_container, label='▶ شروع', size=(105, 26), position=(15, 570),
+        bw(parent=s.main_container, label='▶ شروع', size=(105, 28), position=(15, 620),
            on_activate_call=Call(s.start_current), color=(0.2, 0.7, 0.3),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
 
-        bw(parent=s.main_container, label='■ توقف', size=(105, 26), position=(130, 570),
+        bw(parent=s.main_container, label='■ توقف', size=(105, 28), position=(130, 620),
            on_activate_call=Call(s.stop), color=(0.7, 0.2, 0.2),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
 
-        tw(parent=s.main_container, text='━━━ لیست پیام‌ها ━━━', scale=0.42,
-           position=(125, 550), h_align='center', color=(0.8, 0.8, 1))
+        # ═══════ بخش ۲: لیست پیام‌ها ═══════
+        tw(parent=s.main_container, text='━━━━━ لیست پیام‌ها ━━━━━', scale=0.45,
+           position=(125, 592), h_align='center', color=(1, 0.6, 0.3))
 
-        s.scroll = sw(parent=s.main_container, size=(220, 100), position=(15, 440))
+        s.scroll = sw(parent=s.main_container, size=(220, 110), position=(15, 475))
         s.container = cw(parent=s.scroll, size=(200, 300), background=False)
         s.item_buttons = {}
         s.build_grid()
 
-        bw(parent=s.main_container, label='+ اضافه', size=(105, 26), position=(15, 410),
+        bw(parent=s.main_container, label='+ اضافه', size=(105, 28), position=(15, 440),
            on_activate_call=Call(s.add_new), color=(0.2, 0.7, 0.3),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
 
         s.loop_btn = bw(parent=s.main_container, label='تکرار: ' + ('روشن' if spam_loop else 'خاموش'),
-                        size=(105, 26), position=(130, 410),
+                        size=(105, 28), position=(130, 440),
                         on_activate_call=Call(s.toggle_loop),
                         color=(0.2, 0.7, 0.2) if spam_loop else (0.7, 0.2, 0.2),
                         textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
 
-        bw(parent=s.main_container, label='▶ شروع لیست', size=(105, 26), position=(15, 378),
+        # دکمه‌های شروع/توقف لیست
+        bw(parent=s.main_container, label='▶ شروع لیست', size=(105, 28), position=(15, 405),
            on_activate_call=Call(s.start_list), color=(0.3, 0.6, 0.4),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
-        bw(parent=s.main_container, label='پاک کردن', size=(105, 26), position=(130, 378),
-           on_activate_call=Call(s.clear_all), color=(0.7, 0.3, 0.2),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
+        bw(parent=s.main_container, label='■ توقف لیست', size=(105, 28), position=(130, 405),
+           on_activate_call=Call(s.stop), color=(0.7, 0.2, 0.2),
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
-        bw(parent=s.main_container, label='📍 جابجایی دکمه اسپم', size=(220, 26), position=(15, 345),
+        bw(parent=s.main_container, label='پاک کردن همه', size=(220, 28), position=(15, 370),
+           on_activate_call=Call(s.clear_all), color=(0.7, 0.3, 0.2),
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+
+        # ═══════ بخش ۳: تنظیمات ═══════
+        tw(parent=s.main_container, text='━━━━━ تنظیمات ━━━━━', scale=0.45,
+           position=(125, 343), h_align='center', color=(1, 0.6, 0.3))
+
+        bw(parent=s.main_container, label='📍 جابجایی دکمه اسپم', size=(220, 28), position=(15, 308),
            on_activate_call=Call(s.edit_place), color=(0.5, 0.3, 0.7),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
 
-        tw(parent=s.main_container, text='(برای پایین‌تر، اسکرول کن)',
-           scale=0.35, position=(125, 320), h_align='center',
+        tw(parent=s.main_container, text='برای دیدن پایین‌تر، اسکرول کن',
+           scale=0.35, position=(125, 282), h_align='center',
            color=(0.6, 0.6, 0.8))
 
-        cw(s.main_container, size=(250, 700))
+        cw(s.main_container, size=(250, 800))
 
         gs('swish').play()
 
     def show_help(s):
         try:
-            hw = AR.cw(source=s.w, size=(280, 380), ps=AR.UIS() * 0.3)
-            AR.add_close_button(hw, position=(250, 345))
+            hw = AR.cw(source=s.w, size=(280, 340), ps=AR.UIS() * 0.3)
+            AR.add_close_button(hw, position=(250, 305))
 
             tw(parent=hw, text='📖 راهنما', scale=0.8,
-               position=(140, 340), h_align='center', color=(0, 1, 1))
+               position=(140, 305), h_align='center', color=(0, 1, 1))
+
+            help_scroll = sw(parent=hw, size=(260, 270), position=(10, 15))
+            help_container = cw(parent=help_scroll, size=(240, 500), background=False)
 
             help_lines = [
                 ('━━━ اسپم سریع ━━━', (1, 1, 0)),
@@ -531,6 +551,7 @@ class SpamWindow:
                 ('دکمه «+ اضافه» پیام جدید', (0.6, 1, 0.6)),
                 ('بزن «▶ شروع لیست» تا همه', (0.6, 1, 0.6)),
                 ('به نوبت ارسال بشن', (0.6, 1, 0.6)),
+                ('با «■ توقف لیست» متوقف کن', (0.6, 1, 0.6)),
                 ('', (1, 1, 1)),
                 ('━━━ دکمه‌های دیگه ━━━', (1, 1, 0)),
                 ('', (1, 1, 1)),
@@ -545,15 +566,24 @@ class SpamWindow:
                 ('', (1, 1, 1)),
                 ('spam متن 2', (0.6, 1, 0.6)),
                 ('(هر 2 ثانیه می‌فرسته)', (0.8, 0.8, 1)),
+                ('', (1, 1, 1)),
                 ('spam off', (0.6, 1, 0.6)),
                 ('(متوقف می‌کنه)', (0.8, 0.8, 1)),
+                ('', (1, 1, 1)),
+                ('━━━ نکته ━━━', (1, 1, 0)),
+                ('', (1, 1, 1)),
+                ('اسپم فقط تو سرور کار می‌کنه', (0.9, 0.9, 1)),
+                ('اگه از سرور خارج شی خودکار', (0.9, 0.9, 1)),
+                ('متوقف میشه', (0.9, 0.9, 1)),
             ]
 
-            y = 315
+            y = 470
             for text, color in help_lines:
-                tw(parent=hw, text=text, scale=0.4,
-                   position=(140, y), h_align='center', color=color)
-                y -= 14
+                tw(parent=help_container, text=text, scale=0.42,
+                   position=(120, y), h_align='center', color=color)
+                y -= 15
+
+            cw(help_container, size=(240, 500))
 
             gs('swish').play()
         except Exception as e:
