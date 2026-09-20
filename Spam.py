@@ -20,7 +20,6 @@ from bascenev1 import (
 from babase import app
 import time
 import re
-import os
 
 SIGNATURE = "By Mahyar"
 
@@ -113,7 +112,7 @@ def spam_tick():
 
         if not in_server:
             spam_active = False
-            push("Spam Stopped (left server)", color=(1, 0.5, 0))
+            push("اسپم متوقف شد (از سرور خارج شدی)", color=(1, 0.5, 0))
             return
 
         suffix = INVISIBLE_CHARS[spam_counter % len(INVISIBLE_CHARS)]
@@ -145,7 +144,7 @@ def spam_tick():
                     spam_list_index = 0
                 else:
                     spam_active = False
-                    push("Spam finished!", color=(0, 1, 0))
+                    push("لیست تموم شد!", color=(0, 1, 0))
                     return
 
             spam_timer = teck(delay, spam_tick)
@@ -170,7 +169,7 @@ def start_spam_list():
     global spam_active, spam_timer, spam_list_index, spam_counter, spam_mode
     stop_spam()
     if not spam_list:
-        push("List is empty!", color=(1, 0.5, 0))
+        push("لیست خالیه!", color=(1, 0.5, 0))
         return
     spam_active = True
     spam_mode = 'list'
@@ -206,15 +205,15 @@ def check_spam_command(msg):
 
         if content_lower in ('spam off', 'اسپم خاموش', 'توقف اسپم', 'stop spam'):
             stop_spam()
-            push("Spam Stopped", color=(1, 0.5, 0))
+            push("اسپم خاموش شد", color=(1, 0.5, 0))
             return True
 
         if content_lower in ('spam on', 'اسپم روشن'):
             if spam_single_msg:
                 start_spam_single(spam_single_msg, spam_single_delay)
-                push("Spam Started", color=(0, 1, 0))
+                push("اسپم روشن شد", color=(0, 1, 0))
             else:
-                push("No message set!", color=(1, 0.5, 0))
+                push("هیچ پیامی تنظیم نشده!", color=(1, 0.5, 0))
             return True
 
         match = re.match(r'^spam\s+(.+?)\s+([\d.]+)\s*$', content_lower)
@@ -229,7 +228,7 @@ def check_spam_command(msg):
             spam_single_msg = message
             spam_single_delay = delay
             start_spam_single(message, delay)
-            push(f"Spam: {message} ({delay}s)", color=(0, 1, 0))
+            push(f"اسپم: {message} ({delay} ثانیه)", color=(0, 1, 0))
             return True
 
     except Exception as e:
@@ -306,7 +305,7 @@ class SpamEditPlace:
         s.w = AR.cw(source=source, size=(280, 320), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(250, 285))
 
-        tw(parent=s.w, text='Edit Spam Place', scale=0.85, position=(140, 280),
+        tw(parent=s.w, text='جابجایی دکمه اسپم', scale=0.75, position=(140, 280),
            h_align='center', color=(0, 1, 1))
         tw(parent=s.w, text=SIGNATURE, scale=0.3, position=(140, 265),
            h_align='center', color=(0.6, 0.6, 0.8))
@@ -314,6 +313,8 @@ class SpamEditPlace:
         s.pos_text = tw(parent=s.w, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}',
                         position=(140, 242), h_align='center', scale=0.55,
                         color=(1, 1, 0))
+        tw(parent=s.w, text='هر کلیک = ۵ پیکسل', scale=0.4,
+           position=(140, 225), h_align='center', color=(0.7, 0.7, 1))
 
         arrow_size = (55, 42)
         arrow_color = (0.3, 0.5, 0.8)
@@ -343,7 +344,7 @@ class SpamEditPlace:
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.1)
 
-        bw(parent=s.w, label='Save', size=(180, 32), position=(cx - 90, 30),
+        bw(parent=s.w, label='ذخیره', size=(180, 32), position=(cx - 90, 30),
            on_activate_call=s.save, color=(0.2, 0.7, 0.3),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
 
@@ -373,34 +374,34 @@ class SpamEditPlace:
 
     def save(s):
         save_spam_btn_position(s.current_x, s.current_y)
-        push(f'Spam Saved: X={int(s.current_x)} Y={int(s.current_y)}', color=(0, 1, 0))
+        push(f'ذخیره شد: X={int(s.current_x)} Y={int(s.current_y)}', color=(0, 1, 0))
         gs('dingSmallHigh').play()
 
 
 class AddMsgWindow:
     def __init__(s, source, parent_window=None):
         s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(240, 160), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(210, 125))
+        s.w = AR.cw(source=source, size=(240, 180), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(210, 145))
 
-        tw(parent=s.w, text='Add to List', scale=0.75, position=(120, 120),
+        tw(parent=s.w, text='اضافه کردن پیام', scale=0.75, position=(120, 140),
            h_align='center', color=(1, 1, 0))
 
-        tw(parent=s.w, text='Text:', scale=0.5, position=(60, 95),
+        tw(parent=s.w, text='متن:', scale=0.5, position=(60, 115),
            h_align='center', color=(1, 1, 1))
         s.text_input = tw(parent=s.w, text='', editable=True, scale=0.7,
-                          position=(25, 65), size=(190, 24),
+                          position=(25, 85), size=(190, 26),
                           h_align='center', color=(0.9, 0.9, 0.9))
 
-        tw(parent=s.w, text='Delay:', scale=0.5, position=(60, 45),
+        tw(parent=s.w, text='تاخیر (ثانیه):', scale=0.5, position=(60, 62),
            h_align='center', color=(1, 1, 1))
         s.delay_input = tw(parent=s.w, text=str(DEFAULT_DELAY), editable=True, scale=0.7,
-                           position=(25, 18), size=(190, 24),
+                           position=(25, 32), size=(190, 26),
                            h_align='center', color=(0.9, 0.9, 0.9))
 
-        bw(parent=s.w, label='Add', size=(80, 26), position=(150, 18),
+        bw(parent=s.w, label='اضافه کن', size=(120, 28), position=(60, 2),
            on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
 
         gs('swish').play()
 
@@ -408,7 +409,7 @@ class AddMsgWindow:
         global spam_list
         text = tw(query=s.text_input).strip()
         if not text:
-            AR.err('Text required!')
+            AR.err('متن رو وارد کن!')
             return
         try:
             delay = float(tw(query=s.delay_input).strip())
@@ -418,7 +419,7 @@ class AddMsgWindow:
 
         spam_list.append({'text': text, 'delay': delay})
         save_spam_messages(spam_list)
-        push(f'Added: {text}', color=(0, 1, 0))
+        push(f'اضافه شد: {text}', color=(0, 1, 0))
         gs('dingSmallHigh').play()
 
         if s.parent_window:
@@ -430,69 +431,124 @@ class AddMsgWindow:
 class SpamWindow:
     def __init__(s, source, spam_button=None):
         s.spam_button = spam_button
-        s.w = AR.cw(source=source, size=(320, 480), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(290, 445))
+        s.w = AR.cw(source=source, size=(300, 420), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(270, 385))
 
-        tw(parent=s.w, text='Spam', scale=0.9, position=(160, 440),
+        bw(parent=s.w, label='!', size=(26, 26), position=(242, 385),
+           on_activate_call=Call(s.show_help),
+           color=(0.3, 0.5, 0.9), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.9)
+
+        tw(parent=s.w, text='اسپم', scale=0.9, position=(150, 385),
            h_align='center', color=(1, 0.5, 0.5))
 
-        s.status = tw(parent=s.w, text='Not Spamming',
-                      position=(160, 420), h_align='center',
+        s.status = tw(parent=s.w, text='اسپم نمی‌کنه',
+                      position=(150, 365), h_align='center',
                       scale=0.5, color=(1, 1, 0))
 
-        tw(parent=s.w, text='Quick Spam', scale=0.55,
-           position=(160, 395), h_align='center', color=(0.8, 0.8, 1))
+        tw(parent=s.w, text='━━━ اسپم سریع ━━━', scale=0.5,
+           position=(150, 342), h_align='center', color=(0.8, 0.8, 1))
 
-        s.text_input = tw(parent=s.w, text=spam_single_msg, editable=True, scale=0.75,
-                          position=(20, 365), size=(280, 26),
+        s.text_input = tw(parent=s.w, text=spam_single_msg, editable=True, scale=0.7,
+                          position=(20, 310), size=(260, 26),
                           h_align='center', color=(0.9, 0.9, 0.9))
 
-        s.delay_input = tw(parent=s.w, text=str(spam_single_delay), editable=True, scale=0.75,
-                           position=(20, 335), size=(130, 26),
+        s.delay_input = tw(parent=s.w, text=str(spam_single_delay), editable=True, scale=0.7,
+                           position=(20, 278), size=(120, 26),
                            h_align='center', color=(0.9, 0.9, 0.9))
 
-        tw(parent=s.w, text='sec', scale=0.5, position=(155, 348),
+        tw(parent=s.w, text='ثانیه', scale=0.5, position=(155, 292),
            h_align='center', color=(1, 1, 1))
 
-        bw(parent=s.w, label='▶ START', size=(135, 30), position=(20, 298),
+        bw(parent=s.w, label='▶ شروع', size=(125, 30), position=(20, 240),
            on_activate_call=Call(s.start_current), color=(0.2, 0.7, 0.3),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
 
-        bw(parent=s.w, label='■ STOP', size=(135, 30), position=(165, 298),
+        bw(parent=s.w, label='■ توقف', size=(125, 30), position=(155, 240),
            on_activate_call=Call(s.stop), color=(0.7, 0.2, 0.2),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
 
-        tw(parent=s.w, text='Message List', scale=0.55,
-           position=(160, 275), h_align='center', color=(0.8, 0.8, 1))
+        tw(parent=s.w, text='━━━ لیست پیام‌ها ━━━', scale=0.5,
+           position=(150, 218), h_align='center', color=(0.8, 0.8, 1))
 
-        s.scroll = sw(parent=s.w, size=(280, 130), position=(20, 140))
-        s.container = cw(parent=s.scroll, size=(260, 300), background=False)
+        s.scroll = sw(parent=s.w, size=(260, 100), position=(20, 110))
+        s.container = cw(parent=s.scroll, size=(240, 300), background=False)
         s.item_buttons = {}
         s.build_grid()
 
-        bw(parent=s.w, label='+ Add', size=(130, 28), position=(20, 108),
+        bw(parent=s.w, label='+ اضافه', size=(125, 28), position=(20, 78),
            on_activate_call=Call(s.add_new), color=(0.2, 0.7, 0.3),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
 
-        s.loop_btn = bw(parent=s.w, label='🔄 Loop: ' + ('ON' if spam_loop else 'OFF'),
-                        size=(140, 28), position=(160, 108),
+        s.loop_btn = bw(parent=s.w, label='تکرار: ' + ('روشن' if spam_loop else 'خاموش'),
+                        size=(125, 28), position=(155, 78),
                         on_activate_call=Call(s.toggle_loop),
                         color=(0.2, 0.7, 0.2) if spam_loop else (0.7, 0.2, 0.2),
                         textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
-        bw(parent=s.w, label='▶ Start List', size=(130, 30), position=(20, 72),
+        bw(parent=s.w, label='▶ شروع لیست', size=(125, 30), position=(20, 42),
            on_activate_call=Call(s.start_list), color=(0.3, 0.6, 0.4),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
 
-        bw(parent=s.w, label='Clear All', size=(140, 30), position=(160, 72),
+        bw(parent=s.w, label='پاک کردن همه', size=(125, 30), position=(155, 42),
            on_activate_call=Call(s.clear_all), color=(0.7, 0.3, 0.2),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
-        bw(parent=s.w, label='Edit Place', size=(280, 28), position=(20, 34),
+        bw(parent=s.w, label='📍 جابجایی دکمه', size=(260, 28), position=(20, 8),
            on_activate_call=Call(s.edit_place), color=(0.5, 0.3, 0.7),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
         gs('swish').play()
+
+    def show_help(s):
+        try:
+            hw = AR.cw(source=s.w, size=(300, 400), ps=AR.UIS() * 0.3)
+            AR.add_close_button(hw, position=(270, 365))
+
+            tw(parent=hw, text='📖 راهنما', scale=0.85,
+               position=(150, 360), h_align='center', color=(0, 1, 1))
+
+            help_lines = [
+                ('━━━ اسپم سریع ━━━', (1, 1, 0)),
+                ('', (1, 1, 1)),
+                ('یه متن رو تو کادر بنویس', (0.9, 0.9, 1)),
+                ('تاخیر (ثانیه) رو تعیین کن', (0.9, 0.9, 1)),
+                ('بزن «▶ شروع» تا تکرار بشه', (0.6, 1, 0.6)),
+                ('', (1, 1, 1)),
+                ('━━━ لیست پیام‌ها ━━━', (1, 1, 0)),
+                ('', (1, 1, 1)),
+                ('چند تا پیام بساز، هر کدوم', (0.9, 0.9, 1)),
+                ('با تاخیر خودش', (0.9, 0.9, 1)),
+                ('دکمه «+ اضافه» پیام جدید', (0.6, 1, 0.6)),
+                ('بزن «▶ شروع لیست» تا همه', (0.6, 1, 0.6)),
+                ('به نوبت ارسال بشن', (0.6, 1, 0.6)),
+                ('', (1, 1, 1)),
+                ('━━━ دکمه‌های دیگه ━━━', (1, 1, 0)),
+                ('', (1, 1, 1)),
+                ('تکرار: پیام‌ها رو دوباره', (0.9, 0.9, 1)),
+                ('از اول می‌فرسته', (0.9, 0.9, 1)),
+                ('پاک کردن همه: همه پیام‌ها', (0.9, 0.9, 1)),
+                ('رو از لیست حذف می‌کنه', (0.9, 0.9, 1)),
+                ('جابجایی دکمه: جای دکمه', (0.9, 0.9, 1)),
+                ('«اسپم» رو عوض می‌کنه', (0.9, 0.9, 1)),
+                ('', (1, 1, 1)),
+                ('━━━ دستور چت ━━━', (1, 1, 0)),
+                ('', (1, 1, 1)),
+                ('spam متن 2', (0.6, 1, 0.6)),
+                ('(هر 2 ثانیه می‌فرسته)', (0.8, 0.8, 1)),
+                ('spam off', (0.6, 1, 0.6)),
+                ('(متوقف می‌کنه)', (0.8, 0.8, 1)),
+            ]
+
+            y = 335
+            for text, color in help_lines:
+                tw(parent=hw, text=text, scale=0.42,
+                   position=(150, y), h_align='center', color=color)
+                y -= 15
+
+            gs('swish').play()
+        except Exception as e:
+            print(f"[Spam] help error: {e}")
 
     def build_grid(s):
         for child in s.container.get_children(): child.delete()
@@ -509,25 +565,25 @@ class SpamWindow:
             label = f'{text[:20]} ({delay}s)'
 
             btn = bw(parent=s.container, label=label,
-                     size=(210, 24), position=(5, y),
+                     size=(190, 24), position=(5, y),
                      on_activate_call=lambda idx=i: s.edit_item(idx),
                      color=(0.25, 0.4, 0.6),
                      textcolor=(1, 1, 1), button_type='square', text_scale=0.45)
             s.item_buttons[i] = btn
 
             bw(parent=s.container, label='X', size=(25, 24),
-               position=(220, y),
+               position=(200, y),
                on_activate_call=lambda idx=i: s.delete_item(idx),
                color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1),
                button_type='square', text_scale=0.6)
 
-        cw(s.container, size=(260, total_h))
+        cw(s.container, size=(240, total_h))
 
     def start_current(s):
         global spam_single_msg, spam_single_delay
         text = tw(query=s.text_input).strip()
         if not text:
-            AR.err('Text required!')
+            AR.err('متن رو وارد کن!')
             return
         try:
             delay = float(tw(query=s.delay_input).strip())
@@ -538,20 +594,20 @@ class SpamWindow:
         spam_single_msg = text
         spam_single_delay = delay
         start_spam_single(text, delay)
-        tw(s.status, text=f'Spamming: {text}', color=(0, 1, 0))
+        tw(s.status, text=f'در حال اسپم: {text}', color=(0, 1, 0))
         gs('dingSmallHigh').play()
 
     def start_list(s):
         if not spam_list:
-            AR.err('List is empty!')
+            AR.err('لیست خالیه!')
             return
         start_spam_list()
-        tw(s.status, text='Spamming List...', color=(0, 1, 0))
+        tw(s.status, text='اسپم لیست شروع شد...', color=(0, 1, 0))
         gs('dingSmallHigh').play()
 
     def stop(s):
         stop_spam()
-        tw(s.status, text='Stopped', color=(1, 1, 0))
+        tw(s.status, text='متوقف شد', color=(1, 1, 0))
         gs('dingSmallLow').play()
 
     def add_new(s):
@@ -560,28 +616,28 @@ class SpamWindow:
     def edit_item(s, idx):
         if idx >= len(spam_list): return
         item = spam_list[idx]
-        s.edit_window = AR.cw(source=s.w, size=(240, 160), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.edit_window, position=(210, 125))
+        s.edit_window = AR.cw(source=s.w, size=(240, 180), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.edit_window, position=(210, 145))
 
-        tw(parent=s.edit_window, text='Edit Message', scale=0.75, position=(120, 120),
+        tw(parent=s.edit_window, text='ویرایش پیام', scale=0.75, position=(120, 140),
            h_align='center', color=(1, 1, 0))
 
-        tw(parent=s.edit_window, text='Text:', scale=0.5, position=(60, 95),
+        tw(parent=s.edit_window, text='متن:', scale=0.5, position=(60, 115),
            h_align='center', color=(1, 1, 1))
         text_in = tw(parent=s.edit_window, text=item.get('text', ''), editable=True, scale=0.7,
-                     position=(25, 65), size=(190, 24),
+                     position=(25, 85), size=(190, 26),
                      h_align='center', color=(0.9, 0.9, 0.9))
 
-        tw(parent=s.edit_window, text='Delay:', scale=0.5, position=(60, 45),
+        tw(parent=s.edit_window, text='تاخیر (ثانیه):', scale=0.5, position=(60, 62),
            h_align='center', color=(1, 1, 1))
         delay_in = tw(parent=s.edit_window, text=str(item.get('delay', 2)), editable=True, scale=0.7,
-                      position=(25, 18), size=(190, 24),
+                      position=(25, 32), size=(190, 26),
                       h_align='center', color=(0.9, 0.9, 0.9))
 
         def do_save():
             new_text = tw(query=text_in).strip()
             if not new_text:
-                AR.err('Text required!')
+                AR.err('متن رو وارد کن!')
                 return
             try:
                 new_delay = float(tw(query=delay_in).strip())
@@ -593,20 +649,20 @@ class SpamWindow:
                 spam_list[idx]['text'] = new_text
                 spam_list[idx]['delay'] = new_delay
                 save_spam_messages(spam_list)
-                push('Saved!', color=(0, 1, 0))
+                push('ذخیره شد!', color=(0, 1, 0))
                 gs('dingSmallHigh').play()
                 AR.swish(s.edit_window)
                 s.build_grid()
 
-        bw(parent=s.edit_window, label='Save', size=(80, 26), position=(150, 18),
+        bw(parent=s.edit_window, label='ذخیره', size=(120, 28), position=(60, 2),
            on_activate_call=do_save, color=(0.2, 0.7, 0.3),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
 
     def delete_item(s, idx):
         if idx < len(spam_list):
             spam_list.pop(idx)
             save_spam_messages(spam_list)
-            push('Deleted!', color=(1, 0.5, 0))
+            push('حذف شد!', color=(1, 0.5, 0))
             gs('dingSmallLow').play()
             s.build_grid()
 
@@ -614,7 +670,7 @@ class SpamWindow:
         global spam_list
         spam_list = []
         save_spam_messages(spam_list)
-        push('List cleared!', color=(1, 0.5, 0))
+        push('لیست پاک شد!', color=(1, 0.5, 0))
         gs('dingSmallLow').play()
         s.build_grid()
 
@@ -623,16 +679,16 @@ class SpamWindow:
         spam_loop = not spam_loop
         save_loop_state(spam_loop)
         if spam_loop:
-            bw(s.loop_btn, label='🔄 Loop: ON', color=(0.2, 0.7, 0.2))
-            push('Loop ON', color=(0, 1, 0))
+            bw(s.loop_btn, label='تکرار: روشن', color=(0.2, 0.7, 0.2))
+            push('تکرار روشن شد', color=(0, 1, 0))
         else:
-            bw(s.loop_btn, label='🔄 Loop: OFF', color=(0.7, 0.2, 0.2))
-            push('Loop OFF', color=(1, 0.5, 0))
+            bw(s.loop_btn, label='تکرار: خاموش', color=(0.7, 0.2, 0.2))
+            push('تکرار خاموش شد', color=(1, 0.5, 0))
         gs('dingSmall').play()
 
     def edit_place(s):
         if s.spam_button is None:
-            AR.err('Spam button not found!')
+            AR.err('دکمه اسپم پیدا نشد!')
             return
         try:
             AR.swish(s.w)
