@@ -431,72 +431,81 @@ class AddMsgWindow:
 class SpamWindow:
     def __init__(s, source, spam_button=None):
         s.spam_button = spam_button
-        s.w = AR.cw(source=source, size=(270, 350), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(240, 315))
+        s.w = AR.cw(source=source, size=(290, 340), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(260, 305))
 
-        bw(parent=s.w, label='!', size=(24, 24), position=(214, 315),
+        bw(parent=s.w, label='!', size=(24, 24), position=(234, 305),
            on_activate_call=Call(s.show_help),
            color=(0.3, 0.5, 0.9), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.85)
 
-        tw(parent=s.w, text='اسپم', scale=0.8, position=(135, 316),
+        tw(parent=s.w, text='اسپم', scale=0.85, position=(145, 306),
            h_align='center', color=(1, 0.5, 0.5))
 
-        s.status = tw(parent=s.w, text='اسپم نمی‌کنه',
-                      position=(135, 298), h_align='center',
-                      scale=0.42, color=(1, 1, 0))
+        s.main_scroll = sw(parent=s.w, size=(270, 270), position=(10, 15))
+        s.main_container = cw(parent=s.main_scroll, size=(250, 700), background=False)
 
-        tw(parent=s.w, text='━━━ اسپم سریع ━━━', scale=0.42,
-           position=(135, 280), h_align='center', color=(0.8, 0.8, 1))
+        s.status = tw(parent=s.main_container, text='اسپم نمی‌کنه',
+                      position=(125, 680), h_align='center',
+                      scale=0.45, color=(1, 1, 0))
 
-        s.text_input = tw(parent=s.w, text=spam_single_msg, editable=True, scale=0.68,
-                          position=(20, 255), size=(230, 24),
+        tw(parent=s.main_container, text='━━━ اسپم سریع ━━━', scale=0.42,
+           position=(125, 658), h_align='center', color=(0.8, 0.8, 1))
+
+        s.text_input = tw(parent=s.main_container, text=spam_single_msg, editable=True, scale=0.68,
+                          position=(15, 630), size=(220, 24),
                           h_align='center', color=(0.9, 0.9, 0.9))
 
-        s.delay_input = tw(parent=s.w, text=str(spam_single_delay), editable=True, scale=0.68,
-                           position=(20, 227), size=(95, 24),
+        s.delay_input = tw(parent=s.main_container, text=str(spam_single_delay), editable=True, scale=0.68,
+                           position=(15, 602), size=(95, 24),
                            h_align='center', color=(0.9, 0.9, 0.9))
 
-        tw(parent=s.w, text='ثانیه', scale=0.42, position=(140, 239),
+        tw(parent=s.main_container, text='ثانیه', scale=0.42, position=(135, 614),
            h_align='center', color=(1, 1, 1))
 
-        bw(parent=s.w, label='▶ شروع', size=(110, 26), position=(20, 194),
+        bw(parent=s.main_container, label='▶ شروع', size=(105, 26), position=(15, 570),
            on_activate_call=Call(s.start_current), color=(0.2, 0.7, 0.3),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
-        bw(parent=s.w, label='■ توقف', size=(110, 26), position=(140, 194),
+        bw(parent=s.main_container, label='■ توقف', size=(105, 26), position=(130, 570),
            on_activate_call=Call(s.stop), color=(0.7, 0.2, 0.2),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
-        tw(parent=s.w, text='━━━ لیست پیام‌ها ━━━', scale=0.42,
-           position=(135, 176), h_align='center', color=(0.8, 0.8, 1))
+        tw(parent=s.main_container, text='━━━ لیست پیام‌ها ━━━', scale=0.42,
+           position=(125, 550), h_align='center', color=(0.8, 0.8, 1))
 
-        s.scroll = sw(parent=s.w, size=(230, 75), position=(20, 92))
-        s.container = cw(parent=s.scroll, size=(210, 300), background=False)
+        s.scroll = sw(parent=s.main_container, size=(220, 100), position=(15, 440))
+        s.container = cw(parent=s.scroll, size=(200, 300), background=False)
         s.item_buttons = {}
         s.build_grid()
 
-        bw(parent=s.w, label='+ اضافه', size=(110, 24), position=(20, 62),
+        bw(parent=s.main_container, label='+ اضافه', size=(105, 26), position=(15, 410),
            on_activate_call=Call(s.add_new), color=(0.2, 0.7, 0.3),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
-        s.loop_btn = bw(parent=s.w, label='تکرار: ' + ('روشن' if spam_loop else 'خاموش'),
-                        size=(110, 24), position=(140, 62),
+        s.loop_btn = bw(parent=s.main_container, label='تکرار: ' + ('روشن' if spam_loop else 'خاموش'),
+                        size=(105, 26), position=(130, 410),
                         on_activate_call=Call(s.toggle_loop),
                         color=(0.2, 0.7, 0.2) if spam_loop else (0.7, 0.2, 0.2),
-                        textcolor=(1, 1, 1), button_type='square', text_scale=0.5)
+                        textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
 
-        bw(parent=s.w, label='▶ شروع لیست', size=(110, 26), position=(20, 30),
+        bw(parent=s.main_container, label='▶ شروع لیست', size=(105, 26), position=(15, 378),
            on_activate_call=Call(s.start_list), color=(0.3, 0.6, 0.4),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
 
-        bw(parent=s.w, label='پاک کردن', size=(110, 26), position=(140, 30),
+        bw(parent=s.main_container, label='پاک کردن', size=(105, 26), position=(130, 378),
            on_activate_call=Call(s.clear_all), color=(0.7, 0.3, 0.2),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
 
-        bw(parent=s.w, label='📍 جابجایی', size=(230, 22), position=(20, 4),
+        bw(parent=s.main_container, label='📍 جابجایی دکمه اسپم', size=(220, 26), position=(15, 345),
            on_activate_call=Call(s.edit_place), color=(0.5, 0.3, 0.7),
            textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
+
+        tw(parent=s.main_container, text='(برای پایین‌تر، اسکرول کن)',
+           scale=0.35, position=(125, 320), h_align='center',
+           color=(0.6, 0.6, 0.8))
+
+        cw(s.main_container, size=(250, 700))
 
         gs('swish').play()
 
@@ -577,7 +586,7 @@ class SpamWindow:
                color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1),
                button_type='square', text_scale=0.55)
 
-        cw(s.container, size=(210, total_h))
+        cw(s.container, size=(200, total_h))
 
     def start_current(s):
         global spam_single_msg, spam_single_delay
