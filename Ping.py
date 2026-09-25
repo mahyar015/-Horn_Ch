@@ -23,9 +23,6 @@ import threading
 import time
 import os
 
-# ============================================
-# ⚙️ Global
-# ============================================
 server_ip = "127.0.0.1"
 server_port = 43210
 current_ping = 0.0
@@ -33,9 +30,7 @@ ping_thread = None
 
 SIGNATURE = "By Mahyar"
 
-# ============================================
-# 📍 Position Save/Load
-# ============================================
+
 def get_ping_btn_position(default_x=None, default_y=None):
     try:
         x = app.config.get('ping_btn_x', default_x)
@@ -55,9 +50,6 @@ def save_ping_btn_position(x, y):
     except: pass
 
 
-# ============================================
-# 🌐 Real Ping Thread
-# ============================================
 class RealPingThread(threading.Thread):
     def __init__(self):
         super().__init__()
@@ -97,25 +89,21 @@ class RealPingThread(threading.Thread):
 
 
 def get_ping_icon(ping):
-    """آیکون بر اساس پینگ"""
     try:
         if ping == 0 or ping >= 999:
-            return "⚠️"
+            return "❓"
         elif ping < 100:
-            return "🟢"
+            return "🔵"
         elif ping < 200:
-            return "🟡"
+            return "⚪"
         elif ping < 350:
             return "🟠"
         else:
             return "🔴"
     except:
-        return "⚠️"
+        return "❓"
 
 
-# ============================================
-# ✅ Connection Override
-# ============================================
 from bascenev1 import connect_to_party as _original_connect
 
 def new_connect_to_party(address, port=43210, print_progress=False):
@@ -129,9 +117,6 @@ def new_connect_to_party(address, port=43210, print_progress=False):
 bs.connect_to_party = new_connect_to_party
 
 
-# ============================================
-# 🎨 AR Helper
-# ============================================
 class AR:
     @classmethod
     def UIS(c=0):
@@ -173,9 +158,6 @@ class AR:
             except: pass
 
 
-# ============================================
-# 📍 Edit Place Window
-# ============================================
 class PingEditPlace:
     def __init__(s, source, ping_button):
         s.ping_button = ping_button
@@ -195,23 +177,23 @@ class PingEditPlace:
                 s.parent_w, s.parent_h = float(psize[0]), float(psize[1])
         except: pass
 
-        s.w = AR.cw(source=source, size=(280, 320), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(250, 285))
+        s.w = AR.cw(source=source, size=(300, 320), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(270, 285))
 
-        tw(parent=s.w, text='📍 جابجایی دکمه پینگ', scale=0.8, position=(140, 280),
+        tw(parent=s.w, text='Edit Ping Place', scale=0.9, position=(150, 280),
            h_align='center', color=(0, 1, 1))
-        tw(parent=s.w, text=SIGNATURE, scale=0.3, position=(140, 265),
+        tw(parent=s.w, text=SIGNATURE, scale=0.3, position=(150, 265),
            h_align='center', color=(0.6, 0.6, 0.8))
 
         s.pos_text = tw(parent=s.w, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}',
-                        position=(140, 242), h_align='center', scale=0.55,
+                        position=(150, 242), h_align='center', scale=0.6,
                         color=(1, 1, 0))
-        tw(parent=s.w, text='هر کلیک = ۵ پیکسل', scale=0.4,
-           position=(140, 225), h_align='center', color=(0.7, 0.7, 1))
+        tw(parent=s.w, text='Each click = 5 pixels', scale=0.4,
+           position=(150, 225), h_align='center', color=(0.7, 0.7, 1))
 
         arrow_size = (55, 42)
         arrow_color = (0.3, 0.5, 0.8)
-        cx = 140
+        cx = 150
 
         bw(parent=s.w, label='^', size=arrow_size,
            position=(cx - 27, 175),
@@ -237,9 +219,9 @@ class PingEditPlace:
            color=arrow_color, textcolor=(1, 1, 1),
            button_type='square', text_scale=1.1)
 
-        bw(parent=s.w, label='💾 ذخیره', size=(180, 32), position=(cx - 90, 30),
+        bw(parent=s.w, label='Save', size=(200, 32), position=(cx - 100, 30),
            on_activate_call=s.save, color=(0.2, 0.7, 0.3),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
+           textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
 
         gs('swish').play()
 
@@ -267,23 +249,19 @@ class PingEditPlace:
 
     def save(s):
         save_ping_btn_position(s.current_x, s.current_y)
-        push(f'ذخیره شد: X={int(s.current_x)} Y={int(s.current_y)}', color=(0, 1, 0))
+        push(f'Saved: X={int(s.current_x)} Y={int(s.current_y)}', color=(0, 1, 0))
         gs('dingSmallHigh').play()
 
 
-# ============================================
-# 🎯 Ping Window
-# ============================================
 class PingWindow:
     def __init__(s, source, ping_button=None):
         s.ping_button = ping_button
         s.w = AR.cw(source=source, size=(260, 220), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(230, 185))
 
-        tw(parent=s.w, text='🏓 Ping', scale=0.9, position=(130, 180),
+        tw(parent=s.w, text='Ping', scale=0.9, position=(130, 180),
            h_align='center', color=(0, 1, 1))
 
-        # نمایش پینگ فعلی
         s.ping_text = tw(
             parent=s.w,
             text=f'Current: {current_ping} ms',
@@ -291,7 +269,6 @@ class PingWindow:
             scale=0.7, color=(1, 1, 0)
         )
 
-        # توضیح
         tw(parent=s.w, text='Server:',
            position=(130, 115), h_align='center',
            scale=0.45, color=(0.8, 0.8, 1))
@@ -303,21 +280,18 @@ class PingWindow:
             scale=0.45, color=(0.8, 0.8, 1)
         )
 
-        # دکمه ارسال به چت
-        bw(parent=s.w, label='📤 ارسال پینگ به چت',
+        bw(parent=s.w, label='Send Ping to Chat',
            size=(180, 32), position=(40, 50),
            on_activate_call=s.send_ping,
            color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
+           button_type='square', text_scale=0.65)
 
-        # دکمه Edit Place
-        bw(parent=s.w, label='📍 جابجایی دکمه',
+        bw(parent=s.w, label='Edit Place',
            size=(180, 28), position=(40, 15),
            on_activate_call=s.edit_place,
            color=(0.5, 0.3, 0.7), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.6)
+           button_type='square', text_scale=0.65)
 
-        # آپدیت خودکار پینگ تو پنجره
         s.update_ping()
 
         gs('swish').play()
@@ -326,8 +300,7 @@ class PingWindow:
         try:
             if not s.w.exists():
                 return
-            icon = get_ping_icon(current_ping)
-            tw(s.ping_text, text=f'Current: {icon} {current_ping} ms')
+            tw(s.ping_text, text=f'Current: {current_ping} ms')
             s.ping_text_update_timer = teck(0.5, s.update_ping)
         except:
             pass
@@ -340,14 +313,14 @@ class PingWindow:
             else:
                 msg = f'My Ping : {icon} {int(current_ping)}'
             CM(msg)
-            push(f'✅ ارسال شد: {msg}', color=(0, 1, 0))
+            push(f'Sent: {msg}', color=(0, 1, 0))
             gs('dingSmallHigh').play()
         except Exception as e:
-            push(f'❌ خطا: {e}', color=(1, 0, 0))
+            push(f'Error: {e}', color=(1, 0, 0))
 
     def edit_place(s):
         if s.ping_button is None:
-            push('دکمه پینگ پیدا نشد!', color=(1, 0, 0))
+            push('Ping button not found!', color=(1, 0, 0))
             return
         try:
             AR.swish(s.w)
@@ -356,22 +329,17 @@ class PingWindow:
             print(f"[Ping] edit_place error: {e}")
 
 
-# ============================================
-# 🎯 Main Plugin
-# ============================================
 # ba_meta require api 9
 # ba_meta export babase.Plugin
 class PingBot(Plugin):
     def __init__(s):
         global ping_thread
 
-        # شروع thread پینگ
         ping_thread = RealPingThread()
         ping_thread.start()
 
         teck(3.0, lambda: push("Creat By Mahyar", color=(0.4, 0.8, 1.0)))
 
-        # Override PartyWindow
         from bauiv1lib import party
         o = party.PartyWindow.__init__
 
@@ -379,7 +347,6 @@ class PingBot(Plugin):
             r = o(self, *a, **k)
 
             try:
-                # موقعیت پیش‌فرض: جای BsRush
                 default_x = self._width - 570
                 default_y = self._height - 80
                 ping_x, ping_y = get_ping_btn_position(default_x, default_y)
