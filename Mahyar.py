@@ -48,8 +48,6 @@ DEFAULT_REACTIONS = {'fr': 'u', 'cu': 'h', 'fl': 'fl'}
 DEFAULT_COOLDOWNS = {'fr': 5.0, 'cu': 5.0, 'fl': 5.0}
 DEFAULT_COOLDOWN = 5.0
 DEFAULT_AUTO_REPLIES = {}
-DEFAULT_FILTER_WORDS = []
-DEFAULT_FILTER_REPLY = 'u'
 
 
 def get_limits():
@@ -1470,8 +1468,8 @@ class EditPlaceWindow:
 
 
 class ModsMenu:
-    def __init__(s, source, mods_button=None):
-        s.mods_button_ref = mods_button
+    def __init__(s, source):
+        s.mods_button_ref = source
         s.w = AR.cw(source=source, size=(400, 620), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(370, 580))
 
@@ -1867,7 +1865,4 @@ class byMahyar(Plugin):
             print(f"Error in reconnect_ear: {e}")
 
     def delayed_open(s, cls, btn):
-        if cls is ModsMenu:
-            teck(0.05, lambda: cls(btn, btn))
-        else:
-            teck(0.05, lambda: cls(btn))
+        teck(0.05, lambda: cls(btn))
