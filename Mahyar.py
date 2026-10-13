@@ -1,3 +1,4 @@
+
 from babase import Plugin
 from bauiv1 import (
     containerwidget as cw,
@@ -48,6 +49,8 @@ DEFAULT_REACTIONS = {'fr': 'u', 'cu': 'h', 'fl': 'fl'}
 DEFAULT_COOLDOWNS = {'fr': 5.0, 'cu': 5.0, 'fl': 5.0}
 DEFAULT_COOLDOWN = 5.0
 DEFAULT_AUTO_REPLIES = {}
+DEFAULT_FILTER_WORDS = []
+DEFAULT_FILTER_REPLY = 'u'
 
 
 def get_limits():
@@ -174,14 +177,46 @@ def save_mods_button_position(x, y):
         pass
 
 
+def get_filter_words():
+    try:
+        return list(app.config.get('mahyar_filter_words', []))
+    except:
+        return []
+
+
+def save_filter_words(words):
+    try:
+        app.config['mahyar_filter_words'] = list(words)
+        app.config.commit()
+    except:
+        pass
+
+
+def get_filter_reply():
+    try:
+        return app.config.get('mahyar_filter_reply', 'u')
+    except:
+        return 'u'
+
+
+def save_filter_reply(value):
+    try:
+        app.config['mahyar_filter_reply'] = str(value)
+        app.config.commit()
+    except:
+        pass
+
+
 auto_react_enabled = get_enabled_state('react', True)
 auto_reply_enabled = get_enabled_state('reply', True)
 auto_buyer_enabled = get_enabled_state('buyer', True)
+filter_enabled = get_enabled_state('filter', True)
 
 processed_sell_ids = set()
 processed_buy_ids = set()
 react_cooldown = {}
 auto_reply_cooldown = {}
+filter_cooldown = {}
 
 spam_active = False
 spam_message = ""
@@ -321,6 +356,44 @@ def check_auto_reply(msg):
                 return True
     except Exception as e:
         print(f"Auto-Reply error: {e}")
+    return False
+
+
+def check_filter(msg):
+    if not filter_enabled: return False
+    try:
+        sender = None; content = msg
+        if ': ' in msg:
+            parts = msg.split(': ', 1)
+            sender = parts[0].strip(); content = parts[1].strip()
+
+        if sender and my_own_name and sender == my_own_name:
+            return False
+
+        words = get_filter_words()
+        if not words:
+            return False
+
+        content_lower = content.lower()
+        for word in words:
+            if word and word in content_lower:
+                reply = get_filter_reply()
+                cd_key = f"filter_{sender or 'unknown'}"
+                current_time = time.time()
+                last_time = filter_cooldown.get(cd_key, 0)
+                if current_time - last_time < 2.0:
+                    continue
+                filter_cooldown[cd_key] = current_time
+                if len(filter_cooldown) > 50:
+                    now = time.time()
+                    to_del = [k for k, v in filter_cooldown.items() if now - v > 60]
+                    for k in to_del: del filter_cooldown[k]
+                safe_chat_send(reply)
+                try: gs('dingSmall').play()
+                except: pass
+                return True
+    except Exception as e:
+        print(f"Filter error: {e}")
     return False
 
 
@@ -976,159 +1049,309 @@ class EditLimitsWindow:
         AR.swish(s.w)
 
 
-class FLWWindow:
+class PingWindow:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(320, 400), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(290, 365))
+        s.w = AR.cw(source=source, size=(320, 380), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(290, 345))
 
-        tw(parent=s.w, text='FLW / Ping', scale=1.0, position=(160, 360),
+        tw(parent=s.w, text='Server Ping', scale=1.0, position=(160, 340),
            h_align='center', color=(0, 1, 1))
 
-        s.ping_text = tw(parent=s.w, text='Ping: -- ms', scale=1.0, position=(160, 320),
+        s.ping_text = tw(parent=s.w, text='-- ms', scale=2.0, position=(160, 280),
                          h_align='center', color=(1, 1, 0))
 
-        s.status_text = tw(parent=s.w, text='Ready', scale=0.6, position=(160, 295),
+        s.status_text = tw(parent=s.w, text='Checking...', scale=0.6, position=(160, 245),
                            h_align='center', color=(0.7, 1, 0.7))
 
-        tw(parent=s.w, text='Number of pings:', scale=0.55, position=(160, 265),
+        s.ip_text = tw(parent=s.w, text='IP: --', scale=0.55, position=(160, 215),
+                       h_align='center', color=(0.8, 0.8, 1))
+
+        s.port_text = tw(parent=s.w, text='Port: --', scale=0.55, position=(160, 195),
+                         h_align='center', color=(0.8, 0.8, 1))
+
+        s.count_text = tw(parent=s.w, text='Pings sent: 0', scale=0.5, position=(160, 165),
+                          h_align='center', color=(0.7, 0.7, 1))
+
+        s.best_text = tw(parent=s.w, text='Best: --   Worst: --', scale=0.5, position=(160, 145),
+                         h_align='center', color=(0.7, 0.9, 0.7))
+
+        bw(parent=s.w, label='Refresh Now', size=(140, 35), position=(20, 90),
+           on_activate_call=s.update_ping,
+           color=(0.3, 0.6, 0.3), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.7)
+
+        bw(parent=s.w, label='Send to Chat', size=(140, 35), position=(160, 90),
+           on_activate_call=s.send_ping_to_chat,
+           color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.7)
+
+        bw(parent=s.w, label='Reset Stats', size=(280, 30), position=(20, 45),
+           on_activate_call=s.reset_stats,
+           color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.7)
+
+        tw(parent=s.w, text='Auto updates every 1s', scale=0.4, position=(160, 15),
+           h_align='center', color=(0.6, 0.6, 0.8))
+
+        s.ping_count = 0
+        s.best_ping = None
+        s.worst_ping = None
+        s.current_ping = None
+        s.timer = None
+
+        s.update_ping()
+        gs('swish').play()
+
+    def update_ping(s):
+        try:
+            conn = get_connection_info()
+            if not conn:
+                tw(s.ping_text, text='No Server', color=(1, 0.5, 0))
+                tw(s.status_text, text='Not connected', color=(1, 0.5, 0))
+                tw(s.ip_text, text='IP: --')
+                tw(s.port_text, text='Port: --')
+                s._schedule_next()
+                return
+
+            ip = getattr(conn, 'address', None)
+            port = getattr(conn, 'port', None)
+
+            if not ip or not port:
+                tw(s.ping_text, text='N/A', color=(1, 0.5, 0))
+                s._schedule_next()
+                return
+
+            tw(s.ip_text, text=f'IP: {ip}')
+            tw(s.port_text, text=f'Port: {port}')
+
+            ping_ms = s._measure_ping(ip, int(port))
+
+            if ping_ms is None:
+                tw(s.ping_text, text='TIMEOUT', color=(1, 0, 0))
+                tw(s.status_text, text='No response', color=(1, 0.5, 0))
+                s._schedule_next()
+                return
+
+            s.current_ping = ping_ms
+            s.ping_count += 1
+
+            if s.best_ping is None or ping_ms < s.best_ping:
+                s.best_ping = ping_ms
+            if s.worst_ping is None or ping_ms > s.worst_ping:
+                s.worst_ping = ping_ms
+
+            ping_int = int(ping_ms)
+            tw(s.ping_text, text=f'{ping_int} ms')
+
+            if ping_int < 100:
+                color = (0, 1, 0)
+                status = 'Excellent'
+            elif ping_int < 200:
+                color = (0.5, 1, 0)
+                status = 'Good'
+            elif ping_int < 400:
+                color = (1, 1, 0)
+                status = 'Average'
+            elif ping_int < 800:
+                color = (1, 0.5, 0)
+                status = 'Poor'
+            else:
+                color = (1, 0, 0)
+                status = 'Bad'
+
+            tw(s.ping_text, color=color)
+            tw(s.status_text, text=status, color=color)
+            tw(s.count_text, text=f'Pings sent: {s.ping_count}')
+            tw(s.best_text, text=f'Best: {int(s.best_ping)}   Worst: {int(s.worst_ping)}')
+
+        except Exception as e:
+            print(f"Ping update error: {e}")
+            tw(s.ping_text, text='Error', color=(1, 0, 0))
+
+        s._schedule_next()
+
+    def _measure_ping(s, ip, port):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2.0)
+            start = time.time()
+            try:
+                sock.connect((ip, port))
+                latency = (time.time() - start) * 1000
+                return latency
+            except:
+                return None
+            finally:
+                try: sock.close()
+                except: pass
+        except:
+            return None
+
+    def _schedule_next(s):
+        try:
+            if s.timer:
+                try: s.timer.cancel()
+                except: pass
+            s.timer = teck(1.0, s.update_ping)
+        except: pass
+
+    def send_ping_to_chat(s):
+        try:
+            if s.current_ping is not None:
+                safe_chat_send(f'Ping: {int(s.current_ping)} ms')
+                bui.screenmessage('Ping sent to chat', color=(0, 1, 0))
+                gs('dingSmall').play()
+            else:
+                AR.err('No ping data yet!')
+        except Exception as e:
+            AR.err(f'Error: {e}')
+
+    def reset_stats(s):
+        s.ping_count = 0
+        s.best_ping = None
+        s.worst_ping = None
+        tw(s.count_text, text='Pings sent: 0')
+        tw(s.best_text, text='Best: --   Worst: --')
+        bui.screenmessage('Stats reset', color=(0, 1, 1))
+        gs('dingSmallHigh').play()
+
+
+class FilterWindow:
+    def __init__(s, source):
+        s.w = AR.cw(source=source, size=(340, 420), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(310, 385))
+
+        tw(parent=s.w, text='Word Filter', scale=1.0, position=(170, 380),
+           h_align='center', color=(0, 1, 1))
+
+        s.status_text = tw(parent=s.w, text='Filter: ON' if filter_enabled else 'Filter: OFF',
+                           scale=0.6, position=(170, 355),
+                           h_align='center',
+                           color=(0, 1, 0) if filter_enabled else (1, 0.5, 0))
+
+        tw(parent=s.w, text='Banned Words:', scale=0.55, position=(170, 330),
            h_align='center', color=(1, 1, 1))
 
-        s.count = 5
-        s.count_btns = {}
+        s.scroll = sw(parent=s.w, size=(300, 180), position=(20, 140))
+        s.container = cw(parent=s.scroll, size=(280, 400), background=False)
+        s.item_buttons = []
+        s.build_grid()
 
-        for i, val in enumerate([1, 3, 5, 10, 20]):
-            btn = bw(
-                parent=s.w, label=str(val), size=(45, 30),
-                position=(25 + i * 56, 225),
-                on_activate_call=lambda v=val: s.set_count(v),
-                color=(0.3, 0.6, 0.3) if val == 5 else (0.35, 0.35, 0.5),
-                textcolor=(1, 1, 1), button_type='square', text_scale=0.7
-            )
-            s.count_btns[val] = btn
+        bw(parent=s.w, label='+ Add', size=(90, 30), position=(20, 95),
+           on_activate_call=s.add_word,
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.7)
 
-        tw(parent=s.w, text='Interval (sec):', scale=0.55, position=(160, 195),
+        bw(parent=s.w, label='Clear All', size=(90, 30), position=(125, 95),
+           on_activate_call=s.clear_all,
+           color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.7)
+
+        s.toggle_btn = bw(parent=s.w, label='ON' if filter_enabled else 'OFF', size=(90, 30), position=(230, 95),
+                          on_activate_call=s.toggle,
+                          color=(0.2, 0.7, 0.2) if filter_enabled else (0.7, 0.2, 0.2),
+                          textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
+
+        tw(parent=s.w, text='Reply:', scale=0.55, position=(170, 65),
            h_align='center', color=(1, 1, 1))
 
-        s.interval = 0.5
-        s.interval_btns = {}
+        s.reply_input = tw(parent=s.w, text=get_filter_reply(), editable=True,
+                           scale=0.8, position=(30, 30), size=(280, 28),
+                           h_align='center', color=(0.9, 0.9, 0.9))
 
-        for i, val in enumerate([0.2, 0.5, 1.0, 2.0]):
-            btn = bw(
-                parent=s.w, label=str(val), size=(65, 28),
-                position=(25 + i * 70, 155),
-                on_activate_call=lambda v=val: s.set_interval(v),
-                color=(0.3, 0.6, 0.3) if val == 0.5 else (0.35, 0.35, 0.5),
-                textcolor=(1, 1, 1), button_type='square', text_scale=0.6
-            )
-            s.interval_btns[val] = btn
-
-        s.start_btn = bw(
-            parent=s.w, label='Send Ping', size=(140, 45),
-            position=(20, 95),
-            on_activate_call=s.start_ping,
-            color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
-            button_type='square', text_scale=0.8
-        )
-
-        bw(
-            parent=s.w, label='Refresh', size=(140, 45),
-            position=(160, 95),
-            on_activate_call=s.update_ping_display,
-            color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
-            button_type='square', text_scale=0.8
-        )
-
-        s.sending = False
-        s.ping_timer = None
-        s.current_ping_count = 0
-
-        s.update_ping_display()
+        bw(parent=s.w, label='Save Reply', size=(120, 28), position=(110, -5),
+           on_activate_call=s.save_reply,
+           color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.65)
 
         gs('swish').play()
 
-    def set_count(s, val):
-        s.count = val
-        for v, btn in s.count_btns.items():
-            try:
-                bw(btn, color=(0.3, 0.6, 0.3) if v == val else (0.35, 0.35, 0.5))
-            except: pass
-        gs('click01').play()
+    def build_grid(s):
+        for child in s.container.get_children(): child.delete()
+        s.item_buttons.clear()
 
-    def set_interval(s, val):
-        s.interval = val
-        for v, btn in s.interval_btns.items():
-            try:
-                bw(btn, color=(0.3, 0.6, 0.3) if v == val else (0.35, 0.35, 0.5))
-            except: pass
-        gs('click01').play()
+        words = get_filter_words()
+        row_height = 30
+        total_h = len(words) * row_height + 20
 
-    def update_ping_display(s):
-        try:
-            conn = get_connection_info()
-            ping_str = '--'
-            if conn:
-                addr = getattr(conn, 'address', None)
-                port = getattr(conn, 'port', None)
-                if addr and port:
-                    ping_str = s.calculate_ping(addr, port)
-            tw(s.ping_text, text=f'Ping: {ping_str} ms')
-        except:
-            tw(s.ping_text, text='Ping: Error')
+        if not words:
+            tw(parent=s.container, text='No banned words',
+               position=(140, 60), scale=0.7, color=(1, 0.5, 0),
+               h_align='center')
+        else:
+            for i, word in enumerate(words):
+                y = total_h - (i + 1) * row_height
+                tw(parent=s.container, text=f'{i+1}. {word}',
+                   position=(10, y), scale=0.6, color=(1, 1, 1),
+                   maxwidth=220, h_align='left')
+                bw(parent=s.container, label='X', size=(28, 24), position=(240, y),
+                   on_activate_call=lambda w=word: s.delete_word(w),
+                   color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1),
+                   button_type='square', text_scale=0.6)
+
+        cw(s.container, size=(280, max(60, total_h)))
+
+    def add_word(s):
+        def _save():
+            w = tw(query=word_input).strip().lower()
+            if not w:
+                AR.err('Enter a word!')
+                return
+            words = get_filter_words()
+            if w in words:
+                AR.err('Word already exists!')
+                return
+            words.append(w)
+            save_filter_words(words)
+            bui.screenmessage(f'Added: {w}', color=(0, 1, 0))
+            gs('dingSmallHigh').play()
+            AR.swish(win)
+            s.build_grid()
+
+        win = AR.cw(source=s.w, size=(300, 160), ps=AR.UIS() * 0.3)
+        AR.add_close_button(win, position=(270, 125))
+        tw(parent=win, text='New Banned Word:', scale=0.7, position=(150, 120),
+           h_align='center', color=(1, 1, 1))
+        word_input = tw(parent=win, text='', editable=True, scale=0.85,
+                        position=(30, 75), size=(240, 30),
+                        h_align='center', color=(0.9, 0.9, 0.9))
+        bw(parent=win, label='Save', size=(100, 30), position=(100, 20),
+           on_activate_call=_save,
+           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
+           button_type='square', text_scale=0.7)
+
+    def delete_word(s, word):
+        words = get_filter_words()
+        if word in words:
+            words.remove(word)
+            save_filter_words(words)
+            bui.screenmessage(f'Removed: {word}', color=(1, 0.5, 0))
+            gs('dingSmallLow').play()
+            s.build_grid()
+
+    def clear_all(s):
+        save_filter_words([])
+        bui.screenmessage('Cleared!', color=(1, 0.5, 0))
+        gs('dingSmallLow').play()
+        s.build_grid()
+
+    def toggle(s):
+        global filter_enabled
+        filter_enabled = not filter_enabled
+        save_enabled_state('filter', filter_enabled)
+        if filter_enabled:
+            bw(s.toggle_btn, label='ON', color=(0.2, 0.7, 0.2))
+            tw(s.status_text, text='Filter: ON', color=(0, 1, 0))
+        else:
+            bw(s.toggle_btn, label='OFF', color=(0.7, 0.2, 0.2))
+            tw(s.status_text, text='Filter: OFF', color=(1, 0.5, 0))
         gs('dingSmall').play()
 
-    def calculate_ping(s, ip, port):
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1.0)
-            start = time.time()
-            try:
-                sock.connect((ip, int(port)))
-                latency = (time.time() - start) * 1000
-                return f'{latency:.0f}'
-            except:
-                return '?'
-            finally:
-                sock.close()
-        except:
-            return '?'
-
-    def start_ping(s):
-        if s.sending:
-            s.stop_ping()
-            return
-
-        s.sending = True
-        s.current_ping_count = 0
-        bw(s.start_btn, label='Stop', color=(0.7, 0.2, 0.2))
-        tw(s.status_text, text=f'Sending {s.count} pings...', color=(1, 1, 0))
-        s.send_one_ping()
-
-    def send_one_ping(s):
-        if not s.sending: return
-        if s.current_ping_count >= s.count:
-            s.stop_ping()
-            return
-
-        try:
-            safe_chat_send('flw')
-            s.current_ping_count += 1
-            tw(s.status_text, text=f'Sent {s.current_ping_count}/{s.count}', color=(0, 1, 0))
-            gs('dingSmall').play()
-        except Exception as e:
-            print(f"Ping error: {e}")
-
-        if s.sending and s.current_ping_count < s.count:
-            s.ping_timer = teck(s.interval, s.send_one_ping)
-
-    def stop_ping(s):
-        s.sending = False
-        if s.ping_timer:
-            try: s.ping_timer.cancel()
-            except: pass
-            s.ping_timer = None
-        bw(s.start_btn, label='Send Ping', color=(0.2, 0.7, 0.3))
-        tw(s.status_text, text='Stopped', color=(1, 0.5, 0))
-        gs('dingSmallLow').play()
+    def save_reply(s):
+        value = tw(query=s.reply_input).strip()
+        save_filter_reply(value if value else 'u')
+        bui.screenmessage(f'Reply set: {value}', color=(0, 1, 0))
+        gs('dingSmallHigh').play()
 
 
 class EditPlaceWindow:
@@ -1250,13 +1473,13 @@ class EditPlaceWindow:
 class ModsMenu:
     def __init__(s, source, mods_button=None):
         s.mods_button_ref = mods_button
-        s.w = AR.cw(source=source, size=(400, 560), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(370, 520))
+        s.w = AR.cw(source=source, size=(400, 620), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(370, 580))
 
-        tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 515), h_align='center', color=(0, 1, 1))
+        tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 575), h_align='center', color=(0, 1, 1))
 
-        s.scroll = sw(parent=s.w, size=(340, 460), position=(30, 25))
-        s.container = cw(parent=s.scroll, size=(320, 820), background=False)
+        s.scroll = sw(parent=s.w, size=(340, 520), position=(30, 25))
+        s.container = cw(parent=s.scroll, size=(320, 900), background=False)
 
         buttons = [
             ('Calculator', Calculator, (0, 0.3, 0.8)),
@@ -1265,12 +1488,13 @@ class ModsMenu:
             ('Auto Reply', AutoReplyEditorWindow, (0.3, 0.7, 0.4)),
             ('Spam', SpamWindow, (0.8, 0.3, 0.3)),
             ('Reconnect', ReconnectWindow, (0.4, 0.6, 0.4)),
-            ('FLW / Ping', FLWWindow, (0.6, 0.8, 0.4)),
+            ('Ping', PingWindow, (0.3, 0.7, 0.9)),
+            ('Filter', FilterWindow, (0.7, 0.4, 0.9)),
             ('Edit Place', None, (0.6, 0.4, 0.7)),
         ]
 
         s.item_buttons = []
-        y_pos = 760
+        y_pos = 840
         for label, cls, color in buttons:
             btn = bw(
                 parent=s.container,
@@ -1286,7 +1510,7 @@ class ModsMenu:
             s.item_buttons.append(btn)
             y_pos -= 65
 
-        cw(s.container, size=(320, 820))
+        cw(s.container, size=(320, 900))
 
         gs('swish').play()
 
@@ -1585,6 +1809,9 @@ class byMahyar(Plugin):
                 if check_auto_reply(msg): return
             except: pass
             try:
+                if check_filter(msg): return
+            except: pass
+            try:
                 check_reaction(msg)
             except: pass
 
@@ -1645,3 +1872,4 @@ class byMahyar(Plugin):
             teck(0.05, lambda: cls(btn, btn))
         else:
             teck(0.05, lambda: cls(btn))
+```
