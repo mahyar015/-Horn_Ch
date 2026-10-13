@@ -1,4 +1,3 @@
-
 from babase import Plugin
 from bauiv1 import (
     containerwidget as cw,
@@ -1872,4 +1871,3 @@ class byMahyar(Plugin):
             teck(0.05, lambda: cls(btn, btn))
         else:
             teck(0.05, lambda: cls(btn))
-```
