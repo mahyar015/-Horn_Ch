@@ -662,7 +662,8 @@ class AddReactionWindow:
 
 class ReactionEditorWindow:
     def __init__(s, source, parent_window=None):
-        s.parent_window = parent_window        s.w = AR.cw(source=source, size=(300, 380), ps=AR.UIS() * 0.3)
+        s.parent_window = parent_window
+        s.w = AR.cw(source=source, size=(300, 380), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(270, 345))
         tw(parent=s.w, text='Auto React', scale=0.9, position=(150, 340), h_align='center', color=(0, 1, 1))
         s.id_text = tw(parent=s.w, text=f'cid={my_own_client_id or "?"} num={my_own_display_num if my_own_display_num is not None else "?"}', position=(150, 308), scale=0.35, h_align='center', color=(0, 1, 1))
