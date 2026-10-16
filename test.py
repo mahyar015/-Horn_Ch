@@ -1296,7 +1296,6 @@ class ModsMenu:
 
         # اسکرول
         s.scroll = sw(parent=s.w, size=(340, 520), position=(30, 25))
-        s.container = cw(parent=s.scroll, size=(320, 1200), background=False)
 
         buttons = [
             ('Calculator', Calculator, (0, 0.3, 0.8)),
@@ -1309,14 +1308,22 @@ class ModsMenu:
             ('Edit Place', None, (0.6, 0.4, 0.7)),
         ]
 
-        s.item_buttons = []
         num_buttons = len(buttons)
         row_h = 65
+        buttons_h = num_buttons * row_h
 
-        # ارتفاع کل دکمه‌ها
-        total_h = num_buttons * row_h
-        # شروع از بالای محتوا
-        y_pos = total_h - row_h
+        # فضای اضافی بالا و پایین
+        top_padding = 300
+        bottom_padding = 300
+
+        # ارتفاع کل کانتینر = فضای بالا + دکمه‌ها + فضای پایین
+        total_h = top_padding + buttons_h + bottom_padding
+
+        s.container = cw(parent=s.scroll, size=(320, total_h), background=False)
+
+        s.item_buttons = []
+        # دکمه‌ها از بالای محتوا (بعد از top_padding) شروع بشن
+        y_pos = total_h - top_padding - row_h
 
         for label, cls, color in buttons:
             btn = bw(
@@ -1333,8 +1340,8 @@ class ModsMenu:
             s.item_buttons.append(btn)
             y_pos -= row_h
 
-        # ارتفاع کانتینر = ارتفاع دکمه‌ها + کمی فضای اضافی
-        cw(s.container, size=(320, total_h + 30))
+        # ارتفاع نهایی کانتینر
+        cw(s.container, size=(320, total_h))
 
         gs('swish').play()
 
