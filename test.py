@@ -1294,7 +1294,7 @@ class ModsMenu:
 
         tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 575), h_align='center', color=(0, 1, 1))
 
-        # اسکرول حالت قبلی
+        # اسکرول
         s.scroll = sw(parent=s.w, size=(340, 520), position=(30, 25))
         s.container = cw(parent=s.scroll, size=(320, 1200), background=False)
 
@@ -1312,9 +1312,10 @@ class ModsMenu:
         s.item_buttons = []
         num_buttons = len(buttons)
         row_h = 65
+
         # ارتفاع کل دکمه‌ها
-        total_h = num_buttons * row_h + 40
-        # دکمه‌ها از بالای محتوا شروع بشن
+        total_h = num_buttons * row_h
+        # شروع از بالای محتوا
         y_pos = total_h - row_h
 
         for label, cls, color in buttons:
@@ -1332,8 +1333,8 @@ class ModsMenu:
             s.item_buttons.append(btn)
             y_pos -= row_h
 
-        # فضای بسیار بیشتر از پایین تا Edit Place راحت دیده بشه
-        cw(s.container, size=(320, total_h + 500))
+        # ارتفاع کانتینر = ارتفاع دکمه‌ها + کمی فضای اضافی
+        cw(s.container, size=(320, total_h + 30))
 
         gs('swish').play()
 
