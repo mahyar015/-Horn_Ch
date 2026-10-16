@@ -288,15 +288,8 @@ def get_my_ids():
             display = entry.get('display_string', '')
             if display.endswith(my_own_name):
                 my_own_client_id = entry.get('client_id')
-                players = entry.get('players', [])
-                if players:
-                    name_full = players[0].get('name_full', '')
-                    # فرمت معمولاً "#1 name" یا "1 name" هست
-                    if name_full:
-                        m = re.match(r'^#?(\d+)', name_full.strip())
-                        if m:
-                            try: my_own_display_num = int(m.group(1))
-                            except: my_own_display_num = None
+                # توی BombSquad شماره‌ی چت همون client_id هست
+                my_own_display_num = my_own_client_id
                 return my_own_client_id, my_own_display_num
         return None, None
     except Exception as e:
@@ -669,8 +662,7 @@ class AddReactionWindow:
 
 class ReactionEditorWindow:
     def __init__(s, source, parent_window=None):
-        s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(300, 380), ps=AR.UIS() * 0.3)
+        s.parent_window = parent_window        s.w = AR.cw(source=source, size=(300, 380), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(270, 345))
         tw(parent=s.w, text='Auto React', scale=0.9, position=(150, 340), h_align='center', color=(0, 1, 1))
         s.id_text = tw(parent=s.w, text=f'cid={my_own_client_id or "?"} num={my_own_display_num if my_own_display_num is not None else "?"}', position=(150, 308), scale=0.35, h_align='center', color=(0, 1, 1))
@@ -1051,51 +1043,39 @@ class EditLimitsWindow:
 
 class FilterWindow:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(340, 360), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(310, 325))
+        s.w = AR.cw(source=source, size=(340, 280), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(310, 245))
 
-        tw(parent=s.w, text='Word Filter', scale=1.0, position=(170, 320),
+        tw(parent=s.w, text='Word Filter', scale=1.0, position=(170, 240),
            h_align='center', color=(0, 1, 1))
 
         s.status_text = tw(parent=s.w, text='Filter: ON' if filter_enabled else 'Filter: OFF',
-                           scale=0.6, position=(170, 298),
+                           scale=0.6, position=(170, 218),
                            h_align='center',
                            color=(0, 1, 0) if filter_enabled else (1, 0.5, 0))
 
-        tw(parent=s.w, text='Banned Words:', scale=0.55, position=(170, 275),
+        tw(parent=s.w, text='Banned Words:', scale=0.55, position=(170, 195),
            h_align='center', color=(1, 1, 1))
 
-        s.scroll = sw(parent=s.w, size=(300, 140), position=(20, 120))
+        s.scroll = sw(parent=s.w, size=(300, 140), position=(20, 40))
         s.container = cw(parent=s.scroll, size=(280, 400), background=False)
         s.item_buttons = []
         s.build_grid()
 
-        bw(parent=s.w, label='+ Add', size=(90, 28), position=(20, 80),
+        bw(parent=s.w, label='+ Add', size=(90, 28), position=(20, 5),
            on_activate_call=s.add_word,
            color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.7)
 
-        bw(parent=s.w, label='Clear All', size=(90, 28), position=(125, 80),
+        bw(parent=s.w, label='Clear All', size=(90, 28), position=(125, 5),
            on_activate_call=s.clear_all,
            color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1),
            button_type='square', text_scale=0.7)
 
-        s.toggle_btn = bw(parent=s.w, label='ON' if filter_enabled else 'OFF', size=(90, 28), position=(230, 80),
+        s.toggle_btn = bw(parent=s.w, label='ON' if filter_enabled else 'OFF', size=(90, 28), position=(230, 5),
                           on_activate_call=s.toggle,
                           color=(0.2, 0.7, 0.2) if filter_enabled else (0.7, 0.2, 0.2),
                           textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
-
-        tw(parent=s.w, text='Reply:', scale=0.55, position=(170, 52),
-           h_align='center', color=(1, 1, 1))
-
-        s.reply_input = tw(parent=s.w, text=get_filter_reply(), editable=True,
-                           scale=0.8, position=(30, 20), size=(280, 26),
-                           h_align='center', color=(0.9, 0.9, 0.9))
-
-        bw(parent=s.w, label='Save Reply', size=(120, 26), position=(110, -12),
-           on_activate_call=s.save_reply,
-           color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.65)
 
         gs('swish').play()
 
@@ -1179,12 +1159,6 @@ class FilterWindow:
             bw(s.toggle_btn, label='OFF', color=(0.7, 0.2, 0.2))
             tw(s.status_text, text='Filter: OFF', color=(1, 0.5, 0))
         gs('dingSmall').play()
-
-    def save_reply(s):
-        value = tw(query=s.reply_input).strip()
-        save_filter_reply(value if value else 'u')
-        bui.screenmessage(f'Reply set: {value}', color=(0, 1, 0))
-        gs('dingSmallHigh').play()
 
 
 class EditPlaceWindow:
@@ -1311,9 +1285,9 @@ class ModsMenu:
 
         tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 575), h_align='center', color=(0, 1, 1))
 
-        # اسکرول بزرگ‌تر برای دیدن همه دکمه‌ها
-        s.scroll = sw(parent=s.w, size=(340, 530), position=(30, 20))
-        s.container = cw(parent=s.scroll, size=(320, 2000), background=False)
+        # اسکرول به حالت قبلی
+        s.scroll = sw(parent=s.w, size=(340, 520), position=(30, 25))
+        s.container = cw(parent=s.scroll, size=(320, 1200), background=False)
 
         buttons = [
             ('Calculator', Calculator, (0, 0.3, 0.8)),
@@ -1329,9 +1303,8 @@ class ModsMenu:
         s.item_buttons = []
         num_buttons = len(buttons)
         row_h = 65
-        # ارتفاع کل محتوا
+        # دکمه‌ها از بالای محتوا شروع بشن
         total_h = num_buttons * row_h + 40
-        # دکمه‌ها از بالا به پایین چیده بشن
         y_pos = total_h - row_h
 
         for label, cls, color in buttons:
@@ -1349,8 +1322,8 @@ class ModsMenu:
             s.item_buttons.append(btn)
             y_pos -= row_h
 
-        # ارتفاع کانتینر با فضای اضافی برای اسکرول راحت‌تر
-        cw(s.container, size=(320, total_h + 300))
+        # فضای بیشتر از پایین برای اسکرول راحت‌تر
+        cw(s.container, size=(320, total_h + 200))
 
         gs('swish').play()
 
