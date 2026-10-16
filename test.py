@@ -283,13 +283,21 @@ def get_my_ids():
     global my_own_client_id, my_own_display_num, my_own_name
     try:
         roster = get_roster()
-        if not my_own_name: return None, None
+        if not my_own_name:
+            return None, None
         for entry in roster:
             display = entry.get('display_string', '')
             if display.endswith(my_own_name):
                 my_own_client_id = entry.get('client_id')
-                # توی BombSquad شماره‌ی چت همون client_id هست
-                my_own_display_num = my_own_client_id
+                players = entry.get('players', [])
+                if players:
+                    name_full = players[0].get('name_full', '')
+                    # شماره‌ی نمایش = اولین عدد توی name_full
+                    m = re.match(r'^\s*(\d+)', name_full)
+                    if m:
+                        my_own_display_num = int(m.group(1))
+                    else:
+                        my_own_display_num = None
                 return my_own_client_id, my_own_display_num
         return None, None
     except Exception as e:
@@ -1324,7 +1332,7 @@ class ModsMenu:
             y_pos -= row_h
 
         # فضای بیشتر از پایین برای اسکرول راحت‌تر
-        cw(s.container, size=(320, total_h + 200))
+        cw(s.container, size=(320, total_h + 400))
 
         gs('swish').play()
 
