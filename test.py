@@ -292,7 +292,7 @@ def get_my_ids():
                 players = entry.get('players', [])
                 if players:
                     name_full = players[0].get('name_full', '')
-                    # شماره‌ی نمایش = اولین عدد توی name_full (مثلا "7 Mahyar" -> 7)
+                    # شماره‌ی نمایش = اولین عدد توی name_full (مثل "7 Mahyar" -> 7)
                     m = re.match(r'^\s*(\d+)', name_full)
                     if m:
                         my_own_display_num = int(m.group(1))
@@ -1294,9 +1294,9 @@ class ModsMenu:
 
         tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 575), h_align='center', color=(0, 1, 1))
 
-        # اسکرول با فضای بیشتر در پایین
+        # اسکرول حالت قبلی
         s.scroll = sw(parent=s.w, size=(340, 520), position=(30, 25))
-        s.container = cw(parent=s.scroll, size=(320, 1600), background=False)
+        s.container = cw(parent=s.scroll, size=(320, 1200), background=False)
 
         buttons = [
             ('Calculator', Calculator, (0, 0.3, 0.8)),
@@ -1312,8 +1312,9 @@ class ModsMenu:
         s.item_buttons = []
         num_buttons = len(buttons)
         row_h = 65
-        # دکمه‌ها از بالای محتوا شروع بشن
+        # ارتفاع کل دکمه‌ها
         total_h = num_buttons * row_h + 40
+        # دکمه‌ها از بالای محتوا شروع بشن
         y_pos = total_h - row_h
 
         for label, cls, color in buttons:
@@ -1331,8 +1332,8 @@ class ModsMenu:
             s.item_buttons.append(btn)
             y_pos -= row_h
 
-        # فضای زیاد در پایین برای اسکرول راحت‌تر (600 پیکسل خالی)
-        cw(s.container, size=(320, total_h + 600))
+        # فضای بسیار بیشتر از پایین تا Edit Place راحت دیده بشه
+        cw(s.container, size=(320, total_h + 500))
 
         gs('swish').play()
 
