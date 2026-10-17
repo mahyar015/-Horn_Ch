@@ -229,7 +229,14 @@ my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
 
-# شمارنده‌ی پیام‌های دیده شده برای buyer_ear
+# ============================================================
+# AutoBuyer - متغیرهای global (مثل fastBuy_V2_16)
+# ============================================================
+_sod = False          # آیا فروش ارزشمنده؟
+_lasch = ""           # last ID یا "1 " یا "0 "
+_max_price = 100000   # حداکثر قیمت کل
+
+# شمارنده‌ی پیام‌های دیده شده
 _last_seen_count = 0
 
 _limits_cache = None
@@ -1355,15 +1362,12 @@ class ModsMenu:
 
 
 # ============================================================
-# AutoBuyer - الگوهای پیام
+# AutoBuyer - دقیقاً مثل fastBuy_V2_16 ولی سریع‌تر
 # ============================================================
 
-SELL_PATTERN = re.compile(r'[💰💵💸]?\s*Sell\s*ID[:\s]*([\w-]+)', re.IGNORECASE)
-
-BUY_PATTERN = re.compile(
-    r'(?:💳\s*)?Buy\s*<\s*(\d+)\s+(\w+)[^>]*>\s*for\s+([\d,]+)\s*coins?',
-    re.IGNORECASE
-)
+SELL_ITEM_PATTERN = re.compile(r'[💰]?\s*Sell\s*<\s*(\d+)\s+(\w+)[^>]*>\s*for\s+([\d,]+)', re.IGNORECASE)
+SELL_ID_PATTERN = re.compile(r'[💰]?\s*Sell\s*ID[:\s]*([\w-]+)', re.IGNORECASE)
+BUY_PATTERN = re.compile(r'💳?\s*Buy\s*<\s*(\d+)\s+(\w+)[^>]*>\s*for\s+([\d,]+)', re.IGNORECASE)
 
 
 def fast_send(message):
@@ -1373,43 +1377,74 @@ def fast_send(message):
         pass
 
 
-def process_sell(item_id):
-    if item_id in processed_sell_ids:
-        return
-    processed_sell_ids.add(item_id)
-    if len(processed_sell_ids) > 200:
-        processed_sell_ids.clear()
-    fast_send(f"b {item_id}")
+def _buysel(buy_msg):
+    """وقتی 💳Buy دیده شد، 1 یا 0 می‌فرسته"""
+    global _lasch, _max_price
+    
+    try:
+        # استخراج ID فروشنده از پیام Buy (قبل از ": ")
+        cod = ""
+        if ": " in buy_msg:
+            parts = buy_msg.split(": ")
+            if len(parts) > 1:
+                cod = parts[1].strip()
+        
+        # چک کن ID مطابقت داره
+        if _lasch != cod:
+            return
+        
+        # استخراج count, item, price از پیام Buy
+        m = BUY_PATTERN.search(buy_msg)
+        if not m:
+            return
+        
+        count = int(m.group(1))
+        item_name = m.group(2).lower()
+        total_price = int(m.group(3).replace(',', ''))
+        
+        if count <= 0:
+            return
+        
+        unit_price = total_price / count
+        
+        # چک max_price
+        if total_price > _max_price:
+            _lasch = "0 "
+            fast_send("0 ")
+            return
+        
+        # چک limit
+        current_limits = _get_cached_limits()
+        limit = current_limits.get(item_name, 0)
+        
+        if unit_price <= limit:
+            _lasch = "1 "
+            fast_send("1 ")
+        else:
+            _lasch = "0 "
+            fast_send("0 ")
+    except:
+        pass
 
 
-def process_buy(item_name, count, total_price):
-    if not item_name or count <= 0:
-        fast_send("0 ")
-        return
-    
-    current_limits = _get_cached_limits()
-    if item_name not in current_limits:
-        fast_send("0 ")
-        return
-    
-    bid_key = f"{item_name}_{count}_{total_price}"
-    if bid_key in processed_buy_ids:
-        return
-    processed_buy_ids.add(bid_key)
-    if len(processed_buy_ids) > 200:
-        processed_buy_ids.clear()
-    
-    unit_price = total_price / count
-    limit = current_limits[item_name]
-    
-    if unit_price <= limit:
-        fast_send("1 ")
-    else:
-        fast_send("0 ")
+def _dls():
+    """اگه _lasch یه Sell ID بود، buysel رو صدا بزن"""
+    if _lasch[:1] == 's':
+        try:
+            z = GCM()
+            if z:
+                # آخرین پیام Buy رو بگیر
+                for msg in reversed(z[-5:]):
+                    if "💳Buy" in msg:
+                        _buysel(msg)
+                        break
+        except:
+            pass
 
 
 def buyer_ear(s):
-    global _last_seen_count
+    """حلقه‌ی خیلی سریع - دقیقاً منطق fastBuy ولی سریع‌تر"""
+    global _sod, _lasch, _last_seen_count
     
     if not auto_buyer_enabled:
         teck(0.2, lambda: buyer_ear(s))
@@ -1424,17 +1459,47 @@ def buyer_ear(s):
                 new_msgs = z[_last_seen_count:current_count]
                 _last_seen_count = current_count
                 
-                for last_msg in new_msgs:
-                    buy_m = BUY_PATTERN.search(last_msg)
+                for msg in new_msgs:
+                    # --- 1. چک Buy (اولویت بالا) ---
+                    buy_m = BUY_PATTERN.search(msg)
                     if buy_m:
-                        count = int(buy_m.group(1))
-                        item_name = buy_m.group(2).lower()
-                        total_price = int(buy_m.group(3).replace(',', ''))
-                        process_buy(item_name, count, total_price)
-                    else:
-                        sell_m = SELL_PATTERN.search(last_msg)
-                        if sell_m:
-                            process_sell(sell_m.group(1))
+                        _buysel(msg)
+                        continue
+                    
+                    # --- 2. چک Sell Item (💰Sell < 50 pun > for 100) ---
+                    sell_item_m = SELL_ITEM_PATTERN.search(msg)
+                    if sell_item_m:
+                        try:
+                            count = int(sell_item_m.group(1))
+                            item_name = sell_item_m.group(2).lower()
+                            total_price = int(sell_item_m.group(3).replace(',', ''))
+                            
+                            if count > 0:
+                                unit_price = total_price / count
+                                current_limits = _get_cached_limits()
+                                limit = current_limits.get(item_name, 0)
+                                
+                                if total_price <= _max_price and unit_price <= limit:
+                                    _sod = True
+                                else:
+                                    _sod = False
+                        except:
+                            pass
+                        continue
+                    
+                    # --- 3. چک Sell ID (💰Sell ID: s1041) ---
+                    sell_id_m = SELL_ID_PATTERN.search(msg)
+                    if sell_id_m:
+                        sell_id = sell_id_m.group(1)
+                        
+                        if _sod:
+                            _lasch = sell_id
+                            fast_send(f"b {sell_id}")
+                            
+                            # بعد از ارسال b <ID>، منتظر Buy بمون
+                            teck(0.1, lambda: _dls())
+                            teck(0.2, lambda: _dls())
+                            teck(0.3, lambda: _dls())
             elif current_count < _last_seen_count:
                 _last_seen_count = current_count
     except:
