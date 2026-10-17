@@ -1091,7 +1091,8 @@ class FilterWindow:
         s.item_buttons.clear()
 
         words = get_filter_words()
-        row_height = 30        total_h = len(words) * row_height + 20
+        row_height = 30
+        total_h = len(words) * row_height + 20
 
         if not words:
             tw(parent=s.container, text='No banned words',
@@ -1595,7 +1596,6 @@ class byMahyar(Plugin):
     def ear(s):
         try:
             z = GCM()
-            # به جای 0.001 → 0.05 (20 بار در ثانیه، بدون لگ)
             teck(0.05, s.ear)
 
             if not z:
@@ -1647,7 +1647,6 @@ class byMahyar(Plugin):
     def calc_ear(s):
         try:
             z = GCM()
-            # از 0.2 → 0.3 (کمتر لگ)
             teck(0.3, s.calc_ear)
 
             if not z:
