@@ -229,7 +229,11 @@ my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
 
-# کش limits - کوتاه‌تر برای سرعت بیشتر
+# جلوگیری از پردازش تکراری پیام‌ها
+_last_processed_sell = ""
+_last_processed_buy = ""
+
+# کش limits - خیلی کوتاه برای سرعت
 _limits_cache = None
 _limits_cache_time = 0
 
@@ -237,7 +241,6 @@ _limits_cache_time = 0
 def _get_cached_limits():
     global _limits_cache, _limits_cache_time
     now = time.time()
-    # کش خیلی کوتاه (0.1 ثانیه) برای سرعت بالا
     if _limits_cache is None or (now - _limits_cache_time) > 0.1:
         try:
             _limits_cache = get_limits()
@@ -310,14 +313,6 @@ def safe_chat_send(message):
         CM(message)
     except Exception as e:
         print(f"Chat send error: {e}")
-
-
-# ارسال مستقیم و سریع (بدون واسطه)
-def fast_buy_send(message):
-    try:
-        CM(message)
-    except:
-        pass
 
 
 original_connect_to_party = original_connect
@@ -1361,62 +1356,153 @@ class ModsMenu:
             print(f"Open window error: {e}")
 
 
-SELL_PATTERN = re.compile(r'Sell ID:\s*(\w+)')
-BUY_PATTERN = re.compile(r'(\w+):\s*Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s*>\s*for\s*([\d,]+)\s*coins(?:\?.*)?')
+# ============================================================
+# AutoBuyer - الگوهای پیام
+# ============================================================
 
+# الگوی Sell ID: هر فرمتی که Sell ID داشته باشه
+SELL_PATTERN = re.compile(r'[💰💵💸]?\s*Sell\s*ID[:\s]*([\w-]+)', re.IGNORECASE)
+
+# الگوی Buy: هر چیزی که با Buy شروع بشه و for ... coins داشته باشه
+# فرمت‌های احتمالی:
+#   💳Buy <item> for 1000 coins
+#   💳Buy <count item> for 1000 coins
+#   💳Buy <name> item for 1000 coins
+BUY_PATTERN = re.compile(
+    r'(?:💳\s*)?Buy\s+(.+?)\s+for\s+([\d,]+)\s*coins?',
+    re.IGNORECASE
+)
+
+# الگو برای استخراج اسم آیتم از متن Buy
+# اولین کلمه یا کلمه داخل <> رو می‌گیره
+BUY_ITEM_PATTERN = re.compile(
+    r'[<(\[]?\s*(\w+)\s*[>)\]]?',
+    re.IGNORECASE
+)
+
+
+def _extract_item_name(text):
+    """استخراج اسم آیتم از متن Buy"""
+    if not text:
+        return ""
+    text = text.strip()
+    
+    # اگه داخل <> یا () یا [] بود
+    m = re.search(r'[<(\[]\s*(\w+)\s*[>)\]]', text)
+    if m:
+        return m.group(1).lower()
+    
+    # اگه عدد اول بود (مثل "5 item")
+    m = re.match(r'^\d+\s+(\w+)', text)
+    if m:
+        return m.group(1).lower()
+    
+    # اولین کلمه
+    m = re.match(r'^(\w+)', text)
+    if m:
+        return m.group(1).lower()
+    
+    return ""
+
+
+# ============================================================
+# ارسال سریع
+# ============================================================
+
+def fast_send(message):
+    """ارسال سریع و مستقیم به چت"""
+    try:
+        CM(message)
+    except:
+        pass
+
+
+# ============================================================
+# پردازش Sell و Buy
+# ============================================================
 
 def process_sell(item_id):
-    if item_id in processed_sell_ids: return
+    """وقتی Sell ID دیده شد، b <ID> می‌فرسته"""
+    if item_id in processed_sell_ids:
+        return
     processed_sell_ids.add(item_id)
-    if len(processed_sell_ids) > 100: processed_sell_ids.clear()
-    fast_buy_send(f"b {item_id}")
+    if len(processed_sell_ids) > 100:
+        processed_sell_ids.clear()
+    fast_send(f"b {item_id}")
 
 
-def process_buy(item_id, count, item_name, total_price):
+def process_buy(item_name, total_price):
+    """وقتی 💳Buy دیده شد، 1 یا 0 می‌فرسته"""
+    if not item_name:
+        fast_send("0 ")
+        return
+    
     current_limits = _get_cached_limits()
     if item_name not in current_limits:
-        fast_buy_send("0 "); return
-    bid_key = f"{item_id}_{item_name}_{count}_{total_price}"
-    if bid_key in processed_buy_ids: return
+        fast_send("0 ")
+        return
+    
+    # چک تکراری
+    bid_key = f"{item_name}_{total_price}"
+    if bid_key in processed_buy_ids:
+        return
     processed_buy_ids.add(bid_key)
-    if len(processed_buy_ids) > 100: processed_buy_ids.clear()
-    if count <= 0: fast_buy_send("0 "); return
-    unit_price = total_price / count
+    if len(processed_buy_ids) > 100:
+        processed_buy_ids.clear()
+    
     limit = current_limits[item_name]
-    if unit_price <= limit:
-        fast_buy_send("1 ")
+    if total_price <= limit:
+        fast_send("1 ")
     else:
-        fast_buy_send("0 ")
+        fast_send("0 ")
 
+
+# ============================================================
+# buyer_ear - حلقه‌ی سریع مخصوص AutoBuyer
+# ============================================================
 
 def buyer_ear(s):
     """حلقه‌ی خیلی سریع مخصوص AutoBuyer"""
+    global _last_processed_sell, _last_processed_buy
+    
+    if not auto_buyer_enabled:
+        # اگه خاموشه، خیلی کندتر چک کن
+        teck(0.2, lambda: buyer_ear(s))
+        return
+    
     try:
         z = GCM()
         if z and len(z) > 0:
             last_msg = z[-1]
-            m = BUY_PATTERN.search(last_msg)
-            if m:
-                try:
-                    process_buy(
-                        m.group(1),
-                        int(m.group(2).replace(',', '')),
-                        m.group(3).lower(),
-                        int(m.group(4).replace(',', ''))
-                    )
-                except: pass
+            
+            # --- اول چک Buy (چون بعد از b <ID> میاد) ---
+            buy_m = BUY_PATTERN.search(last_msg)
+            if buy_m:
+                msg_hash = f"buy_{last_msg}"
+                if msg_hash != _last_processed_buy:
+                    _last_processed_buy = msg_hash
+                    item_text = buy_m.group(1)
+                    price = int(buy_m.group(2).replace(',', ''))
+                    item_name = _extract_item_name(item_text)
+                    process_buy(item_name, price)
             else:
-                m = SELL_PATTERN.search(last_msg)
-                if m:
-                    try:
-                        process_sell(m.group(1))
-                    except: pass
+                # --- اگه Buy نبود، چک Sell ---
+                sell_m = SELL_PATTERN.search(last_msg)
+                if sell_m:
+                    msg_hash = f"sell_{last_msg}"
+                    if msg_hash != _last_processed_sell:
+                        _last_processed_sell = msg_hash
+                        process_sell(sell_m.group(1))
     except:
         pass
     
-    # سریع‌ترین حالت: هر 1 میلی‌ثانیه (1000 بار در ثانیه)
-    teck(0.001, lambda: buyer_ear(s))
+    # سریع‌ترین: هر نیم میلی‌ثانیه
+    teck(0.0005, lambda: buyer_ear(s))
 
+
+# ============================================================
+# بقیه توابع (AutoReact, AutoReply, Filter, ...)
+# ============================================================
 
 def check_reaction(msg):
     global my_own_client_id, my_own_display_num
@@ -1587,6 +1673,10 @@ def stop_auto_reconnect():
     push("Auto Reconnect: OFF", color=(1, 0.5, 0))
 
 
+# ============================================================
+# Plugin
+# ============================================================
+
 # ba_meta require api 9
 # ba_meta export babase.Plugin
 class byMahyar(Plugin):
@@ -1600,7 +1690,7 @@ class byMahyar(Plugin):
 
         teck(0.5, s.ear)
         teck(0.5, s.calc_ear)
-        teck(0.5, lambda: buyer_ear(s))  # تایمر جدا و سریع برای AutoBuyer
+        teck(0.3, lambda: buyer_ear(s))  # تایمر سریع AutoBuyer
         teck(1, s.reconnect_ear)
 
         from bauiv1lib import party
@@ -1636,8 +1726,6 @@ class byMahyar(Plugin):
     def ear(s):
         try:
             z = GCM()
-            # AutoBuyer دیگه اینجا نیست (توی buyer_ear جداست)
-            # فقط برای بقیه چیزها هر 0.05 ثانیه
             teck(0.05, s.ear)
 
             if not z:
@@ -1654,6 +1742,7 @@ class byMahyar(Plugin):
             s.last_msg_hash = current_hash
             msg = last_msg
 
+            # AutoBuyer توی buyer_ear جداست
             try:
                 if check_spam_command(msg): return
             except: pass
