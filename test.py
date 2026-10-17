@@ -229,8 +229,8 @@ my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
 
-_last_processed_sell = ""
-_last_processed_buy = ""
+# شمارنده‌ی پیام‌های دیده شده برای buyer_ear
+_last_seen_count = 0
 
 _limits_cache = None
 _limits_cache_time = 0
@@ -1358,11 +1358,8 @@ class ModsMenu:
 # AutoBuyer - الگوهای پیام
 # ============================================================
 
-# الگوی Sell ID: هر فرمتی که Sell ID داشته باشه
 SELL_PATTERN = re.compile(r'[💰💵💸]?\s*Sell\s*ID[:\s]*([\w-]+)', re.IGNORECASE)
 
-# الگوی Buy: دقیقاً فرمت سرور بمب‌اسکواد
-# 💳Buy < 50 pun (Punch) > for 50 coins? Ok=1
 BUY_PATTERN = re.compile(
     r'(?:💳\s*)?Buy\s*<\s*(\d+)\s+(\w+)[^>]*>\s*for\s+([\d,]+)\s*coins?',
     re.IGNORECASE
@@ -1370,7 +1367,6 @@ BUY_PATTERN = re.compile(
 
 
 def fast_send(message):
-    """ارسال سریع و مستقیم به چت"""
     try:
         CM(message)
     except:
@@ -1378,17 +1374,15 @@ def fast_send(message):
 
 
 def process_sell(item_id):
-    """وقتی Sell ID دیده شد، b <ID> می‌فرسته"""
     if item_id in processed_sell_ids:
         return
     processed_sell_ids.add(item_id)
-    if len(processed_sell_ids) > 100:
+    if len(processed_sell_ids) > 200:
         processed_sell_ids.clear()
     fast_send(f"b {item_id}")
 
 
 def process_buy(item_name, count, total_price):
-    """وقتی 💳Buy دیده شد، 1 یا 0 می‌فرسته"""
     if not item_name or count <= 0:
         fast_send("0 ")
         return
@@ -1402,10 +1396,9 @@ def process_buy(item_name, count, total_price):
     if bid_key in processed_buy_ids:
         return
     processed_buy_ids.add(bid_key)
-    if len(processed_buy_ids) > 100:
+    if len(processed_buy_ids) > 200:
         processed_buy_ids.clear()
     
-    # محاسبه قیمت واحد
     unit_price = total_price / count
     limit = current_limits[item_name]
     
@@ -1415,13 +1408,8 @@ def process_buy(item_name, count, total_price):
         fast_send("0 ")
 
 
-# ============================================================
-# buyer_ear - حلقه‌ی سریع مخصوص AutoBuyer
-# ============================================================
-
 def buyer_ear(s):
-    """حلقه‌ی خیلی سریع مخصوص AutoBuyer"""
-    global _last_processed_sell, _last_processed_buy
+    global _last_seen_count
     
     if not auto_buyer_enabled:
         teck(0.2, lambda: buyer_ear(s))
@@ -1429,31 +1417,29 @@ def buyer_ear(s):
     
     try:
         z = GCM()
-        if z and len(z) > 0:
-            last_msg = z[-1]
+        if z:
+            current_count = len(z)
             
-            # اول Buy (چون بعد از b <ID> میاد)
-            buy_m = BUY_PATTERN.search(last_msg)
-            if buy_m:
-                msg_hash = f"buy_{last_msg}"
-                if msg_hash != _last_processed_buy:
-                    _last_processed_buy = msg_hash
-                    count = int(buy_m.group(1))
-                    item_name = buy_m.group(2).lower()
-                    total_price = int(buy_m.group(3).replace(',', ''))
-                    process_buy(item_name, count, total_price)
-            else:
-                # اگه Buy نبود، چک Sell
-                sell_m = SELL_PATTERN.search(last_msg)
-                if sell_m:
-                    msg_hash = f"sell_{last_msg}"
-                    if msg_hash != _last_processed_sell:
-                        _last_processed_sell = msg_hash
-                        process_sell(sell_m.group(1))
+            if current_count > _last_seen_count:
+                new_msgs = z[_last_seen_count:current_count]
+                _last_seen_count = current_count
+                
+                for last_msg in new_msgs:
+                    buy_m = BUY_PATTERN.search(last_msg)
+                    if buy_m:
+                        count = int(buy_m.group(1))
+                        item_name = buy_m.group(2).lower()
+                        total_price = int(buy_m.group(3).replace(',', ''))
+                        process_buy(item_name, count, total_price)
+                    else:
+                        sell_m = SELL_PATTERN.search(last_msg)
+                        if sell_m:
+                            process_sell(sell_m.group(1))
+            elif current_count < _last_seen_count:
+                _last_seen_count = current_count
     except:
         pass
     
-    # سریع‌ترین: هر نیم میلی‌ثانیه
     teck(0.0005, lambda: buyer_ear(s))
 
 
