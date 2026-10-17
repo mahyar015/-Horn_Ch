@@ -229,11 +229,9 @@ my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
 
-# جلوگیری از پردازش تکراری پیام‌ها
 _last_processed_sell = ""
 _last_processed_buy = ""
 
-# کش limits - خیلی کوتاه برای سرعت
 _limits_cache = None
 _limits_cache_time = 0
 
@@ -1363,51 +1361,13 @@ class ModsMenu:
 # الگوی Sell ID: هر فرمتی که Sell ID داشته باشه
 SELL_PATTERN = re.compile(r'[💰💵💸]?\s*Sell\s*ID[:\s]*([\w-]+)', re.IGNORECASE)
 
-# الگوی Buy: هر چیزی که با Buy شروع بشه و for ... coins داشته باشه
-# فرمت‌های احتمالی:
-#   💳Buy <item> for 1000 coins
-#   💳Buy <count item> for 1000 coins
-#   💳Buy <name> item for 1000 coins
+# الگوی Buy: دقیقاً فرمت سرور بمب‌اسکواد
+# 💳Buy < 50 pun (Punch) > for 50 coins? Ok=1
 BUY_PATTERN = re.compile(
-    r'(?:💳\s*)?Buy\s+(.+?)\s+for\s+([\d,]+)\s*coins?',
+    r'(?:💳\s*)?Buy\s*<\s*(\d+)\s+(\w+)[^>]*>\s*for\s+([\d,]+)\s*coins?',
     re.IGNORECASE
 )
 
-# الگو برای استخراج اسم آیتم از متن Buy
-# اولین کلمه یا کلمه داخل <> رو می‌گیره
-BUY_ITEM_PATTERN = re.compile(
-    r'[<(\[]?\s*(\w+)\s*[>)\]]?',
-    re.IGNORECASE
-)
-
-
-def _extract_item_name(text):
-    """استخراج اسم آیتم از متن Buy"""
-    if not text:
-        return ""
-    text = text.strip()
-    
-    # اگه داخل <> یا () یا [] بود
-    m = re.search(r'[<(\[]\s*(\w+)\s*[>)\]]', text)
-    if m:
-        return m.group(1).lower()
-    
-    # اگه عدد اول بود (مثل "5 item")
-    m = re.match(r'^\d+\s+(\w+)', text)
-    if m:
-        return m.group(1).lower()
-    
-    # اولین کلمه
-    m = re.match(r'^(\w+)', text)
-    if m:
-        return m.group(1).lower()
-    
-    return ""
-
-
-# ============================================================
-# ارسال سریع
-# ============================================================
 
 def fast_send(message):
     """ارسال سریع و مستقیم به چت"""
@@ -1416,10 +1376,6 @@ def fast_send(message):
     except:
         pass
 
-
-# ============================================================
-# پردازش Sell و Buy
-# ============================================================
 
 def process_sell(item_id):
     """وقتی Sell ID دیده شد، b <ID> می‌فرسته"""
@@ -1431,9 +1387,9 @@ def process_sell(item_id):
     fast_send(f"b {item_id}")
 
 
-def process_buy(item_name, total_price):
+def process_buy(item_name, count, total_price):
     """وقتی 💳Buy دیده شد، 1 یا 0 می‌فرسته"""
-    if not item_name:
+    if not item_name or count <= 0:
         fast_send("0 ")
         return
     
@@ -1442,16 +1398,18 @@ def process_buy(item_name, total_price):
         fast_send("0 ")
         return
     
-    # چک تکراری
-    bid_key = f"{item_name}_{total_price}"
+    bid_key = f"{item_name}_{count}_{total_price}"
     if bid_key in processed_buy_ids:
         return
     processed_buy_ids.add(bid_key)
     if len(processed_buy_ids) > 100:
         processed_buy_ids.clear()
     
+    # محاسبه قیمت واحد
+    unit_price = total_price / count
     limit = current_limits[item_name]
-    if total_price <= limit:
+    
+    if unit_price <= limit:
         fast_send("1 ")
     else:
         fast_send("0 ")
@@ -1466,7 +1424,6 @@ def buyer_ear(s):
     global _last_processed_sell, _last_processed_buy
     
     if not auto_buyer_enabled:
-        # اگه خاموشه، خیلی کندتر چک کن
         teck(0.2, lambda: buyer_ear(s))
         return
     
@@ -1475,18 +1432,18 @@ def buyer_ear(s):
         if z and len(z) > 0:
             last_msg = z[-1]
             
-            # --- اول چک Buy (چون بعد از b <ID> میاد) ---
+            # اول Buy (چون بعد از b <ID> میاد)
             buy_m = BUY_PATTERN.search(last_msg)
             if buy_m:
                 msg_hash = f"buy_{last_msg}"
                 if msg_hash != _last_processed_buy:
                     _last_processed_buy = msg_hash
-                    item_text = buy_m.group(1)
-                    price = int(buy_m.group(2).replace(',', ''))
-                    item_name = _extract_item_name(item_text)
-                    process_buy(item_name, price)
+                    count = int(buy_m.group(1))
+                    item_name = buy_m.group(2).lower()
+                    total_price = int(buy_m.group(3).replace(',', ''))
+                    process_buy(item_name, count, total_price)
             else:
-                # --- اگه Buy نبود، چک Sell ---
+                # اگه Buy نبود، چک Sell
                 sell_m = SELL_PATTERN.search(last_msg)
                 if sell_m:
                     msg_hash = f"sell_{last_msg}"
@@ -1501,7 +1458,7 @@ def buyer_ear(s):
 
 
 # ============================================================
-# بقیه توابع (AutoReact, AutoReply, Filter, ...)
+# بقیه توابع
 # ============================================================
 
 def check_reaction(msg):
@@ -1690,7 +1647,7 @@ class byMahyar(Plugin):
 
         teck(0.5, s.ear)
         teck(0.5, s.calc_ear)
-        teck(0.3, lambda: buyer_ear(s))  # تایمر سریع AutoBuyer
+        teck(0.3, lambda: buyer_ear(s))
         teck(1, s.reconnect_ear)
 
         from bauiv1lib import party
@@ -1742,7 +1699,6 @@ class byMahyar(Plugin):
             s.last_msg_hash = current_hash
             msg = last_msg
 
-            # AutoBuyer توی buyer_ear جداست
             try:
                 if check_spam_command(msg): return
             except: pass
