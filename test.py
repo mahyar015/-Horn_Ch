@@ -229,6 +229,7 @@ my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
 
+# کش limits - کوتاه‌تر برای سرعت بیشتر
 _limits_cache = None
 _limits_cache_time = 0
 
@@ -236,7 +237,8 @@ _limits_cache_time = 0
 def _get_cached_limits():
     global _limits_cache, _limits_cache_time
     now = time.time()
-    if _limits_cache is None or (now - _limits_cache_time) > 1.0:
+    # کش خیلی کوتاه (0.1 ثانیه) برای سرعت بالا
+    if _limits_cache is None or (now - _limits_cache_time) > 0.1:
         try:
             _limits_cache = get_limits()
             _limits_cache_time = now
@@ -308,6 +310,14 @@ def safe_chat_send(message):
         CM(message)
     except Exception as e:
         print(f"Chat send error: {e}")
+
+
+# ارسال مستقیم و سریع (بدون واسطه)
+def fast_buy_send(message):
+    try:
+        CM(message)
+    except:
+        pass
 
 
 original_connect_to_party = original_connect
@@ -1359,24 +1369,53 @@ def process_sell(item_id):
     if item_id in processed_sell_ids: return
     processed_sell_ids.add(item_id)
     if len(processed_sell_ids) > 100: processed_sell_ids.clear()
-    safe_chat_send(f"b {item_id}")
+    fast_buy_send(f"b {item_id}")
 
 
 def process_buy(item_id, count, item_name, total_price):
     current_limits = _get_cached_limits()
     if item_name not in current_limits:
-        safe_chat_send("0 "); return
+        fast_buy_send("0 "); return
     bid_key = f"{item_id}_{item_name}_{count}_{total_price}"
     if bid_key in processed_buy_ids: return
     processed_buy_ids.add(bid_key)
     if len(processed_buy_ids) > 100: processed_buy_ids.clear()
-    if count <= 0: safe_chat_send("0 "); return
+    if count <= 0: fast_buy_send("0 "); return
     unit_price = total_price / count
     limit = current_limits[item_name]
     if unit_price <= limit:
-        safe_chat_send("1 ")
+        fast_buy_send("1 ")
     else:
-        safe_chat_send("0 ")
+        fast_buy_send("0 ")
+
+
+def buyer_ear(s):
+    """حلقه‌ی خیلی سریع مخصوص AutoBuyer"""
+    try:
+        z = GCM()
+        if z and len(z) > 0:
+            last_msg = z[-1]
+            m = BUY_PATTERN.search(last_msg)
+            if m:
+                try:
+                    process_buy(
+                        m.group(1),
+                        int(m.group(2).replace(',', '')),
+                        m.group(3).lower(),
+                        int(m.group(4).replace(',', ''))
+                    )
+                except: pass
+            else:
+                m = SELL_PATTERN.search(last_msg)
+                if m:
+                    try:
+                        process_sell(m.group(1))
+                    except: pass
+    except:
+        pass
+    
+    # سریع‌ترین حالت: هر 1 میلی‌ثانیه (1000 بار در ثانیه)
+    teck(0.001, lambda: buyer_ear(s))
 
 
 def check_reaction(msg):
@@ -1561,6 +1600,7 @@ class byMahyar(Plugin):
 
         teck(0.5, s.ear)
         teck(0.5, s.calc_ear)
+        teck(0.5, lambda: buyer_ear(s))  # تایمر جدا و سریع برای AutoBuyer
         teck(1, s.reconnect_ear)
 
         from bauiv1lib import party
@@ -1596,6 +1636,8 @@ class byMahyar(Plugin):
     def ear(s):
         try:
             z = GCM()
+            # AutoBuyer دیگه اینجا نیست (توی buyer_ear جداست)
+            # فقط برای بقیه چیزها هر 0.05 ثانیه
             teck(0.05, s.ear)
 
             if not z:
@@ -1611,18 +1653,6 @@ class byMahyar(Plugin):
 
             s.last_msg_hash = current_hash
             msg = last_msg
-
-            try:
-                if auto_buyer_enabled:
-                    m = SELL_PATTERN.search(msg)
-                    if m:
-                        process_sell(m.group(1))
-                        return
-                    m = BUY_PATTERN.search(msg)
-                    if m:
-                        process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
-                        return
-            except: pass
 
             try:
                 if check_spam_command(msg): return
