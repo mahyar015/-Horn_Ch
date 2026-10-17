@@ -24,7 +24,6 @@ from bascenev1 import (
 import math
 import re
 import time
-import socket
 import bauiv1 as bui
 import bascenev1
 from babase import app
@@ -237,7 +236,7 @@ _limits_cache_time = 0
 def _get_cached_limits():
     global _limits_cache, _limits_cache_time
     now = time.time()
-    if _limits_cache is None or (now - _limits_cache_time) > 2:
+    if _limits_cache is None or (now - _limits_cache_time) > 1.0:
         try:
             _limits_cache = get_limits()
             _limits_cache_time = now
@@ -292,7 +291,6 @@ def get_my_ids():
                 players = entry.get('players', [])
                 if players:
                     name_full = players[0].get('name_full', '')
-                    # شماره‌ی نمایش = اولین عدد توی name_full (مثل "7 Mahyar" -> 7)
                     m = re.match(r'^\s*(\d+)', name_full)
                     if m:
                         my_own_display_num = int(m.group(1))
@@ -960,16 +958,16 @@ class ReconnectWindow:
 
 class AutoBuyerWindow:
     def __init__(s, source):
-        s.w = AR.cw(source=source, size=(340, 410), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(310, 375))
-        tw(parent=s.w, text='Auto Buyer', scale=0.95, position=(170, 370), h_align='center', color=(0, 1, 1))
+        s.w = AR.cw(source=source, size=(340, 360), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(310, 325))
+        tw(parent=s.w, text='Auto Buyer', scale=0.95, position=(170, 320), h_align='center', color=(0, 1, 1))
         status = "ON" if auto_buyer_enabled else "OFF"
         status_color = (0, 1, 0) if auto_buyer_enabled else (1, 0, 0)
-        s.status_text = tw(parent=s.w, text=f'Status: {status}', position=(170, 332), h_align='center', scale=0.7, color=status_color)
-        s.toggle_btn = bw(parent=s.w, label='Turn OFF' if auto_buyer_enabled else 'Turn ON', size=(120, 26), position=(20, 298), on_activate_call=Call(s.toggle), color=(0.7, 0.2, 0.2) if auto_buyer_enabled else (0.2, 0.7, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
-        bw(parent=s.w, label='Reset', size=(120, 26), position=(160, 298), on_activate_call=Call(s.reset_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
-        tw(parent=s.w, text='Item Limits', position=(170, 268), h_align='center', scale=0.5, color=(1, 1, 0.8))
-        s.scroll = sw(parent=s.w, size=(300, 210), position=(20, 40))
+        s.status_text = tw(parent=s.w, text=f'Status: {status}', position=(170, 290), h_align='center', scale=0.7, color=status_color)
+        s.toggle_btn = bw(parent=s.w, label='Turn OFF' if auto_buyer_enabled else 'Turn ON', size=(120, 26), position=(20, 258), on_activate_call=Call(s.toggle), color=(0.7, 0.2, 0.2) if auto_buyer_enabled else (0.2, 0.7, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
+        bw(parent=s.w, label='Reset', size=(120, 26), position=(160, 258), on_activate_call=Call(s.reset_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
+        tw(parent=s.w, text='Item Limits', position=(170, 232), h_align='center', scale=0.5, color=(1, 1, 0.8))
+        s.scroll = sw(parent=s.w, size=(300, 180), position=(20, 40))
         s.container = cw(parent=s.scroll, size=(280, 700), background=False)
         s.item_buttons = {}
         s.build_grid()
@@ -1093,8 +1091,7 @@ class FilterWindow:
         s.item_buttons.clear()
 
         words = get_filter_words()
-        row_height = 30
-        total_h = len(words) * row_height + 20
+        row_height = 30        total_h = len(words) * row_height + 20
 
         if not words:
             tw(parent=s.container, text='No banned words',
@@ -1309,20 +1306,16 @@ class ModsMenu:
 
         num_buttons = len(buttons)
         row_h = 65
-        buttons_h = num_buttons * row_h  # = 8 * 65 = 520
+        buttons_h = num_buttons * row_h
 
-        # فضای خالی بالای Calculator و زیر Edit Place
-        top_padding = 400
-        bottom_padding = 400
+        top_padding = 380
+        bottom_padding = 380
 
-        # ارتفاع کل کانتینر
         total_h = top_padding + buttons_h + bottom_padding
 
-        # کانتینر رو یک بار با ارتفاع نهایی بساز
         s.container = cw(parent=s.scroll, size=(320, total_h), background=False)
 
         s.item_buttons = []
-        # بالاترین دکمه در y = total_h - top_padding - row_h
         y_pos = total_h - top_padding - row_h
 
         for label, cls, color in buttons:
@@ -1339,8 +1332,6 @@ class ModsMenu:
             )
             s.item_buttons.append(btn)
             y_pos -= row_h
-
-        # ⚠️ دیگه cw رو دوباره صدا نزن! ارتفاع همون اول ست شده.
 
         gs('swish').play()
 
@@ -1377,7 +1368,7 @@ def process_buy(item_id, count, item_name, total_price):
     bid_key = f"{item_id}_{item_name}_{count}_{total_price}"
     if bid_key in processed_buy_ids: return
     processed_buy_ids.add(bid_key)
-    if len(processed_buy_ids) > 200: processed_buy_ids.clear()
+    if len(processed_buy_ids) > 100: processed_buy_ids.clear()
     if count <= 0: safe_chat_send("0 "); return
     unit_price = total_price / count
     limit = current_limits[item_name]
@@ -1604,7 +1595,8 @@ class byMahyar(Plugin):
     def ear(s):
         try:
             z = GCM()
-            teck(0.001, s.ear)
+            # به جای 0.001 → 0.05 (20 بار در ثانیه، بدون لگ)
+            teck(0.05, s.ear)
 
             if not z:
                 s.last_msg_hash = ""
@@ -1647,7 +1639,7 @@ class byMahyar(Plugin):
 
         except Exception as e:
             try:
-                teck(0.001, s.ear)
+                teck(0.05, s.ear)
             except:
                 pass
             print(f"Error in ear: {e}")
@@ -1655,7 +1647,8 @@ class byMahyar(Plugin):
     def calc_ear(s):
         try:
             z = GCM()
-            teck(0.2, s.calc_ear)
+            # از 0.2 → 0.3 (کمتر لگ)
+            teck(0.3, s.calc_ear)
 
             if not z:
                 s.last_calc_hash = ""
@@ -1681,7 +1674,7 @@ class byMahyar(Plugin):
             except: pass
         except Exception as e:
             try:
-                teck(0.2, s.calc_ear)
+                teck(0.3, s.calc_ear)
             except:
                 pass
             print(f"Error in calc_ear: {e}")
