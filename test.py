@@ -232,12 +232,9 @@ my_own_display_num = None
 # ============================================================
 # AutoBuyer - دقیقاً منطق fastBuy_V2_16
 # ============================================================
-_sod = False          # آیا فروش ارزشمنده؟
-_lasch = ""           # last ID یا "1 " یا "0 "
-_max_price = 100000   # حداکثر قیمت کل
-
-# ردیابی آخرین پیام پردازش‌شده
-_last_msg_count = 0
+_sod = False
+_lasch = ""
+_max_price = 100000
 
 _limits_cache = None
 _limits_cache_time = 0
@@ -1362,7 +1359,7 @@ class ModsMenu:
 
 
 # ============================================================
-# AutoBuyer - دقیقاً منطق fastBuy_V2_16
+# AutoBuyer - دقیقاً منطق fastBuy_V2_16 با رفع باگ تکرار
 # ============================================================
 
 def fast_send(message):
@@ -1373,16 +1370,15 @@ def fast_send(message):
 
 
 def _buysel():
-    """دقیقاً مثل buysel() در fastBuy - پیام‌های Buy رو چک می‌کنه"""
+    """دقیقاً مثل buysel() در fastBuy"""
     global _lasch, _max_price
     
     try:
-        # 2 پیام آخر (مثل مود اصلی)
         z = GCM()
         if not z:
             return
         
-        m = z[-2:]  # 2 پیام آخر
+        m = z[-2:]
         
         for i in m:
             if "💳Buy < " in i:
@@ -1391,17 +1387,13 @@ def _buysel():
                     if len(parts) < 3:
                         continue
                     
-                    cod = parts[1]  # ID فروشنده
-                    msg_body = parts[2].replace(",", '')  # بقیه پیام
+                    cod = parts[1]
+                    msg_body = parts[2].replace(",", '')
                     
                     if _lasch != cod:
                         continue
                     
-                    # تقسیم پیام
                     words = msg_body.split(" ")
-                    # فرمت: "Buy < 50 pun (Punch) > for 50 coins? Ok=1"
-                    # words[0] = "Buy", words[1] = "<", words[2] = "50", words[3] = "pun"
-                    # words[4] = "(Punch)", words[5] = ">", words[6] = "for", words[7] = "50"
                     if len(words) < 8:
                         continue
                     
@@ -1414,13 +1406,11 @@ def _buysel():
                     
                     unit_price = total_price / count
                     
-                    # چک max_price
                     if total_price > _max_price:
                         _lasch = "0 "
                         fast_send("0 ")
                         continue
                     
-                    # چک limit
                     current_limits = _get_cached_limits()
                     limit = current_limits.get(item_name, 0)
                     
@@ -1444,7 +1434,7 @@ def _dls():
 
 
 def sellcek():
-    """دقیقاً مثل sellcek() در fastBuy ولی هر 0.01 ثانیه"""
+    """دقیقاً مثل sellcek() در fastBuy ولی هر 0.01 ثانیه + رفع باگ تکرار"""
     global _sod, _max_price, _lasch
     
     if not auto_buyer_enabled:
@@ -1457,15 +1447,13 @@ def sellcek():
             teck(0.01, sellcek)
             return
         
-        m = z[-1]  # آخرین پیام (مثل مود اصلی)
+        m = z[-1]
         
         if "Server" in m:
             if "💰Sell <" in m:
                 try:
                     m2 = m.split("💰Sell <")[1].replace(",", '')
                     parts = m2.split(" ")
-                    # فرمت: "50 pun (Punch) > for 100"
-                    # parts[0] = "50", parts[1] = "pun", parts[4] = "100"
                     if len(parts) < 5:
                         teck(0.01, sellcek)
                         return
@@ -1492,10 +1480,15 @@ def sellcek():
             elif "💰Sell ID: " in m and _sod:
                 try:
                     sell_id = m.split("💰Sell ID: ")[1].strip()
+                    
+                    # ✅ رفع باگ: اگه هنوز منتظر جواب Buy هستیم، دوباره نفرست
+                    if _lasch[:1] == 's':
+                        teck(0.01, sellcek)
+                        return
+                    
                     _lasch = sell_id
                     fast_send(f"b {sell_id}")
                     
-                    # زمان‌بندی dls مثل مود اصلی
                     teck(0.2, _dls)
                     teck(0.4, _dls)
                     teck(0.6, _dls)
