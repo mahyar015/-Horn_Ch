@@ -236,6 +236,9 @@ _sod = False
 _lasch = ""
 _max_price = 100000
 
+# شمارنده‌ی پیام‌های دیده شده برای ear (همه‌ی پیام‌های جدید پردازش بشن)
+_last_seen_count = 0
+
 _limits_cache = None
 _limits_cache_time = 0
 
@@ -1726,36 +1729,38 @@ class byMahyar(Plugin):
         party.PartyWindow.__init__ = e
 
     def ear(s):
+        global _last_seen_count
         try:
             z = GCM()
             teck(0.05, s.ear)
 
             if not z:
-                s.last_msg_hash = ""
+                _last_seen_count = 0
                 return
 
             current_count = len(z)
-            last_msg = z[-1]
-            current_hash = f"{current_count}_{len(last_msg)}_{last_msg}"
 
-            if current_hash == s.last_msg_hash:
-                return
+            # ✅ همه‌ی پیام‌های جدید رو پردازش کن (نه فقط آخری)
+            if current_count > _last_seen_count:
+                new_msgs = z[_last_seen_count:current_count]
+                _last_seen_count = current_count
 
-            s.last_msg_hash = current_hash
-            msg = last_msg
-
-            try:
-                if check_spam_command(msg): return
-            except: pass
-            try:
-                if check_auto_reply(msg): return
-            except: pass
-            try:
-                if check_filter(msg): return
-            except: pass
-            try:
-                check_reaction(msg)
-            except: pass
+                for msg in new_msgs:
+                    try:
+                        if check_spam_command(msg): continue
+                    except: pass
+                    try:
+                        if check_auto_reply(msg): continue
+                    except: pass
+                    try:
+                        if check_filter(msg): continue
+                    except: pass
+                    try:
+                        check_reaction(msg)
+                    except: pass
+            elif current_count < _last_seen_count:
+                # چت ریست شد
+                _last_seen_count = current_count
 
         except Exception as e:
             try:
