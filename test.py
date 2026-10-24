@@ -44,8 +44,8 @@ DEFAULT_LIMITS = {
 }
 
 DEFAULT_REACTIONS = {'fr': 'u', 'cu': 'h', 'fl': 'fl'}
-DEFAULT_COOLDOWNS = {'fr': 5.0, 'cu': 5.0, 'fl': 5.0}
-DEFAULT_COOLDOWN = 5.0
+DEFAULT_COOLDOWNS = {'fr': 0.15, 'cu': 0.15, 'fl': 0.15}
+DEFAULT_COOLDOWN = 0.15
 DEFAULT_AUTO_REPLIES = {}
 
 
@@ -236,8 +236,12 @@ _sod = False
 _lasch = ""
 _max_price = 100000
 
-# شمارنده‌ی پیام‌های دیده شده برای ear (همه‌ی پیام‌های جدید پردازش بشن)
-_last_seen_count = 0
+# Snapshotهای جداگانه برای جلوگیری از جا افتادن پیام‌ها در burstهای چت
+_last_seen_messages = None
+_buyer_seen_messages = None
+_buyer_pending_id = None
+_buyer_pending_since = 0.0
+_buyer_queue = []
 
 _limits_cache = None
 _limits_cache_time = 0
@@ -1366,142 +1370,214 @@ class ModsMenu:
 # ============================================================
 
 def fast_send(message):
+    """ارسال کوتاه و سریع پاسخ خرید به چت سرور."""
     try:
         CM(message)
-    except:
+    except Exception:
         pass
 
 
-def _buysel():
-    """دقیقاً مثل buysel() در fastBuy"""
-    global _lasch, _max_price
-    
+def _collect_new_messages(current, previous):
+    """Return messages appended since the previous snapshot, including rolling buffers."""
+    current = list(current or [])
+    if previous is None:
+        return current
+    previous = list(previous or [])
+    if not current:
+        return []
+    if current == previous:
+        return []
+
+    # Works for both an ever-growing history and a fixed-size/rolling chat history.
+    max_overlap = min(len(previous), len(current))
+    for overlap in range(max_overlap, 0, -1):
+        if previous[-overlap:] == current[:overlap]:
+            return current[overlap:]
+
+    # No overlap means the history was reset/replaced or more messages arrived than
+    # fit in the old window. Process the visible window rather than silently missing it.
+    return current
+
+
+def _buysel(message=None):
+    """Evaluate the server's Buy prompt for the currently pending sell ID."""
+    global _lasch, _buyer_pending_id, _buyer_pending_since
+
     try:
-        z = GCM()
-        if not z:
-            return
-        
-        m = z[-2:]
-        
-        for i in m:
-            if "💳Buy < " in i:
-                try:
-                    parts = i.split(": ")
-                    if len(parts) < 3:
-                        continue
-                    
-                    cod = parts[1]
-                    msg_body = parts[2].replace(",", '')
-                    
-                    if _lasch != cod:
-                        continue
-                    
-                    words = msg_body.split(" ")
-                    if len(words) < 8:
-                        continue
-                    
-                    count = int(words[2])
-                    item_name = words[3]
-                    total_price = int(words[7])
-                    
-                    if count <= 0:
-                        continue
-                    
-                    unit_price = total_price / count
-                    
-                    if total_price > _max_price:
-                        _lasch = "0 "
-                        fast_send("0 ")
-                        continue
-                    
-                    current_limits = _get_cached_limits()
-                    limit = current_limits.get(item_name, 0)
-                    
-                    if unit_price <= limit:
-                        _lasch = "1 "
-                        fast_send("1 ")
-                    else:
-                        _lasch = "0 "
-                        fast_send("0 ")
-                except:
-                    pass
-    except:
-        pass
+        if message is None:
+            z = GCM()
+            candidates = list(z[-5:]) if z else []
+        else:
+            candidates = [message]
+
+        for line in candidates:
+            if "💳Buy < " not in line:
+                continue
+
+            # Expected protocol: Server: <sell-id>: 💳Buy < ...
+            parts = line.split(": ", 2)
+            if len(parts) < 3:
+                continue
+            cod = parts[1].strip()
+            if str(_lasch).strip() != cod:
+                continue
+
+            words = parts[2].replace(",", "").split()
+            if len(words) < 8:
+                continue
+
+            count = int(words[2])
+            item_name = words[3]
+            price_match = re.search(r"-?\d+", words[7])
+            if not price_match or count <= 0:
+                continue
+            total_price = int(price_match.group(0))
+            unit_price = total_price / count
+
+            current_limits = _get_cached_limits()
+            limit = current_limits.get(item_name, 0)
+            answer = "1 " if total_price <= _max_price and unit_price <= limit else "0 "
+
+            _lasch = answer
+            _buyer_pending_id = None
+            _buyer_pending_since = 0.0
+            fast_send(answer)
+            _dispatch_next_buy()
+            return True
+    except Exception as e:
+        print(f"AutoBuyer response error: {e}")
+    return False
+
+
+def _send_buy_request(sell_id):
+    """Send one buy request and remember its response ID."""
+    global _lasch, _buyer_pending_id, _buyer_pending_since
+    _lasch = str(sell_id).strip()
+    _buyer_pending_id = _lasch
+    _buyer_pending_since = time.monotonic()
+    fast_send(f"b {_lasch}")
+
+
+def _dispatch_next_buy():
+    """Start the next queued eligible listing as soon as the current one completes."""
+    global _buyer_queue
+    if _buyer_pending_id is not None:
+        return
+    now = time.monotonic()
+    while _buyer_queue:
+        sell_id, queued_at = _buyer_queue.pop(0)
+        if now - queued_at > 5.0:
+            continue  # Do not buy an offer that sat in the queue too long.
+        _send_buy_request(sell_id)
+        return
+
+
+def _process_buyer_message(message):
+    """Process one unseen server line immediately; no delayed retry timers needed."""
+    global _sod, _lasch, _buyer_pending_id, _buyer_pending_since
+
+    if not isinstance(message, str):
+        return
+
+    if "💳Buy < " in message:
+        _buysel(message)
+        return
+
+    if "Server" not in message:
+        return
+
+    if "💰Sell <" in message:
+        try:
+            body = message.split("💰Sell <", 1)[1].replace(",", "")
+            parts = body.split()
+            if len(parts) < 5:
+                _sod = False
+                return
+
+            count = int(parts[0])
+            item_name = parts[1]
+            price_match = re.search(r"-?\d+", parts[4])
+            if not price_match or count <= 0:
+                _sod = False
+                return
+            total_price = int(price_match.group(0))
+            unit_price = total_price / count
+            limit = _get_cached_limits().get(item_name, 0)
+            _sod = total_price <= _max_price and unit_price <= limit
+        except Exception:
+            _sod = False
+        return
+
+    if "💰Sell ID: " in message and _sod:
+        try:
+            sell_id = message.split("💰Sell ID: ", 1)[1].strip()
+            if not sell_id:
+                return
+
+            now = time.monotonic()
+            _sod = False
+            if _buyer_pending_id is not None:
+                # Preserve rapid incoming listings instead of losing their IDs
+                # while another Buy prompt is being answered.
+                already_queued = any(queued_id == sell_id for queued_id, _ in _buyer_queue)
+                if sell_id != _buyer_pending_id and not already_queued and len(_buyer_queue) < 20:
+                    _buyer_queue.append((sell_id, now))
+                return
+
+            _send_buy_request(sell_id)
+        except Exception as e:
+            print(f"AutoBuyer sell-ID error: {e}")
 
 
 def _dls():
-    """دقیقاً مثل dls() در fastBuy"""
-    global _lasch
-    if _lasch[:1] == 's':
+    """Compatibility helper for older scheduled callbacks."""
+    if _buyer_pending_id is not None:
         _buysel()
 
 
 def sellcek():
-    """دقیقاً مثل sellcek() در fastBuy ولی هر 0.01 ثانیه + رفع باگ تکرار"""
-    global _sod, _max_price, _lasch
-    
+    """Poll quickly, but process every unseen chat message instead of only z[-1]."""
+    global _buyer_seen_messages, _buyer_pending_id, _buyer_pending_since, _lasch, _sod, _buyer_queue
+
     if not auto_buyer_enabled:
+        # Keep the cursor current while disabled so old listings are not bought
+        # immediately after the feature is enabled again.
+        try:
+            _buyer_seen_messages = list(GCM() or [])
+        except Exception:
+            pass
+        _buyer_pending_id = None
+        _buyer_pending_since = 0.0
+        _buyer_queue[:] = []
+        _sod = False
+        _lasch = "0 "
         teck(0.2, sellcek)
         return
-    
+
     try:
         z = GCM()
-        if not z:
-            teck(0.01, sellcek)
-            return
-        
-        m = z[-1]
-        
-        if "Server" in m:
-            if "💰Sell <" in m:
-                try:
-                    m2 = m.split("💰Sell <")[1].replace(",", '')
-                    parts = m2.split(" ")
-                    if len(parts) < 5:
-                        teck(0.01, sellcek)
-                        return
-                    
-                    count = int(parts[0])
-                    item_name = parts[1]
-                    total_price = int(parts[4].rstrip(">").rstrip("?"))
-                    
-                    if count > 0:
-                        unit_price = total_price / count
-                        
-                        if total_price <= _max_price:
-                            current_limits = _get_cached_limits()
-                            limit = current_limits.get(item_name, 0)
-                            
-                            if unit_price <= limit:
-                                _sod = True
-                            else:
-                                _sod = False
-                        else:
-                            _sod = False
-                except:
-                    pass
-            elif "💰Sell ID: " in m and _sod:
-                try:
-                    sell_id = m.split("💰Sell ID: ")[1].strip()
-                    
-                    # ✅ رفع باگ: اگه هنوز منتظر جواب Buy هستیم، دوباره نفرست
-                    if _lasch[:1] == 's':
-                        teck(0.01, sellcek)
-                        return
-                    
-                    _lasch = sell_id
-                    fast_send(f"b {sell_id}")
-                    
-                    teck(0.2, _dls)
-                    teck(0.4, _dls)
-                    teck(0.6, _dls)
-                    teck(0.8, _dls)
-                    teck(1.0, _dls)
-                except:
-                    pass
-    except:
-        pass
-    
+        current = list(z or [])
+        if _buyer_seen_messages is None:
+            # Preserve the old startup behavior: inspect only the newest line once.
+            new_messages = current[-1:]
+        else:
+            new_messages = _collect_new_messages(current, _buyer_seen_messages)
+        _buyer_seen_messages = current
+
+        # Process newly-arrived responses before timing out a pending ID, so a
+        # delayed server reply in this same batch still gets matched correctly.
+        for message in new_messages:
+            _process_buyer_message(message)
+
+        now = time.monotonic()
+        if _buyer_pending_id is not None and now - _buyer_pending_since >= 3.0:
+            _buyer_pending_id = None
+            _buyer_pending_since = 0.0
+            _lasch = "0 "
+            _dispatch_next_buy()
+    except Exception as e:
+        print(f"AutoBuyer loop error: {e}")
+
     teck(0.01, sellcek)
 
 
@@ -1510,54 +1586,80 @@ def sellcek():
 # ============================================================
 
 def check_reaction(msg):
+    """Respond to every matching FR/FL-style command that targets this player."""
     global my_own_client_id, my_own_display_num
-    if not auto_react_enabled: return
+    if not auto_react_enabled:
+        return
+
     try:
-        if my_own_client_id is None and my_own_display_num is None:
+        if my_own_client_id is None or my_own_display_num is None:
             get_my_ids()
+
+        # Convert Persian/Arabic numerals (e.g. ۱۲۱) to ASCII so ID parsing is stable.
+        digit_map = str.maketrans(
+            "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
+            "01234567890123456789",
+        )
+        normalized_msg = str(msg).translate(digit_map)
+        sender = None
+        content = normalized_msg
+        if ": " in normalized_msg:
+            sender, content = normalized_msg.split(": ", 1)
+            sender = sender.strip()
+            content = content.strip()
+
+        if sender and my_own_name and sender == my_own_name:
+            return
+
+        content_lower = content.lower()
         current_reactions = get_reactions()
         current_cooldowns = get_cooldowns()
-        sender = None; content = msg
-        if ': ' in msg:
-            parts = msg.split(': ', 1)
-            sender = parts[0].strip(); content = parts[1].strip()
-        content_lower = content.lower()
+        now = time.time()
 
         for trigger, response in current_reactions.items():
-            trigger_lower = trigger.lower()
-            esc_trigger = re.escape(trigger_lower)
-
-            pattern = rf'(?:^|[\s/])%?\s*{esc_trigger}\s*%?\s*(\d+)'
-            m = re.search(pattern, content_lower)
-            if not m:
+            trigger_lower = str(trigger).lower().strip()
+            if not trigger_lower:
                 continue
 
+            pattern = re.compile(
+                rf"(?:^|[\s/])%?\s*{re.escape(trigger_lower)}\s*%?\s*(\d+)"
+            )
+            target_is_me = False
+            for match in pattern.finditer(content_lower):
+                try:
+                    target_num = int(match.group(1))
+                except (TypeError, ValueError):
+                    continue
+                if (
+                    (my_own_client_id is not None and target_num == my_own_client_id)
+                    or (my_own_display_num is not None and target_num == my_own_display_num)
+                ):
+                    target_is_me = True
+                    break
+
+            if not target_is_me:
+                continue
+
+            cd_time = max(0.0, float(current_cooldowns.get(trigger, DEFAULT_COOLDOWN)))
+            cd_key = f"{trigger_lower}_{sender or 'unknown'}"
+            last_time = react_cooldown.get(cd_key, 0.0)
+            if now - last_time < cd_time:
+                # Do not stop checking other triggers; FR cooling down must not
+                # prevent FL (or another configured trigger) from replying.
+                continue
+
+            react_cooldown[cd_key] = now
+            if len(react_cooldown) > 100:
+                cutoff = now - 300
+                for key, timestamp in list(react_cooldown.items()):
+                    if timestamp < cutoff:
+                        del react_cooldown[key]
+
+            safe_chat_send(response)
             try:
-                target_num = int(m.group(1))
-            except:
-                continue
-
-            is_target_me = False
-            if my_own_client_id is not None and target_num == my_own_client_id:
-                is_target_me = True
-            elif my_own_display_num is not None and target_num == my_own_display_num:
-                is_target_me = True
-
-            if is_target_me:
-                cd_time = current_cooldowns.get(trigger, DEFAULT_COOLDOWN)
-                current_time = time.time()
-                cd_key = f"{trigger_lower}_{sender or 'unknown'}"
-                last_time = react_cooldown.get(cd_key, 0)
-                if current_time - last_time < cd_time: break
-                react_cooldown[cd_key] = current_time
-                if len(react_cooldown) > 50:
-                    now = time.time()
-                    to_del = [k for k, v in react_cooldown.items() if now - v > 300]
-                    for k in to_del: del react_cooldown[k]
-                safe_chat_send(response)
-                try: gs('dingSmall').play()
-                except: pass
-                break
+                gs('dingSmall').play()
+            except Exception:
+                pass
     except Exception as e:
         print(f"React error: {e}")
 
@@ -1693,9 +1795,9 @@ class byMahyar(Plugin):
         s.last_msg_hash = ""
         s.last_calc_hash = ""
 
-        teck(0.5, s.ear)
+        teck(0.1, s.ear)
         teck(0.5, s.calc_ear)
-        teck(0.3, sellcek)
+        teck(0.05, sellcek)
         teck(1, s.reconnect_ear)
 
         from bauiv1lib import party
@@ -1729,43 +1831,38 @@ class byMahyar(Plugin):
         party.PartyWindow.__init__ = e
 
     def ear(s):
-        global _last_seen_count
+        global _last_seen_messages
         try:
             z = GCM()
-            teck(0.05, s.ear)
+            teck(0.02, s.ear)
+            current = list(z or [])
+            new_msgs = _collect_new_messages(current, _last_seen_messages)
+            _last_seen_messages = current
 
-            if not z:
-                _last_seen_count = 0
-                return
-
-            current_count = len(z)
-
-            # ✅ همه‌ی پیام‌های جدید رو پردازش کن (نه فقط آخری)
-            if current_count > _last_seen_count:
-                new_msgs = z[_last_seen_count:current_count]
-                _last_seen_count = current_count
-
-                for msg in new_msgs:
-                    try:
-                        if check_spam_command(msg): continue
-                    except: pass
-                    try:
-                        if check_auto_reply(msg): continue
-                    except: pass
-                    try:
-                        if check_filter(msg): continue
-                    except: pass
-                    try:
-                        check_reaction(msg)
-                    except: pass
-            elif current_count < _last_seen_count:
-                # چت ریست شد
-                _last_seen_count = current_count
-
+            for msg in new_msgs:
+                try:
+                    if check_spam_command(msg):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if check_auto_reply(msg):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if check_filter(msg):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    check_reaction(msg)
+                except Exception:
+                    pass
         except Exception as e:
             try:
                 teck(0.05, s.ear)
-            except:
+            except Exception:
                 pass
             print(f"Error in ear: {e}")
 
