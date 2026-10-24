@@ -1,3 +1,4 @@
+
 from babase import Plugin
 from bauiv1 import (
     containerwidget as cw,
@@ -44,8 +45,8 @@ DEFAULT_LIMITS = {
 }
 
 DEFAULT_REACTIONS = {'fr': 'u', 'cu': 'h', 'fl': 'fl'}
-DEFAULT_COOLDOWNS = {'fr': 0.15, 'cu': 0.15, 'fl': 0.15}
-DEFAULT_COOLDOWN = 0.15
+DEFAULT_COOLDOWNS = {'fr': 0.02, 'cu': 0.02, 'fl': 0.02}
+DEFAULT_COOLDOWN = 0.02
 DEFAULT_AUTO_REPLIES = {}
 
 
@@ -250,7 +251,7 @@ _limits_cache_time = 0
 def _get_cached_limits():
     global _limits_cache, _limits_cache_time
     now = time.time()
-    if _limits_cache is None or (now - _limits_cache_time) > 0.1:
+    if _limits_cache is None or (now - _limits_cache_time) > 0.25:
         try:
             _limits_cache = get_limits()
             _limits_cache_time = now
@@ -1570,7 +1571,7 @@ def sellcek():
             _process_buyer_message(message)
 
         now = time.monotonic()
-        if _buyer_pending_id is not None and now - _buyer_pending_since >= 3.0:
+        if _buyer_pending_id is not None and now - _buyer_pending_since >= 0.75:
             _buyer_pending_id = None
             _buyer_pending_since = 0.0
             _lasch = "0 "
@@ -1797,7 +1798,7 @@ class byMahyar(Plugin):
 
         teck(0.1, s.ear)
         teck(0.5, s.calc_ear)
-        teck(0.05, sellcek)
+        teck(0.01, sellcek)
         teck(1, s.reconnect_ear)
 
         from bauiv1lib import party
@@ -1834,7 +1835,7 @@ class byMahyar(Plugin):
         global _last_seen_messages
         try:
             z = GCM()
-            teck(0.02, s.ear)
+            teck(0.01, s.ear)
             current = list(z or [])
             new_msgs = _collect_new_messages(current, _last_seen_messages)
             _last_seen_messages = current
