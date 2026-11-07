@@ -1361,7 +1361,7 @@ class PingWindow:
         tw(parent=self.w, text='Ping', scale=0.9, position=(140, 195),
            h_align='center', color=(0, 1, 1))
         self.ping_text = tw(
-            parent=self.w, text=f'Current: {current_ping} ms',
+            parent=self.w, text=f'Current: {current_ping:.2f} ms' if 0 < current_ping < 999 else 'Current: ? ms',
             position=(140, 155), h_align='center', scale=0.75,
             color=(1, 1, 0)
         )
@@ -1384,7 +1384,8 @@ class PingWindow:
         try:
             if not self.w.exists():
                 return
-            tw(self.ping_text, text=f'Current: {current_ping} ms')
+            ping_value = f'{current_ping:.2f}' if 0 < current_ping < 999 else '?'
+            tw(self.ping_text, text=f'Current: {ping_value} ms')
             tw(self.server_text, text=f'{server_ip}:{server_port}')
             teck(0.5, self.update_ping)
         except Exception:
@@ -1393,8 +1394,8 @@ class PingWindow:
     def send_ping(self):
         try:
             icon = get_ping_icon(current_ping)
-            value = '?' if current_ping == 0 or current_ping >= 999 else str(int(current_ping))
-            message = f'My Ping : {icon} {value}'
+            value = '?' if current_ping <= 0 or current_ping >= 999 else f'{current_ping:.2f}'
+            message = f'My Ping : {icon} {value} ms'
             CM(message)
             push(f'Sent: {message}', color=(0, 1, 0))
             try:
