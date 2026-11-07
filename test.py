@@ -1,4 +1,3 @@
-
 from babase import Plugin
 from bauiv1 import (
     containerwidget as cw,
@@ -25,6 +24,8 @@ from bascenev1 import (
 import math
 import re
 import time
+import socket
+import threading
 import bauiv1 as bui
 import bascenev1
 from babase import app
@@ -45,8 +46,8 @@ DEFAULT_LIMITS = {
 }
 
 DEFAULT_REACTIONS = {'fr': 'u', 'cu': 'h', 'fl': 'fl'}
-DEFAULT_COOLDOWNS = {'fr': 0.02, 'cu': 0.02, 'fl': 0.02}
-DEFAULT_COOLDOWN = 0.02
+DEFAULT_COOLDOWNS = {'fr': 0.15, 'cu': 0.15, 'fl': 0.15}
+DEFAULT_COOLDOWN = 0.15
 DEFAULT_AUTO_REPLIES = {}
 
 
@@ -212,6 +213,7 @@ filter_enabled = get_enabled_state('filter', True)
 processed_sell_ids = set()
 processed_buy_ids = set()
 react_cooldown = {}
+_reaction_pattern_cache = {}
 auto_reply_cooldown = {}
 filter_cooldown = {}
 
@@ -222,6 +224,8 @@ spam_counter = 0
 spam_timer = None
 
 server_ip, server_port = get_saved_server()
+current_ping = 0.0
+ping_thread = None
 
 auto_reconnect_enabled = False
 auto_reconnect_busy = False
@@ -251,7 +255,7 @@ _limits_cache_time = 0
 def _get_cached_limits():
     global _limits_cache, _limits_cache_time
     now = time.time()
-    if _limits_cache is None or (now - _limits_cache_time) > 0.25:
+    if _limits_cache is None or (now - _limits_cache_time) > 0.1:
         try:
             _limits_cache = get_limits()
             _limits_cache_time = now
@@ -1299,6 +1303,108 @@ class EditPlaceWindow:
         gs('dingSmallHigh').play()
 
 
+
+# ============================================================
+# Ping (integrated into the Mods menu)
+# ============================================================
+def get_ping_icon(ping):
+    if ping == 0 or ping >= 999:
+        return "❓"
+    if ping < 100:
+        return "🔵"
+    if ping < 200:
+        return "⚪"
+    if ping < 350:
+        return "🟠"
+    return "🔴"
+
+
+class RealPingThread(threading.Thread):
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.running = True
+
+    def run(self):
+        global current_ping
+        while self.running:
+            try:
+                # Only attempt a real ping when a non-default server is selected.
+                if server_ip != "127.0.0.1" or server_port != 43210:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    sock.settimeout(0.8)
+                    started = time.monotonic()
+                    try:
+                        sock.sendto(b'\x0b', (server_ip, int(server_port)))
+                        data, _ = sock.recvfrom(16)
+                        if data == b'\x0c':
+                            current_ping = round((time.monotonic() - started) * 1000.0, 2)
+                        else:
+                            current_ping = 999
+                    except socket.timeout:
+                        current_ping = 999
+                    except OSError:
+                        current_ping = 0
+                    finally:
+                        sock.close()
+                else:
+                    current_ping = 0
+            except Exception as exc:
+                current_ping = 0
+                print(f"[Ping] error: {exc}")
+            time.sleep(1.0)
+
+
+class PingWindow:
+    def __init__(self, source):
+        self.w = AR.cw(source=source, size=(280, 235), ps=AR.UIS() * 0.3)
+        AR.add_close_button(self.w, position=(250, 200))
+        tw(parent=self.w, text='Ping', scale=0.9, position=(140, 195),
+           h_align='center', color=(0, 1, 1))
+        self.ping_text = tw(
+            parent=self.w, text=f'Current: {current_ping} ms',
+            position=(140, 155), h_align='center', scale=0.75,
+            color=(1, 1, 0)
+        )
+        tw(parent=self.w, text='Server:', position=(140, 120),
+           h_align='center', scale=0.45, color=(0.8, 0.8, 1))
+        self.server_text = tw(
+            parent=self.w, text=f'{server_ip}:{server_port}',
+            position=(140, 98), h_align='center', scale=0.45,
+            color=(0.8, 0.8, 1)
+        )
+        AR.bw(
+            parent=self.w, label='Send Ping to Chat',
+            size=(190, 34), position=(45, 45),
+            on_activate_call=self.send_ping,
+            color=(0.2, 0.7, 0.3), text_scale=0.65
+        )
+        self.update_ping()
+
+    def update_ping(self):
+        try:
+            if not self.w.exists():
+                return
+            tw(self.ping_text, text=f'Current: {current_ping} ms')
+            tw(self.server_text, text=f'{server_ip}:{server_port}')
+            teck(0.5, self.update_ping)
+        except Exception:
+            pass
+
+    def send_ping(self):
+        try:
+            icon = get_ping_icon(current_ping)
+            value = '?' if current_ping == 0 or current_ping >= 999 else str(int(current_ping))
+            message = f'My Ping : {icon} {value}'
+            CM(message)
+            push(f'Sent: {message}', color=(0, 1, 0))
+            try:
+                gs('dingSmallHigh').play()
+            except Exception:
+                pass
+        except Exception as exc:
+            push(f'Ping error: {exc}', color=(1, 0, 0))
+
+
 class ModsMenu:
     def __init__(s, source):
         s.mods_button_ref = source
@@ -1311,6 +1417,7 @@ class ModsMenu:
 
         buttons = [
             ('Calculator', Calculator, (0, 0.3, 0.8)),
+            ('Ping', PingWindow, (0.4, 0.6, 0.8)),
             ('Auto Buyer', AutoBuyerWindow, (0.2, 0.6, 0.8)),
             ('Auto React', ReactionEditorWindow, (0.8, 0.5, 0.2)),
             ('Auto Reply', AutoReplyEditorWindow, (0.3, 0.7, 0.4)),
@@ -1571,7 +1678,7 @@ def sellcek():
             _process_buyer_message(message)
 
         now = time.monotonic()
-        if _buyer_pending_id is not None and now - _buyer_pending_since >= 0.75:
+        if _buyer_pending_id is not None and now - _buyer_pending_since >= 3.0:
             _buyer_pending_id = None
             _buyer_pending_since = 0.0
             _lasch = "0 "
@@ -1579,7 +1686,7 @@ def sellcek():
     except Exception as e:
         print(f"AutoBuyer loop error: {e}")
 
-    teck(0.01, sellcek)
+    teck(0.005, sellcek)
 
 
 # ============================================================
@@ -1622,9 +1729,12 @@ def check_reaction(msg):
             if not trigger_lower:
                 continue
 
-            pattern = re.compile(
-                rf"(?:^|[\s/])%?\s*{re.escape(trigger_lower)}\s*%?\s*(\d+)"
-            )
+            pattern = _reaction_pattern_cache.get(trigger_lower)
+            if pattern is None:
+                pattern = re.compile(
+                    rf"(?:^|[\s/])%?\s*{re.escape(trigger_lower)}\s*%?\s*(\d+)"
+                )
+                _reaction_pattern_cache[trigger_lower] = pattern
             target_is_me = False
             for match in pattern.finditer(content_lower):
                 try:
@@ -1789,16 +1899,19 @@ def stop_auto_reconnect():
 # ba_meta export babase.Plugin
 class byMahyar(Plugin):
     def __init__(s):
-        global my_own_name
+        global my_own_name, ping_thread
+        if ping_thread is None or not ping_thread.is_alive():
+            ping_thread = RealPingThread()
+            ping_thread.start()
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
 
         s.last_msg_hash = ""
         s.last_calc_hash = ""
 
-        teck(0.1, s.ear)
+        teck(0.01, s.ear)
         teck(0.5, s.calc_ear)
-        teck(0.01, sellcek)
+        teck(0.005, sellcek)
         teck(1, s.reconnect_ear)
 
         from bauiv1lib import party
