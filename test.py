@@ -1,3 +1,4 @@
+# ba_meta require api 9
 from babase import Plugin
 from bauiv1 import (
     containerwidget as cw,
@@ -1783,7 +1784,6 @@ def stop_auto_reconnect():
     push("Auto Reconnect: OFF", color=(1, 0.5, 0))
 
 
-# ba_meta require api 9
 # BSLIFE Ally Manager — v10 (BetterParty-style UI)
 # Made with Tajer and Windows an Taha
 # api 9 — mod is Free
@@ -4058,34 +4058,76 @@ class byMahyar(Plugin):
         teck(1, s.reconnect_ear)
 
         from bauiv1lib import party
-        o = party.PartyWindow.__init__
 
-        def e(self, *a, **k):
-            r = o(self, *a, **k)
-            teck(0.5, get_my_ids)
-
-            default_x = self._width - 110
-            default_y = self._height - 155
-            saved_x, saved_y = get_mods_button_position(default_x, default_y)
-
+        def add_mods_button(win):
             try:
-                saved_x = float(saved_x)
-                saved_y = float(saved_y)
-            except:
-                saved_x, saved_y = float(default_x), float(default_y)
+                if getattr(win, "_mahyar_mods_button_added", False):
+                    return
+                root = getattr(win, "_root_widget", None)
+                if root is None:
+                    return
 
-            b_mods = AR.bw(
-                position=(saved_x, saved_y),
-                parent=self._root_widget,
-                size=(85, 25),
-                label='Mods',
-                color=(0.3, 0.5, 0.8)
-            )
-            bw(b_mods, on_activate_call=lambda: s.delayed_open(ModsMenu, b_mods))
+                # Stock PartyWindow uses _width/_height; BetterParty-style
+                # windows may expose _W/_H instead.
+                width = float(getattr(win, "_width", getattr(win, "_W", 600)))
+                height = float(getattr(win, "_height", getattr(win, "_H", 500)))
+                default_x = width - 110
+                default_y = height - 155
+                saved_x, saved_y = get_mods_button_position(default_x, default_y)
 
-            return r
+                try:
+                    saved_x = float(saved_x)
+                    saved_y = float(saved_y)
+                except Exception:
+                    saved_x, saved_y = float(default_x), float(default_y)
 
-        party.PartyWindow.__init__ = e
+                b_mods = AR.bw(
+                    position=(saved_x, saved_y),
+                    parent=root,
+                    size=(85, 25),
+                    label='Mods',
+                    color=(0.3, 0.5, 0.8)
+                )
+                bw(
+                    b_mods,
+                    on_activate_call=lambda: s.delayed_open(ModsMenu, b_mods)
+                )
+                try:
+                    win._mahyar_mods_button_added = True
+                except Exception:
+                    pass
+            except Exception as exc:
+                print(f"Mahyar PartyWindow button error: {exc}")
+
+        current_party_window = party.PartyWindow
+
+        # Avoid stacking our patch if the game reloads this plugin.
+        if not getattr(current_party_window, "_mahyar_mods_patch", False):
+            if isinstance(current_party_window, type):
+                original_init = current_party_window.__init__
+
+                def patched_init(self, *a, **k):
+                    result = original_init(self, *a, **k)
+                    teck(0.5, get_my_ids)
+                    add_mods_button(self)
+                    return result
+
+                current_party_window.__init__ = patched_init
+                try:
+                    current_party_window._mahyar_mods_patch = True
+                except Exception:
+                    pass
+            else:
+                original_party_window = current_party_window
+
+                def patched_party_window(*a, **k):
+                    win = original_party_window(*a, **k)
+                    teck(0.5, get_my_ids)
+                    add_mods_button(win)
+                    return win
+
+                patched_party_window._mahyar_mods_patch = True
+                party.PartyWindow = patched_party_window
 
     def ear(s):
         global _last_seen_messages
