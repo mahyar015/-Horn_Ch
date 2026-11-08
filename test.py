@@ -1812,7 +1812,11 @@ import bauiv1 as bui
 
 BASE_URL = "https://bslife.ir"
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".bslife_ally")
-os.makedirs(DATA_DIR, exist_ok=True)
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+except Exception:
+    # The game may scan mods from a read-only directory.
+    pass
 SESSION_FILE = os.path.join(DATA_DIR, "session.json")
 LOG_FILE = os.path.join(DATA_DIR, "bslife_debug.log")
 
@@ -1827,7 +1831,7 @@ GOLD = (1.0, 0.86, 0.35)
 GREEN = (0.5, 1.0, 0.6)
 RED = (1.0, 0.5, 0.45)
 
-MyCall = getattr(bui, 'CallPartial', bui.Call)
+MyCall = getattr(bui, 'CallPartial', Call)
 
 # ═══════════════════════════════════════════════════════════════
 # LANGUAGE
