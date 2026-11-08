@@ -226,6 +226,10 @@ spam_timer = None
 server_ip, server_port = get_saved_server()
 current_ping = 0.0
 ping_thread = None
+ping_history = []
+mod_events = []
+_last_roster_ids = set()
+_branding_shown = False
 
 auto_reconnect_enabled = False
 auto_reconnect_busy = False
@@ -1338,6 +1342,8 @@ class RealPingThread(threading.Thread):
                         data, _ = sock.recvfrom(16)
                         if data == b'\x0c':
                             current_ping = round((time.monotonic() - started) * 1000.0, 2)
+                            ping_history.append(current_ping)
+                            del ping_history[:-120]
                         else:
                             current_ping = 999
                     except socket.timeout:
@@ -1406,6 +1412,143 @@ class PingWindow:
             push(f'Ping error: {exc}', color=(1, 0, 0))
 
 
+def _record_event(message):
+    """Store events silently; never create an on-screen popup."""
+    try:
+        mod_events.append(f"[{time.strftime('%H:%M:%S')}] {str(message)[:180]}")
+        del mod_events[:-100]
+    except Exception:
+        pass
+
+
+def _roster_players():
+    try:
+        result = []
+        for entry in get_roster() or []:
+            for player in entry.get('players', []) or []:
+                result.append({
+                    'name': player.get('name_full') or player.get('name') or 'Unknown',
+                    'client_id': entry.get('client_id'),
+                    'display': entry.get('display_string', '')
+                })
+        return result
+    except Exception:
+        return []
+
+
+class PlayerInfoWindow:
+    def __init__(self, source):
+        self.w = AR.cw(source=source, size=(340, 430), ps=AR.UIS() * 0.3)
+        AR.add_close_button(self.w, position=(310, 400))
+        tw(parent=self.w, text='Player Info', position=(170, 400), h_align='center', scale=0.9, color=(0, 1, 1))
+        self.scroll = sw(parent=self.w, size=(300, 320), position=(20, 55))
+        self.container = cw(parent=self.scroll, size=(280, 600), background=False)
+        AR.bw(parent=self.w, label='Refresh', size=(130, 30), position=(105, 12), on_activate_call=self.refresh, color=(0.2, 0.55, 0.8))
+        self.refresh()
+
+    def refresh(self):
+        try:
+            for child in self.container.get_children(): child.delete()
+            players = _roster_players()
+            row_h = 48
+            total = max(320, len(players) * row_h + 10)
+            cw(self.container, size=(280, total))
+            y = total - 42
+            for item in players:
+                label = f"{item['name']}  |  ID: {item['client_id']}"
+                tw(parent=self.container, text=label, position=(8, y), scale=0.55, maxwidth=260, color=(1, 1, 1))
+                AR.bw(parent=self.container, label='Copy ID', size=(70, 23), position=(195, y-24), color=(0.2, 0.55, 0.7), on_activate_call=Call(self.copy_text, str(item['client_id'])))
+                y -= row_h
+            if not players:
+                tw(parent=self.container, text='No players found.', position=(140, total/2), h_align='center', color=(1, 0.7, 0.3))
+        except Exception as exc:
+            print(f'[PlayerInfo] {exc}')
+
+    def copy_text(self, value):
+        try:
+            from bauiv1 import clipboard_set_text
+            clipboard_set_text(value)
+        except Exception:
+            pass
+
+
+class InventoryManagerWindow:
+    """Requests the server's inventory/status text; does not automate purchases."""
+    def __init__(self, source):
+        self.w = AR.cw(source=source, size=(300, 250), ps=AR.UIS() * 0.3)
+        AR.add_close_button(self.w, position=(270, 220))
+        tw(parent=self.w, text='Inventory Manager', position=(150, 220), h_align='center', scale=0.8, color=(0, 1, 1))
+        tw(parent=self.w, text='Request your inventory from the server:', position=(150, 175), h_align='center', scale=0.52, color=(1, 1, 1))
+        AR.bw(parent=self.w, label='Show Inventory (i)', size=(220, 35), position=(40, 120), color=(0.15, 0.55, 0.75), on_activate_call=self.request_inventory)
+        AR.bw(parent=self.w, label='Show Coins (c)', size=(220, 35), position=(40, 75), color=(0.2, 0.6, 0.35), on_activate_call=self.request_coins)
+        tw(parent=self.w, text='Results appear in server chat.', position=(150, 35), h_align='center', scale=0.45, color=(0.8, 0.8, 0.8))
+
+    def request_inventory(self):
+        safe_chat_send('i')
+
+    def request_coins(self):
+        safe_chat_send('c')
+
+
+class PingMonitorWindow:
+    def __init__(self, source):
+        self.w = AR.cw(source=source, size=(300, 280), ps=AR.UIS() * 0.3)
+        AR.add_close_button(self.w, position=(270, 250))
+        tw(parent=self.w, text='Ping Monitor', position=(150, 250), h_align='center', scale=0.9, color=(0, 1, 1))
+        self.info = tw(parent=self.w, text='', position=(150, 180), h_align='center', scale=0.7, color=(1, 1, 0))
+        AR.bw(parent=self.w, label='Reset Stats', size=(130, 30), position=(85, 25), color=(0.65, 0.35, 0.2), on_activate_call=self.reset)
+        self.update()
+
+    def reset(self):
+        ping_history.clear()
+        self.update()
+
+    def update(self):
+        try:
+            if not self.w.exists(): return
+            vals = list(ping_history)
+            if vals:
+                avg = sum(vals) / len(vals)
+                msg = f'Current: {current_ping:.1f} ms\nAverage: {avg:.1f} ms\nMin: {min(vals):.1f} ms\nMax: {max(vals):.1f} ms\nSamples: {len(vals)}'
+            else:
+                msg = 'Waiting for ping samples...'
+            tw(self.info, text=msg)
+            teck(1.0, self.update)
+        except Exception:
+            pass
+
+
+class NotificationCenterWindow:
+    def __init__(self, source):
+        self.w = AR.cw(source=source, size=(340, 430), ps=AR.UIS() * 0.3)
+        AR.add_close_button(self.w, position=(310, 400))
+        tw(parent=self.w, text='Notification Center (Silent)', position=(170, 400), h_align='center', scale=0.75, color=(0, 1, 1))
+        self.scroll = sw(parent=self.w, size=(300, 320), position=(20, 55))
+        self.container = cw(parent=self.scroll, size=(280, 600), background=False)
+        AR.bw(parent=self.w, label='Refresh', size=(95, 28), position=(20, 12), color=(0.2, 0.55, 0.8), on_activate_call=self.refresh)
+        AR.bw(parent=self.w, label='Clear', size=(95, 28), position=(125, 12), color=(0.65, 0.35, 0.2), on_activate_call=self.clear)
+        self.refresh()
+
+    def clear(self):
+        mod_events.clear()
+        self.refresh()
+
+    def refresh(self):
+        try:
+            for child in self.container.get_children(): child.delete()
+            events = list(mod_events)[-40:]
+            total = max(320, len(events) * 30 + 10)
+            cw(self.container, size=(280, total))
+            y = total - 25
+            for event in reversed(events):
+                tw(parent=self.container, text=event, position=(5, y), scale=0.45, maxwidth=270, color=(0.9, 0.9, 0.9))
+                y -= 30
+            if not events:
+                tw(parent=self.container, text='No saved notifications.', position=(140, total/2), h_align='center', color=(0.8, 0.8, 0.8))
+        except Exception as exc:
+            print(f'[NotificationCenter] {exc}')
+
+
 class ModsMenu:
     def __init__(s, source):
         s.mods_button_ref = source
@@ -1419,6 +1562,10 @@ class ModsMenu:
         buttons = [
             ('Calculator', Calculator, (0, 0.3, 0.8)),
             ('Ping', PingWindow, (0.4, 0.6, 0.8)),
+            ('Player Info', PlayerInfoWindow, (0.2, 0.6, 0.7)),
+            ('Inventory Manager', InventoryManagerWindow, (0.2, 0.65, 0.35)),
+            ('Ping Monitor', PingMonitorWindow, (0.35, 0.55, 0.8)),
+            ('Notification Center', NotificationCenterWindow, (0.45, 0.45, 0.65)),
             ('Auto Buyer', AutoBuyerWindow, (0.2, 0.6, 0.8)),
             ('Auto React', ReactionEditorWindow, (0.8, 0.5, 0.2)),
             ('Auto Reply', AutoReplyEditorWindow, (0.3, 0.7, 0.4)),
@@ -1914,6 +2061,7 @@ class byMahyar(Plugin):
         teck(0.5, s.calc_ear)
         teck(0.005, sellcek)
         teck(1, s.reconnect_ear)
+        teck(2.0, s.roster_ear)
 
         from bauiv1lib import party
         o = party.PartyWindow.__init__
@@ -1945,6 +2093,33 @@ class byMahyar(Plugin):
 
         party.PartyWindow.__init__ = e
 
+    def roster_ear(s):
+        global _last_roster_ids, _branding_shown
+        try:
+            teck(2.0, s.roster_ear)
+            roster = get_roster() or []
+            current = set()
+            for entry in roster:
+                cid = entry.get('client_id')
+                if cid is not None:
+                    current.add(cid)
+            if current and not _branding_shown:
+                push('Create By Mahyar\nChannel: @Horn_Ch', color=(0.2, 0.9, 0.7))
+                _branding_shown = True
+            if not current:
+                _branding_shown = False
+            joined = current - _last_roster_ids
+            left = _last_roster_ids - current
+            for cid in joined:
+                _record_event(f'Player joined | ID: {cid}')
+            for cid in left:
+                _record_event(f'Player left | ID: {cid}')
+            _last_roster_ids = current
+        except Exception as exc:
+            print(f'[RosterMonitor] {exc}')
+            try: teck(3.0, s.roster_ear)
+            except Exception: pass
+
     def ear(s):
         global _last_seen_messages
         try:
@@ -1955,6 +2130,12 @@ class byMahyar(Plugin):
             _last_seen_messages = current
 
             for msg in new_msgs:
+                try:
+                    low_msg = str(msg).lower()
+                    if any(word in low_msg for word in ("error", "failed", "warning", "خرید", "فروش", "اتصال", "join", "left")):
+                        _record_event(f"Server: {msg}")
+                except Exception:
+                    pass
                 try:
                     if check_spam_command(msg):
                         continue
