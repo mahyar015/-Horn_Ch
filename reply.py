@@ -1,5 +1,4 @@
 # ba_meta require api 9
-# ba_meta export babase.Plugin
 """
 Mahyar Advanced Replay Player
 Standalone plugin for BombSquad 1.8.7 / API 9.
@@ -402,6 +401,7 @@ class ReplayControlOverlay:
             return False
 
 
+# ba_meta export babase.Plugin
 class MahyarReplayPlayer(babase.Plugin):
     """Plugin entry point."""
 
