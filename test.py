@@ -26,7 +26,6 @@ import re
 import time
 import socket
 import threading
-import os
 import bauiv1 as bui
 import bascenev1
 from babase import app
@@ -1276,7 +1275,7 @@ class EditPlaceWindow:
 
     def apply_position(s):
         try:
-            max_x = max(0, s.parent_w - 128)
+            max_x = max(0, s.parent_w - 85)
             max_y = max(0, s.parent_h - 25)
             if s.current_x < 0: s.current_x = 0
             if s.current_y < 0: s.current_y = 0
@@ -1292,7 +1291,7 @@ class EditPlaceWindow:
 
     def reset(s):
         try:
-            default_x = s.parent_w - 150
+            default_x = s.parent_w - 110
             default_y = s.parent_h - 155
         except:
             default_x, default_y = 0, 0
@@ -1407,403 +1406,57 @@ class PingWindow:
             push(f'Ping error: {exc}', color=(1, 0, 0))
 
 
-
-# ============================================================
-# Mahyar Dashboard: player, chat, alerts and server telemetry
-# ============================================================
-_PLAYER_HISTORY = {}
-_CHAT_STATS = {'messages': 0, 'senders': {}, 'recent': []}
-_ANALYTICS_LAST_MESSAGES = None
-_PING_HISTORY = []
-_ALERT_LOG = []
-_SESSION_STARTED = time.time()
-_SESSION_CONNECTIONS = 0
-_SESSION_CONNECTED = False
-_SESSION_PING_TOTAL = 0.0
-_SESSION_PING_COUNT = 0
-_LAST_ALERT_PING_STATE = None
-_LAST_ALERT_CONNECTION = None
-_ALERT_KEYWORDS = ['bslife', 'event', 'shop', 'giveaway']
-_FAVORITE_PLAYERS = set()
-_TELEMETRY_STARTED = False
-
-
-def _player_name(entry):
-    try:
-        players = entry.get('players', [])
-        if players:
-            return str(players[0].get('name_full') or players[0].get('name', '')).strip()
-        return str(entry.get('display_string', '')).strip()
-    except Exception:
-        return ''
-
-
-def _add_alert(message, color=(0.3, 0.9, 0.5)):
-    stamp = time.strftime('%H:%M:%S')
-    _ALERT_LOG.append(f'[{stamp}] {message}')
-    del _ALERT_LOG[:-40]
-    try:
-        push(f'Mahyar Alert: {message}', color=color)
-        gs('dingSmall').play()
-    except Exception:
-        pass
-
-
-def _telemetry_tick():
-    global _SESSION_CONNECTED, _SESSION_CONNECTIONS, _SESSION_PING_TOTAL, _ANALYTICS_LAST_MESSAGES
-    global _SESSION_PING_COUNT, _LAST_ALERT_PING_STATE, _LAST_ALERT_CONNECTION
-    try:
-        now = time.time()
-        try:
-            roster = get_roster() or []
-        except Exception:
-            roster = []
-        for entry in roster:
-            name = _player_name(entry)
-            if not name:
-                continue
-            rec = _PLAYER_HISTORY.setdefault(name, {'first': now, 'last': now, 'seen': 0})
-            rec['last'] = now
-            rec['seen'] += 1
-
-        connected = bool(get_connection_info())
-        if connected and not _SESSION_CONNECTED:
-            _SESSION_CONNECTIONS += 1
-            _add_alert('Connection established', (0.2, 0.9, 0.4))
-        elif not connected and _SESSION_CONNECTED:
-            _add_alert('Server disconnected', (1.0, 0.45, 0.2))
-        _SESSION_CONNECTED = connected
-        if _LAST_ALERT_CONNECTION is None:
-            _LAST_ALERT_CONNECTION = connected
-
-        ping = float(current_ping or 0)
-        if 0 < ping < 999:
-            _PING_HISTORY.append((now, ping))
-            del _PING_HISTORY[:-180]
-            _SESSION_PING_TOTAL += ping
-            _SESSION_PING_COUNT += 1
-            state = 'high' if ping >= 300 else 'normal'
-            if state == 'high' and _LAST_ALERT_PING_STATE != 'high':
-                _add_alert(f'High ping detected: {ping:.0f} ms', (1.0, 0.65, 0.15))
-            _LAST_ALERT_PING_STATE = state
-        else:
-            _PING_HISTORY.append((now, 999))
-            del _PING_HISTORY[:-180]
-
-        try:
-            messages = list(GCM() or [])
-            new_messages = _collect_new_messages(messages, _ANALYTICS_LAST_MESSAGES)
-            _ANALYTICS_LAST_MESSAGES = messages
-            for msg in new_messages:
-                if not isinstance(msg, str):
-                    continue
-                _CHAT_STATS['recent'].append(msg)
-                del _CHAT_STATS['recent'][:-30]
-                _CHAT_STATS['messages'] += 1
-                sender = msg.split(': ', 1)[0][:32] if ': ' in msg else 'Unknown'
-                _CHAT_STATS['senders'][sender] = _CHAT_STATS['senders'].get(sender, 0) + 1
-                body = msg.split(': ', 1)[-1].lower()
-                for keyword in _ALERT_KEYWORDS:
-                    if keyword and keyword.lower() in body:
-                        _add_alert(f'Keyword "{keyword}" in chat', (0.3, 0.8, 1.0))
-                        break
-        except Exception:
-            pass
-    except Exception as exc:
-        print(f'[Mahyar telemetry] {exc}')
-    teck(3.0, _telemetry_tick)
-
-
-def _start_telemetry():
-    global _TELEMETRY_STARTED, _ANALYTICS_LAST_MESSAGES
-    if not _TELEMETRY_STARTED:
-        _TELEMETRY_STARTED = True
-        try:
-            _ANALYTICS_LAST_MESSAGES = list(GCM() or [])
-        except Exception:
-            _ANALYTICS_LAST_MESSAGES = []
-        teck(1.0, _telemetry_tick)
-
-
-class _InfoPanel:
-    title = 'Mahyar'
-    def __init__(self, source):
-        self.w = AR.cw(source=source, size=(370, 440), ps=AR.UIS() * 0.25)
-        AR.add_close_button(self.w, position=(338, 405))
-        tw(parent=self.w, text=self.title, scale=0.95, position=(185, 408), h_align='center', color=(0.2, 1.0, 0.55))
-        self.body = tw(parent=self.w, text='Loading...', position=(18, 365), size=(334, 330), h_align='left', v_align='top', scale=0.58, color=(0.9, 0.94, 1.0))
-        AR.bw(parent=self.w, label='Refresh', size=(150, 32), position=(110, 18), on_activate_call=self.refresh, color=(0.08, 0.55, 0.34), text_scale=0.7)
-        self.refresh()
-    def refresh(self):
-        pass
-    def show(self, value):
-        try: tw(self.body, text=value)
-        except Exception: pass
-
-
-class PlayerIntelligenceWindow(_InfoPanel):
-    title = 'PLAYER INTELLIGENCE'
-    def __init__(self, source):
-        super().__init__(source)
-        self.favorite_input = tw(parent=self.w, text='', editable=True, position=(18, 72), size=(220, 26), scale=0.55, h_align='left', color=(1, 1, 1))
-        AR.bw(parent=self.w, label='Toggle Favorite', size=(120, 28), position=(245, 70), on_activate_call=self.toggle_favorite, color=(0.42, 0.32, 0.08), text_scale=0.55)
-        self.refresh()
-    def toggle_favorite(self):
-        name = tw(query=self.favorite_input).strip()
-        if not name:
-            AR.err('Enter player name first')
-            return
-        if name in _FAVORITE_PLAYERS:
-            _FAVORITE_PLAYERS.remove(name)
-            push(f'Removed favorite: {name}', color=(1, 0.7, 0.2))
-        else:
-            _FAVORITE_PLAYERS.add(name)
-            push(f'Added favorite: {name}', color=(0.2, 1, 0.5))
-        self.refresh()
-    def refresh(self):
-        try:
-            roster = get_roster() or []
-            lines = [f'ONLINE NOW: {len(roster)}', '']
-            online = set()
-            for entry in roster:
-                name = _player_name(entry)
-                if not name: continue
-                online.add(name)
-                lines.append(('★ ' if name in _FAVORITE_PLAYERS else '• ') + name[:35])
-            lines += ['', f'PLAYERS SEEN THIS SESSION: {len(_PLAYER_HISTORY)}', 'RECENTLY SEEN:']
-            recent = sorted(_PLAYER_HISTORY.items(), key=lambda x: x[1]['last'], reverse=True)[:8]
-            for name, rec in recent:
-                age = max(0, int(time.time() - rec['last']))
-                lines.append(f'{name[:23]}  |  {age}s ago  |  {rec["seen"]} scans')
-            lines += ['', 'Tip: favorite list is local to this game session.']
-            self.show('\n'.join(lines))
-        except Exception as e: self.show(f'Could not read roster: {e}')
-
-
-class ChatAnalyticsWindow(_InfoPanel):
-    title = 'CHAT ANALYTICS'
-    def refresh(self):
-        senders = sorted(_CHAT_STATS['senders'].items(), key=lambda x: x[1], reverse=True)[:12]
-        lines = [f'MESSAGES OBSERVED: {_CHAT_STATS["messages"]}', '', 'MOST ACTIVE SENDERS:']
-        lines += [f'{i+1}. {name[:26]}  —  {count}' for i, (name, count) in enumerate(senders)]
-        lines += ['', 'RECENT CHAT:']
-        lines += [str(x)[:58] for x in _CHAT_STATS['recent'][-8:]]
-        self.show('\n'.join(lines))
-
-
-class SmartAlertsWindow(_InfoPanel):
-    title = 'SMART NOTIFICATIONS'
-    def __init__(self, source):
-        super().__init__(source)
-        self.keyword_input = tw(parent=self.w, text=', '.join(_ALERT_KEYWORDS), editable=True, position=(18, 75), size=(334, 28), scale=0.58, h_align='left', color=(1, 1, 1))
-        AR.bw(parent=self.w, label='Save Keywords', size=(150, 30), position=(110, 43), on_activate_call=self.save_keywords, color=(0.1, 0.45, 0.7), text_scale=0.62)
-        self.refresh()
-    def save_keywords(self):
-        global _ALERT_KEYWORDS
-        try:
-            value = tw(query=self.keyword_input).strip()
-            _ALERT_KEYWORDS = [x.strip()[:24] for x in value.split(',') if x.strip()][:10]
-            push('Alert keywords saved', color=(0.2, 1, 0.5))
-        except Exception as e: AR.err(f'Keyword error: {e}')
-    def refresh(self):
-        lines = ['ALERT HISTORY', ''] + (_ALERT_LOG[-14:] or ['No alerts yet.'])
-        lines += ['', 'Automatic alerts: disconnect / reconnect, ping >= 300 ms, chat keywords.']
-        self.show('\n'.join(lines))
-
-
-class PersonalStatsWindow(_InfoPanel):
-    title = 'PERSONAL STATISTICS'
-    def refresh(self):
-        elapsed = int(time.time() - _SESSION_STARTED)
-        avg = (_SESSION_PING_TOTAL / _SESSION_PING_COUNT) if _SESSION_PING_COUNT else 0
-        valid = [p for _, p in _PING_HISTORY if p < 999]
-        best = min(valid) if valid else 0
-        worst = max(valid) if valid else 0
-        lines = [f'SESSION TIME: {elapsed//3600:02d}:{(elapsed%3600)//60:02d}:{elapsed%60:02d}',
-                 f'CONNECTIONS THIS SESSION: {_SESSION_CONNECTIONS}',
-                 f'PLAYERS SEEN: {len(_PLAYER_HISTORY)}',
-                 f'CHAT MESSAGES OBSERVED: {_CHAT_STATS["messages"]}', '',
-                 f'AVERAGE PING: {avg:.1f} ms' if avg else 'AVERAGE PING: unavailable',
-                 f'BEST PING: {best:.1f} ms' if best else 'BEST PING: unavailable',
-                 f'WORST PING: {worst:.1f} ms' if worst else 'WORST PING: unavailable',
-                 f'PING SAMPLES: {len(_PING_HISTORY)}', '',
-                 'Statistics are local and reset when the game restarts.']
-        self.show('\n'.join(lines))
-
-
-class ServerIntelligenceWindow(_InfoPanel):
-    title = 'SERVER INTELLIGENCE'
-    def refresh(self):
-        vals = [p for _, p in _PING_HISTORY if p < 999]
-        lost = sum(1 for _, p in _PING_HISTORY if p >= 999)
-        avg = sum(vals)/len(vals) if vals else 0
-        lines = [f'SERVER: {server_ip}:{server_port}',
-                 f'CONNECTION: {"ONLINE" if _SESSION_CONNECTED else "OFFLINE"}',
-                 f'SAMPLES: {len(_PING_HISTORY)}', f'LOST / TIMEOUT: {lost}', '',
-                 f'AVERAGE: {avg:.1f} ms' if avg else 'AVERAGE: unavailable',
-                 f'MIN: {min(vals):.1f} ms' if vals else 'MIN: unavailable',
-                 f'MAX: {max(vals):.1f} ms' if vals else 'MAX: unavailable', '',
-                 'RECENT PING (newest last):']
-        recent = _PING_HISTORY[-18:]
-        lines += [f'{p:.0f} ms' if p < 999 else 'timeout' for _, p in recent]
-        lines += ['', 'History is collected while this mod is running.']
-        self.show('\n'.join(lines))
-
-
-# ============================================================
-# Mods folder manager (restricted to the official user mods dir)
-# ============================================================
-def _mods_directory():
-    path = getattr(APP, 'python_directory_user', None)
-    if not path:
-        try:
-            from babase import app as _app
-            path = getattr(_app, 'python_directory_user', None)
-        except Exception:
-            path = None
-    if not path:
-        raise RuntimeError('BombSquad user mods directory is unavailable')
-    path = os.path.realpath(path)
-    os.makedirs(path, exist_ok=True)
-    return path
-
-
-class ModsFileManagerWindow:
-    def __init__(self, source):
-        self.w = AR.cw(source=source, size=(410, 560), ps=AR.UIS() * 0.2)
-        AR.add_close_button(self.w, position=(378, 525))
-        tw(parent=self.w, text='MODS FILE MANAGER', position=(205, 530), scale=0.9, h_align='center', color=(0.2, 1, 0.55))
-        try: self.directory = _mods_directory()
-        except Exception as e: self.directory = ''; AR.err(str(e))
-        self.path_text = tw(parent=self.w, text=self.directory or 'Mods folder unavailable', position=(15, 495), size=(380, 30), scale=0.38, h_align='left', color=(0.7, 0.85, 1))
-        self.file_input = tw(parent=self.w, text='new_mod.py', editable=True, position=(18, 450), size=(180, 27), scale=0.6, h_align='left', color=(1, 1, 1))
-        self.selected_text = tw(parent=self.w, text='Selected: none', position=(210, 455), size=(180, 22), scale=0.48, h_align='left', color=(1, 0.85, 0.3))
-        self.list_text = tw(parent=self.w, text='', position=(18, 410), size=(374, 140), scale=0.55, h_align='left', v_align='top', color=(0.9, 0.95, 1))
-        self.code_input = tw(parent=self.w, text='# Paste or write Python code here', editable=True, position=(18, 235), size=(374, 165), scale=0.52, h_align='left', v_align='top', color=(1, 1, 1))
-        AR.bw(parent=self.w, label='Load File', size=(175, 32), position=(18, 190), on_activate_call=self.select_file, color=(0.12, 0.42, 0.68), text_scale=0.6)
-        AR.bw(parent=self.w, label='Save / Add .py', size=(175, 32), position=(207, 190), on_activate_call=self.save_file, color=(0.08, 0.58, 0.32), text_scale=0.6)
-        AR.bw(parent=self.w, label='Delete selected', size=(175, 32), position=(18, 148), on_activate_call=self.delete_file, color=(0.72, 0.18, 0.2), text_scale=0.6)
-        AR.bw(parent=self.w, label='Refresh Files', size=(175, 32), position=(207, 148), on_activate_call=self.refresh, color=(0.35, 0.38, 0.55), text_scale=0.6)
-        AR.bw(parent=self.w, label='Copy folder path', size=(175, 30), position=(18, 108), on_activate_call=self.copy_path, color=(0.35, 0.38, 0.55), text_scale=0.58)
-        tw(parent=self.w, text='Only files directly inside the Mods folder are managed. Restart game after changes.', position=(18, 76), size=(374, 28), scale=0.4, h_align='left', color=(1, 0.75, 0.35))
-        self.selected = None
-        self.delete_armed_until = 0
-        self.refresh()
-
-    def refresh(self):
-        try:
-            names = sorted(n for n in os.listdir(self.directory) if os.path.isfile(os.path.join(self.directory, n)) and not n.startswith('.'))
-            py_names = [n for n in names if n.lower().endswith('.py')]
-            shown = py_names[:18]
-            tw(self.list_text, text='FILES (type a filename above, then Load File):\n' + ('\n'.join(f'{i+1}. {n}' for i, n in enumerate(shown)) if shown else 'No Python mods found.'))
-            if self.selected and self.selected in py_names:
-                tw(self.selected_text, text=f'Selected: {self.selected}')
-            else:
-                self.selected = None
-                tw(self.selected_text, text='Selected: none')
-            push(f'{len(py_names)} Python files found', color=(0.2, 1, 0.5))
-        except Exception as e: AR.err(f'List error: {e}')
-
-    def select_file(self):
-        # Selection is driven by the filename field for compatibility with the game UI.
-        name = tw(query=self.file_input).strip()
-        if not name.lower().endswith('.py'): name += '.py'
-        if not name or os.path.basename(name) != name: AR.err('Invalid filename'); return
-        path = os.path.join(self.directory, name)
-        if not os.path.isfile(path): AR.err('File not found'); return
-        self.selected = name
-        try:
-            with open(path, 'r', encoding='utf-8') as f: tw(self.code_input, text=f.read()[:12000])
-            tw(self.selected_text, text=f'Selected: {name}')
-        except Exception as e: AR.err(f'Read error: {e}')
-
-    def save_file(self):
-        try:
-            name = tw(query=self.file_input).strip()
-            if not name: raise ValueError('Enter a file name')
-            if not name.lower().endswith('.py'): name += '.py'
-            if os.path.basename(name) != name or name in ('.py', '..py') or name.startswith('.'): raise ValueError('Invalid filename')
-            code = tw(query=self.code_input)
-            if not code.strip(): raise ValueError('Code is empty')
-            path = os.path.realpath(os.path.join(self.directory, name))
-            if os.path.dirname(path) != os.path.realpath(self.directory): raise ValueError('Invalid path')
-            if os.path.exists(path) and name != self.selected:
-                raise ValueError('File exists; select it first to overwrite')
-            with open(path, 'w', encoding='utf-8') as f: f.write(code)
-            self.selected = name
-            tw(self.selected_text, text=f'Selected: {name}')
-            push(f'Saved {name}. Restart BombSquad to load changes.', color=(0.2, 1, 0.5))
-            self.refresh()
-        except Exception as e: AR.err(f'Save error: {e}')
-
-    def delete_file(self):
-        try:
-            if not self.selected:
-                # first action loads/selects the filename entered in the top field
-                self.select_file(); return
-            if time.time() > self.delete_armed_until:
-                self.delete_armed_until = time.time() + 5
-                push('Tap Delete selected again within 5 seconds to confirm.', color=(1, 0.75, 0.2))
-                return
-            path = os.path.realpath(os.path.join(self.directory, self.selected))
-            if os.path.dirname(path) != os.path.realpath(self.directory) or not os.path.isfile(path): raise ValueError('Invalid file')
-            os.remove(path)
-            old = self.selected; self.selected = None; self.delete_armed_until = 0
-            tw(self.selected_text, text='Selected: none')
-            tw(self.code_input, text='')
-            push(f'Deleted {old}. Restart BombSquad if it was loaded.', color=(1, 0.5, 0.2))
-            self.refresh()
-        except Exception as e: AR.err(f'Delete error: {e}')
-
-    def copy_path(self):
-        try:
-            from babase import clipboard_set_text
-            clipboard_set_text(self.directory)
-            push('Mods folder path copied', color=(0.2, 1, 0.5))
-        except Exception as e: AR.err(f'Clipboard error: {e}')
-
-
 class ModsMenu:
     def __init__(s, source):
         s.mods_button_ref = source
-        s.w = AR.cw(source=source, size=(430, 640), ps=AR.UIS() * 0.25)
-        AR.add_close_button(s.w, position=(398, 605))
-        tw(parent=s.w, text='MAHYAR MODS', scale=1.08, position=(215, 604), h_align='center', color=(0.15, 1.0, 0.52))
-        tw(parent=s.w, text='Create By Mahyar', scale=0.52, position=(215, 580), h_align='center', color=(0.75, 0.9, 1.0))
+        s.w = AR.cw(source=source, size=(400, 620), ps=AR.UIS() * 0.3)
+        AR.add_close_button(s.w, position=(370, 580))
 
-        s.scroll = sw(parent=s.w, size=(390, 520), position=(20, 42))
+        tw(parent=s.w, text='Mods Menu', scale=1.2, position=(200, 575), h_align='center', color=(0, 1, 1))
+
+        s.scroll = sw(parent=s.w, size=(340, 520), position=(30, 25))
+
         buttons = [
-            ('Calculator', Calculator, (0.08, 0.35, 0.72)),
-            ('Ping Monitor', PingWindow, (0.08, 0.48, 0.62)),
-            ('Auto Buyer', AutoBuyerWindow, (0.08, 0.52, 0.32)),
-            ('Auto React', ReactionEditorWindow, (0.55, 0.32, 0.72)),
-            ('Auto Reply', AutoReplyEditorWindow, (0.12, 0.48, 0.48)),
-            ('Spam Settings', SpamWindow, (0.65, 0.22, 0.24)),
-            ('Reconnect', ReconnectWindow, (0.22, 0.48, 0.28)),
-            ('Chat Filter', FilterWindow, (0.42, 0.3, 0.68)),
-            ('Edit Button Place', None, (0.35, 0.34, 0.48)),
-            ('Player Intelligence', PlayerIntelligenceWindow, (0.05, 0.48, 0.48)),
-            ('Chat Analytics', ChatAnalyticsWindow, (0.08, 0.42, 0.68)),
-            ('Smart Alerts', SmartAlertsWindow, (0.58, 0.38, 0.08)),
-            ('My Statistics', PersonalStatsWindow, (0.12, 0.48, 0.34)),
-            ('Server Intelligence', ServerIntelligenceWindow, (0.12, 0.34, 0.62)),
-            ('Mods File Manager', ModsFileManagerWindow, (0.48, 0.25, 0.58)),
+            ('Calculator', Calculator, (0, 0.3, 0.8)),
+            ('Ping', PingWindow, (0.4, 0.6, 0.8)),
+            ('Auto Buyer', AutoBuyerWindow, (0.2, 0.6, 0.8)),
+            ('Auto React', ReactionEditorWindow, (0.8, 0.5, 0.2)),
+            ('Auto Reply', AutoReplyEditorWindow, (0.3, 0.7, 0.4)),
+            ('Spam', SpamWindow, (0.8, 0.3, 0.3)),
+            ('Reconnect', ReconnectWindow, (0.4, 0.6, 0.4)),
+            ('Filter', FilterWindow, (0.7, 0.4, 0.9)),
+            ('Edit Place', None, (0.6, 0.4, 0.7)),
         ]
-        cols = 2
-        row_h = 62
-        rows = (len(buttons) + cols - 1) // cols
-        total_h = rows * row_h + 16
-        s.container = cw(parent=s.scroll, size=(370, total_h), background=False)
+
+        num_buttons = len(buttons)
+        row_h = 65
+        buttons_h = num_buttons * row_h
+
+        top_padding = 380
+        bottom_padding = 380
+
+        total_h = top_padding + buttons_h + bottom_padding
+
+        s.container = cw(parent=s.scroll, size=(320, total_h), background=False)
+
         s.item_buttons = []
-        for i, (label, cls, color) in enumerate(buttons):
-            col = i % 2
-            row = i // 2
-            x = 5 + col * 185
-            y = total_h - 58 - row * row_h
-            btn = bw(parent=s.container, label=label, size=(175, 48), position=(x, y),
-                     on_activate_call=lambda c=cls: s.open_window(c), color=color,
-                     textcolor=(1, 1, 1), button_type='square', text_scale=0.62)
+        y_pos = total_h - top_padding - row_h
+
+        for label, cls, color in buttons:
+            btn = bw(
+                parent=s.container,
+                label=label,
+                size=(300, 55),
+                position=(10, y_pos),
+                on_activate_call=lambda c=cls: s.open_window(c),
+                color=color,
+                textcolor=(1, 1, 1),
+                button_type='square',
+                text_scale=0.8
+            )
             s.item_buttons.append(btn)
+            y_pos -= row_h
+
         gs('swish').play()
 
     def open_window(s, cls):
@@ -2034,7 +1687,7 @@ def sellcek():
     except Exception as e:
         print(f"AutoBuyer loop error: {e}")
 
-    teck(0.05, sellcek)
+    teck(0.005, sellcek)
 
 
 # ============================================================
@@ -2254,13 +1907,12 @@ class byMahyar(Plugin):
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
 
-        _start_telemetry()
         s.last_msg_hash = ""
         s.last_calc_hash = ""
 
         teck(0.01, s.ear)
         teck(0.5, s.calc_ear)
-        teck(0.05, sellcek)
+        teck(0.005, sellcek)
         teck(1, s.reconnect_ear)
 
         from bauiv1lib import party
@@ -2270,7 +1922,7 @@ class byMahyar(Plugin):
             r = o(self, *a, **k)
             teck(0.5, get_my_ids)
 
-            default_x = self._width - 150
+            default_x = self._width - 110
             default_y = self._height - 155
             saved_x, saved_y = get_mods_button_position(default_x, default_y)
 
@@ -2283,10 +1935,9 @@ class byMahyar(Plugin):
             b_mods = AR.bw(
                 position=(saved_x, saved_y),
                 parent=self._root_widget,
-                size=(128, 28),
-                label='Create By Mahyar',
-                color=(0.05, 0.62, 0.32),
-                text_scale=0.58
+                size=(85, 25),
+                label='Mods',
+                color=(0.3, 0.5, 0.8)
             )
             bw(b_mods, on_activate_call=lambda: s.delayed_open(ModsMenu, b_mods))
 
