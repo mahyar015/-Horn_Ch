@@ -22,6 +22,8 @@ from bascenev1 import (
     get_connection_to_host_info_2 as get_connection_info
 )
 import math
+import os
+import _ba
 import re
 import time
 import socket
@@ -35,7 +37,7 @@ SIGNATURE = "By Mahyar"
 
 DEFAULT_LIMITS = {
     'vip': 2000.0, 'cbb': 3000.0, 'cba': 50.0, 'h': 1.0,
-    'pun': 1.0, 'sh': 1.0, 'sl': 2.0, 'fr': 2.0,
+    'pun': 1.0, 'sh': 1.0, 'sl': 2.0, 'fr': 2.0
     'u': 0.5, 'sp': 50.0, 'z': 100.0, 'g': 100.0,
     'd': 1.0, 'cu': 3.0, 'k': 1000.0, 're': 200.0,
     'sm': 500.0, 'fly': 1.0, 'fl': 1.0, 'e': 10.0,
@@ -1893,6 +1895,153 @@ def stop_auto_reconnect():
 
 
 # ============================================================
+# Custom Watch replay browser and playback controls
+# ============================================================
+
+class WatchLibraryWindow:
+    """A custom replay browser; does not open the game's built-in Watch UI."""
+    def __init__(self, source):
+        self.w = AR.cw(source=source, size=(430, 560), ps=AR.UIS() * 0.25)
+        AR.add_close_button(self.w, position=(398, 525))
+        tw(parent=self.w, text='WATCH', position=(215, 520),
+           h_align='center', scale=1.15, color=(0.55, 0.95, 0.78))
+        tw(parent=self.w, text='Saved replays', position=(215, 490),
+           h_align='center', scale=0.62, color=(0.72, 0.78, 0.82))
+
+        self.scroll = sw(parent=self.w, size=(380, 425), position=(25, 45),
+                         capture_arrows=True)
+        self.build_replay_list()
+        gs('swish').play()
+
+    def build_replay_list(self):
+        try:
+            replay_dir = _ba.get_replays_dir()
+            files = [name for name in os.listdir(replay_dir)
+                     if os.path.isfile(os.path.join(replay_dir, name))]
+            files.sort(key=lambda name: os.path.getmtime(os.path.join(replay_dir, name)),
+                       reverse=True)
+        except Exception as exc:
+            print(f'Watch replay list error: {exc}')
+            files = []
+            replay_dir = None
+
+        if not files:
+            tw(parent=self.w, text='No saved replays found', position=(215, 265),
+               h_align='center', scale=0.7, color=(1, 0.75, 0.35))
+            return
+
+        row_h = 58
+        content_h = max(420, len(files) * row_h + 20)
+        self.list_root = cw(parent=self.scroll, size=(360, content_h), background=False)
+        y = content_h - 55
+        for filename in files:
+            display = filename
+            if len(display) > 34:
+                display = display[:31] + '...'
+            tw(parent=self.list_root, text=display, position=(8, y + 10),
+               h_align='left', scale=0.58, color=(0.9, 0.93, 0.96), maxwidth=235)
+            bw(parent=self.list_root, label='PLAY', size=(76, 34),
+               position=(270, y), color=(0.15, 0.55, 0.4),
+               textcolor=(1, 1, 1), text_scale=0.62,
+               on_activate_call=lambda f=filename, d=replay_dir: self.play_replay(d, f))
+            y -= row_h
+
+    def play_replay(self, replay_dir, filename):
+        try:
+            path = os.path.join(replay_dir, filename)
+            AR.swish(self.w)
+            bui.screenmessage('Loading replay...', color=(0.6, 1.0, 0.75))
+            _ba.set_replay_speed_exponent(0)
+            _ba.new_replay_session(path)
+            # App-timer survives the session transition and opens our own controls.
+            teck(2.0, lambda: ReplayControlsWindow(filename))
+        except Exception as exc:
+            print(f'Watch replay start error: {exc}')
+            bui.screenmessage('Could not open this replay.', color=(1, 0.3, 0.3))
+
+
+class ReplayControlsWindow:
+    """Compact overlay with supported replay seek, pause and speed controls."""
+    def __init__(self, replay_name='Replay'):
+        try:
+            if not bascenev1.is_in_replay():
+                return
+        except Exception:
+            return
+
+        self.w = AR.cw(source=None, size=(390, 205), ps=AR.UIS() * 0.15)
+        AR.add_close_button(self.w, position=(358, 172))
+        title = replay_name if len(replay_name) < 36 else replay_name[:33] + '...'
+        tw(parent=self.w, text=title, position=(195, 169), h_align='center',
+           scale=0.55, color=(0.85, 0.92, 0.9), maxwidth=310)
+
+        # Timeline-style line; seeking is done with the supported relative seek API.
+        tw(parent=self.w, text='━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+           position=(195, 125), h_align='center', scale=0.78,
+           color=(0.25, 0.72, 0.55))
+        bw(parent=self.w, label='-10s', size=(62, 34), position=(22, 72),
+           color=(0.16, 0.36, 0.42), text_scale=0.62,
+           on_activate_call=lambda: self.seek(-10))
+        bw(parent=self.w, label='-2s', size=(54, 34), position=(91, 72),
+           color=(0.16, 0.36, 0.42), text_scale=0.62,
+           on_activate_call=lambda: self.seek(-2))
+        self.pause_btn = bw(parent=self.w, label='Ⅱ', size=(58, 38),
+                            position=(166, 70), color=(0.16, 0.58, 0.4),
+                            text_scale=0.9, on_activate_call=self.pause_resume)
+        bw(parent=self.w, label='+2s', size=(54, 34), position=(245, 72),
+           color=(0.16, 0.36, 0.42), text_scale=0.62,
+           on_activate_call=lambda: self.seek(2))
+        bw(parent=self.w, label='+10s', size=(62, 34), position=(306, 72),
+           color=(0.16, 0.36, 0.42), text_scale=0.62,
+           on_activate_call=lambda: self.seek(10))
+
+        tw(parent=self.w, text='Speed', position=(195, 43), h_align='center',
+           scale=0.5, color=(0.72, 0.82, 0.78))
+        bw(parent=self.w, label='−', size=(42, 28), position=(120, 12),
+           color=(0.2, 0.32, 0.38), text_scale=0.8,
+           on_activate_call=lambda: self.change_speed(-1))
+        self.speed_text = tw(parent=self.w, text='1x', position=(195, 22),
+                             h_align='center', scale=0.62, color=(0.55, 0.95, 0.78))
+        bw(parent=self.w, label='+', size=(42, 28), position=(228, 12),
+           color=(0.2, 0.32, 0.38), text_scale=0.8,
+           on_activate_call=lambda: self.change_speed(1))
+        self.update_pause_label()
+
+    def seek(self, seconds):
+        try:
+            bascenev1.seek_replay(float(seconds))
+        except Exception as exc:
+            print(f'Replay seek error: {exc}')
+
+    def pause_resume(self):
+        try:
+            if bascenev1.is_replay_paused():
+                bascenev1.resume_replay()
+            else:
+                bascenev1.pause_replay()
+            self.update_pause_label()
+        except Exception as exc:
+            print(f'Replay pause error: {exc}')
+
+    def update_pause_label(self):
+        try:
+            paused = bascenev1.is_replay_paused()
+            bw(self.pause_btn, label='▶' if paused else 'Ⅱ')
+        except Exception:
+            pass
+
+    def change_speed(self, offset):
+        try:
+            current = bascenev1.get_replay_speed_exponent()
+            current = max(-3, min(3, current + offset))
+            bascenev1.set_replay_speed_exponent(current)
+            speed = 2 ** current
+            tw(self.speed_text, text=f'{speed:g}x')
+        except Exception as exc:
+            print(f'Replay speed error: {exc}')
+
+
+# ============================================================
 # Plugin
 # ============================================================
 
@@ -1932,24 +2081,14 @@ class byMahyar(Plugin):
             except:
                 saved_x, saved_y = float(default_x), float(default_y)
 
-            b_mods = AR.bw(
+            b_watch = AR.bw(
                 position=(saved_x, saved_y),
                 parent=self._root_widget,
                 size=(85, 25),
-                label='Mods',
-                color=(0.3, 0.5, 0.8)
-            )
-            bw(b_mods, on_activate_call=lambda: s.delayed_open(ModsMenu, b_mods))
-
-            # Open BombSquad's native Watch window from the in-game party/chat UI.
-            b_watch = AR.bw(
-                position=(saved_x - 90, saved_y),
-                parent=self._root_widget,
-                size=(85, 25),
                 label='Watch',
-                color=(0.25, 0.65, 0.4)
+                color=(0.18, 0.48, 0.38)
             )
-            bw(b_watch, on_activate_call=lambda: s.open_watch(b_watch))
+            bw(b_watch, on_activate_call=lambda: s.delayed_open(WatchLibraryWindow, b_watch))
 
             return r
 
@@ -2035,18 +2174,6 @@ class byMahyar(Plugin):
             except:
                 pass
             print(f"Error in reconnect_ear: {e}")
-
-    def open_watch(s, source):
-        """Open the game's built-in saved-replay browser."""
-        try:
-            from bauiv1lib.watch import WatchWindow
-            WatchWindow(origin_widget=source)
-        except Exception as exc:
-            print(f"Watch window error: {exc}")
-            bui.screenmessage(
-                "Watch is unavailable in this BombSquad build.",
-                color=(1, 0.3, 0.2)
-            )
 
     def delayed_open(s, cls, btn):
         teck(0.05, lambda: cls(btn))
