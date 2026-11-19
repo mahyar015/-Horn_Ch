@@ -1587,19 +1587,19 @@ class RankingWindow:
             s.show_error(str(exc))
 
     def _days_remaining_label(s, reset_date, reset_time):
-        match = re.search(r'(\\d{4})-(\\d{2})-(\\d{2})', reset_date)
+        match = re.search(r'(\d{4})-(\d{2})-(\d{2})', reset_date)
         if not match:
             return 'OPEN SERVER DETAILS'
         try:
             target_day = datetime.date(*map(int, match.groups()))
             days = (target_day - datetime.date.today()).days
             if days < 0:
-                return 'RESET DATE PASSED'
+                return 'Passed'
             if days == 0:
-                return 'RESET TODAY'
+                return 'Today'
             if days == 1:
-                return '1 DAY LEFT'
-            return f'{days} DAYS LEFT'
+                return '1 Day'
+            return f'{days} Days'
         except Exception:
             return 'OPEN SERVER DETAILS'
 
@@ -2274,11 +2274,15 @@ class byMahyar(Plugin):
         teck(0.5, s.calc_ear)
         teck(0.005, sellcek)
         teck(1, s.reconnect_ear)
-        # Creator/channel credit shown when the mod is loaded on game entry.
-        teck(2.0, lambda: bui.screenmessage(
-            'Create By Mahyar  |  Channel Tel : @Horn_Ch',
-            color=(0.35, 0.9, 1), top=True
-        ))
+        # Creator/channel credit shown when the mod loads.
+        def show_creator_credit():
+            try:
+                push('Create By Mahyar  |  Channel Tel : @Horn_Ch',
+                     color=(0.35, 0.9, 1))
+            except Exception as exc:
+                print('Mahyar credit message error: ' + str(exc))
+
+        teck(3.0, show_creator_credit)
 
         from bauiv1lib import party
         o = party.PartyWindow.__init__
