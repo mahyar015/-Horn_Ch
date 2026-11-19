@@ -320,23 +320,53 @@ def safe_chat_send(message):
 # The request runs in a worker thread so the game UI never freezes.
 # ---------------------------------------------------------------------------
 TRANSLATE_CONFIG_KEY = 'mahyar_translate_enabled'
+TRANSLATE_LANGUAGE_KEY = 'mahyar_translate_target_language'
 translate_enabled = bool(app.config.get(TRANSLATE_CONFIG_KEY, False))
+translate_target_language = str(app.config.get(TRANSLATE_LANGUAGE_KEY, 'en'))
 _translate_original_chat = None
 _translate_lock = threading.Lock()
 _translate_queue = queue.Queue()
 _translate_worker_active = False
 _translate_pending = 0
 
+TRANSLATE_LANGUAGES = [
+    ('Afrikaans', 'af'), ('Albanian', 'sq'), ('Amharic', 'am'), ('Arabic', 'ar'),
+    ('Armenian', 'hy'), ('Azerbaijani', 'az'), ('Basque', 'eu'), ('Belarusian', 'be'),
+    ('Bengali', 'bn'), ('Bosnian', 'bs'), ('Bulgarian', 'bg'), ('Burmese', 'my'),
+    ('Catalan', 'ca'), ('Cebuano', 'ceb'), ('Chinese (Simplified)', 'zh-CN'),
+    ('Chinese (Traditional)', 'zh-TW'), ('Corsican', 'co'), ('Croatian', 'hr'),
+    ('Czech', 'cs'), ('Danish', 'da'), ('Dutch', 'nl'), ('English', 'en'),
+    ('Esperanto', 'eo'), ('Estonian', 'et'), ('Filipino', 'tl'), ('Finnish', 'fi'),
+    ('French', 'fr'), ('Frisian', 'fy'), ('Galician', 'gl'), ('Georgian', 'ka'),
+    ('German', 'de'), ('Greek', 'el'), ('Gujarati', 'gu'), ('Haitian Creole', 'ht'),
+    ('Hausa', 'ha'), ('Hawaiian', 'haw'), ('Hebrew', 'iw'), ('Hindi', 'hi'),
+    ('Hmong', 'hmn'), ('Hungarian', 'hu'), ('Icelandic', 'is'), ('Igbo', 'ig'),
+    ('Indonesian', 'id'), ('Irish', 'ga'), ('Italian', 'it'), ('Japanese', 'ja'),
+    ('Javanese', 'jw'), ('Kannada', 'kn'), ('Kazakh', 'kk'), ('Khmer', 'km'),
+    ('Korean', 'ko'), ('Kurdish', 'ku'), ('Kyrgyz', 'ky'), ('Lao', 'lo'),
+    ('Latin', 'la'), ('Latvian', 'lv'), ('Lithuanian', 'lt'), ('Luxembourgish', 'lb'),
+    ('Macedonian', 'mk'), ('Malagasy', 'mg'), ('Malay', 'ms'), ('Malayalam', 'ml'),
+    ('Maltese', 'mt'), ('Maori', 'mi'), ('Marathi', 'mr'), ('Mongolian', 'mn'),
+    ('Nepali', 'ne'), ('Norwegian', 'no'), ('Pashto', 'ps'), ('Persian', 'fa'),
+    ('Polish', 'pl'), ('Portuguese', 'pt'), ('Punjabi', 'pa'), ('Romanian', 'ro'),
+    ('Russian', 'ru'), ('Samoan', 'sm'), ('Serbian', 'sr'), ('Sesotho', 'st'),
+    ('Sinhala', 'si'), ('Slovak', 'sk'), ('Slovenian', 'sl'), ('Somali', 'so'),
+    ('Spanish', 'es'), ('Sundanese', 'su'), ('Swahili', 'sw'), ('Swedish', 'sv'),
+    ('Tamil', 'ta'), ('Telugu', 'te'), ('Thai', 'th'), ('Turkish', 'tr'),
+    ('Ukrainian', 'uk'), ('Urdu', 'ur'), ('Uzbek', 'uz'), ('Vietnamese', 'vi'),
+    ('Welsh', 'cy'), ('Xhosa', 'xh'), ('Yiddish', 'yi'), ('Yoruba', 'yo'),
+    ('Zulu', 'zu')
+]
 
-def _translate_to_english(message):
-    """Translate text with Google's public translate endpoint."""
+
+def _translate_to_language(message):
+    """Translate chat text into the currently selected target language."""
+    target = translate_target_language or 'en'
     query = urllib.parse.urlencode({
-        'client': 'gtx', 'sl': 'auto', 'tl': 'en', 'dt': 't', 'q': message
+        'client': 'gtx', 'sl': 'auto', 'tl': target, 'dt': 't', 'q': message
     })
     url = 'https://translate.googleapis.com/translate_a/single?' + query
-    request = urllib.request.Request(
-        url, headers={'User-Agent': 'Mozilla/5.0'}
-    )
+    request = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     with urllib.request.urlopen(request, timeout=12) as response:
         data = json.loads(response.read().decode('utf-8'))
     translated = ''.join(part[0] for part in data[0] if part and part[0])
@@ -344,7 +374,6 @@ def _translate_to_english(message):
 
 
 def _translate_send_result(message, args, kwargs):
-    """Send the translated text on the game thread, falling back to original."""
     global _translate_pending
     try:
         _translate_original_chat(message, *args, **kwargs)
@@ -356,7 +385,6 @@ def _translate_send_result(message, args, kwargs):
 
 
 def _translate_worker_loop():
-    """Process messages sequentially so their original order is preserved."""
     global _translate_pending, _translate_worker_active
     while True:
         try:
@@ -369,23 +397,21 @@ def _translate_worker_loop():
             continue
         try:
             try:
-                translated = _translate_to_english(message) or message
+                translated = _translate_to_language(message) or message
             except Exception as exc:
                 print('Translate failed; sending original: %s' % exc)
                 translated = message
             import babase as _translate_babase
             _translate_babase.pushcall(
                 lambda m=translated, a=args, k=kwargs: _translate_send_result(m, a, k),
-                from_other_thread=True
-            )
+                from_other_thread=True)
         except Exception as exc:
             print('Translate callback error: %s' % exc)
             try:
                 import babase as _translate_babase
                 _translate_babase.pushcall(
                     lambda m=message, a=args, k=kwargs: _translate_send_result(m, a, k),
-                    from_other_thread=True
-                )
+                    from_other_thread=True)
             except Exception:
                 with _translate_lock:
                     _translate_pending = max(0, _translate_pending - 1)
@@ -394,7 +420,6 @@ def _translate_worker_loop():
 
 
 def _translated_chatmessage(message, *args, **kwargs):
-    """Hook used by the native party chat's send action."""
     global _translate_pending, _translate_worker_active
     if not translate_enabled or not isinstance(message, str) or not message.strip():
         return _translate_original_chat(message, *args, **kwargs)
@@ -411,7 +436,6 @@ def _translated_chatmessage(message, *args, **kwargs):
             print('Translate worker start error: %s' % exc)
             with _translate_lock:
                 _translate_worker_active = False
-            # Keep the original chat usable if background work cannot start.
             try:
                 _translate_original_chat(message, *args, **kwargs)
             except Exception:
@@ -423,10 +447,9 @@ def _translated_chatmessage(message, *args, **kwargs):
 
 def _install_translate_hook():
     global _translate_original_chat
-    if _translate_original_chat is not None:
-        return
-    _translate_original_chat = bascenev1.chatmessage
-    bascenev1.chatmessage = _translated_chatmessage
+    if _translate_original_chat is None:
+        _translate_original_chat = bascenev1.chatmessage
+        bascenev1.chatmessage = _translated_chatmessage
 
 
 def _set_translate_enabled(value):
@@ -441,27 +464,73 @@ def _set_translate_enabled(value):
          color=(0.25, 1.0, 0.4) if translate_enabled else (1.0, 0.55, 0.25))
 
 
+def _set_translate_language(code):
+    global translate_target_language
+    translate_target_language = str(code or 'en')
+    try:
+        app.config[TRANSLATE_LANGUAGE_KEY] = translate_target_language
+        app.config.commit()
+    except Exception:
+        pass
+    name = next((n for n, c in TRANSLATE_LANGUAGES if c == translate_target_language), translate_target_language)
+    push('Translate language: ' + name, color=(0.3, 0.9, 1.0))
+
+
+class TranslateLanguageWindow:
+    def __init__(self, source):
+        self.w = AR.cw(source=source, size=(330, 430), ps=AR.UIS() * 0.3)
+        AR.add_close_button(self.w, position=(300, 395))
+        tw(parent=self.w, text='SELECT LANGUAGE', scale=0.85,
+           position=(165, 395), h_align='center', color=(1, 0.45, 0.78))
+        self.scroll = sw(parent=self.w, size=(290, 350), position=(20, 25))
+        self.container = cw(parent=self.scroll, size=(280, len(TRANSLATE_LANGUAGES) * 34), background=False)
+        total_h = len(TRANSLATE_LANGUAGES) * 34
+        for index, (name, code) in enumerate(TRANSLATE_LANGUAGES):
+            y = total_h - (index + 1) * 34
+            selected = code == translate_target_language
+            bw(parent=self.container, label=(('✓ ' if selected else '') + name),
+               size=(270, 30), position=(5, y),
+               on_activate_call=Call(self.choose, code),
+               color=(0.35, 0.18, 0.35) if selected else (0.16, 0.19, 0.27),
+               textcolor=(1, 1, 1), button_type='square', text_scale=0.58)
+        gs('swish').play()
+
+    def choose(self, code):
+        _set_translate_language(code)
+        AR.swish(self.w)
+
+
 class TranslateWindow:
     def __init__(self, source):
-        self.w = AR.cw(source=source, size=(290, 190), ps=AR.UIS() * 0.3)
-        AR.add_close_button(self.w, position=(260, 155))
+        self.w = AR.cw(source=source, size=(310, 225), ps=AR.UIS() * 0.3)
+        AR.add_close_button(self.w, position=(280, 190))
         tw(parent=self.w, text='TRANSLATE', scale=0.9,
-           position=(145, 150), h_align='center', color=(1, 0.45, 0.78))
-        tw(parent=self.w, text='Auto translate your chat to English', scale=0.52,
-           position=(145, 112), h_align='center', color=(0.88, 0.82, 0.92))
+           position=(155, 190), h_align='center', color=(1, 0.45, 0.78))
+        tw(parent=self.w, text='Choose target language:', scale=0.53,
+           position=(155, 157), h_align='center', color=(0.88, 0.82, 0.92))
+        self.language_btn = bw(
+            parent=self.w, label=self._language_label(), size=(250, 35),
+            position=(30, 112), on_activate_call=Call(self.open_languages),
+            color=(0.28, 0.22, 0.42), textcolor=(1, 1, 1),
+            button_type='square', text_scale=0.65)
         self.toggle_btn = bw(
             parent=self.w, label='ON' if translate_enabled else 'OFF',
-            size=(230, 42), position=(30, 48),
+            size=(250, 42), position=(30, 48),
             on_activate_call=Call(self.toggle),
             color=(0.12, 0.62, 0.25) if translate_enabled else (0.62, 0.16, 0.22),
-            textcolor=(1, 1, 1), button_type='square', text_scale=0.85
-        )
+            textcolor=(1, 1, 1), button_type='square', text_scale=0.85)
         gs('swish').play()
+
+    def _language_label(self):
+        name = next((n for n, c in TRANSLATE_LANGUAGES if c == translate_target_language), 'English')
+        return 'Language: ' + name
+
+    def open_languages(self):
+        TranslateLanguageWindow(self.w)
 
     def toggle(self):
         _set_translate_enabled(not translate_enabled)
-        bw(self.toggle_btn,
-           label='ON' if translate_enabled else 'OFF',
+        bw(self.toggle_btn, label='ON' if translate_enabled else 'OFF',
            color=(0.12, 0.62, 0.25) if translate_enabled else (0.62, 0.16, 0.22))
         gs('dingSmall').play()
 
@@ -1415,8 +1484,8 @@ class EditPlaceWindow:
 
     def apply_position(s):
         try:
-            max_x = max(0, s.parent_w - 85)
-            max_y = max(0, s.parent_h - 25)
+            max_x = max(0, s.parent_w - 90)
+            max_y = max(0, s.parent_h - 35)
             if s.current_x < 0: s.current_x = 0
             if s.current_y < 0: s.current_y = 0
             if s.current_x > max_x: s.current_x = max_x
@@ -1436,10 +1505,19 @@ class EditPlaceWindow:
         except:
             default_x, default_y = 0, 0
 
+        # Restore a visible default position and persist it for the next launch.
+        default_x = max(0, min(float(default_x), max(0.0, s.parent_w - 90.0)))
+        default_y = max(0, min(float(default_y), max(0.0, s.parent_h - 35.0)))
         s.current_x, s.current_y = float(default_x), float(default_y)
+        try:
+            if not s.mods_button or not s.mods_button.exists():
+                bui.screenmessage('Reopen the Party window to restore Mods.', color=(1, 0.6, 0))
+                return
+        except Exception:
+            pass
         s.apply_position()
 
-        bui.screenmessage('Reset!', color=(0, 1, 1))
+        bui.screenmessage('Mods position restored!', color=(0, 1, 1))
         gs('dingSmallHigh').play()
 
 
@@ -1521,30 +1599,129 @@ class ModsMenu:
 
 SELL_PATTERN = re.compile(r'Sell ID:\s*(\w+)')
 BUY_PATTERN = re.compile(r'(\w+):\s*Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s*>\s*for\s*([\d,]+)\s*coins(?:\?.*)?')
+FAST_BUY_MAX_TOTAL = 100000
+_fast_buy_last_message = ''
+_fast_buy_last_count = 0
+_fast_buy_seen_messages = set()
+_fast_buy_initialized = False
+_fast_buy_pending_code = None
+_fast_buy_listing_allowed = False
+_fast_buy_seen_ids = set()
 
 
 def process_sell(item_id):
-    if item_id in processed_sell_ids: return
+    if item_id in processed_sell_ids:
+        return
     processed_sell_ids.add(item_id)
-    if len(processed_sell_ids) > 100: processed_sell_ids.clear()
-    safe_chat_send(f"b {item_id}")
+    if len(processed_sell_ids) > 150:
+        processed_sell_ids.clear()
+    safe_chat_send('b ' + str(item_id))
 
 
 def process_buy(item_id, count, item_name, total_price):
+    """Validate the server's final buy prompt and answer immediately."""
     current_limits = _get_cached_limits()
-    if item_name not in current_limits:
-        safe_chat_send("0 "); return
-    bid_key = f"{item_id}_{item_name}_{count}_{total_price}"
-    if bid_key in processed_buy_ids: return
-    processed_buy_ids.add(bid_key)
-    if len(processed_buy_ids) > 100: processed_buy_ids.clear()
-    if count <= 0: safe_chat_send("0 "); return
-    unit_price = total_price / count
-    limit = current_limits[item_name]
-    if unit_price <= limit:
-        safe_chat_send("1 ")
-    else:
-        safe_chat_send("0 ")
+    allowed = False
+    try:
+        if count > 0 and total_price <= FAST_BUY_MAX_TOTAL:
+            allowed = total_price / float(count) <= float(current_limits.get(item_name, -1))
+    except Exception:
+        allowed = False
+    safe_chat_send('1 ' if allowed else '0 ')
+
+
+def _fast_buy_listing_is_allowed(message):
+    """Use the fastBuy_V2 listing price check, with current editable limits."""
+    try:
+        if '💰Sell <' not in message:
+            return False
+        body = message.split('💰Sell <', 1)[1].replace(',', '')
+        parts = body.split()
+        count = int(parts[0])
+        item_name = parts[1].lower()
+        # The source fast-buy format puts the total amount at token 4.
+        total = int(parts[4][:-1])
+        limits = _get_cached_limits()
+        return (count > 0 and total <= FAST_BUY_MAX_TOTAL and
+                total / float(count) <= float(limits.get(item_name, -1)))
+    except Exception:
+        # Fallback for the alternate server line format already handled by the mod.
+        try:
+            match = re.search(r'💰Sell\s*<\s*([\d,]+)\s+(\w+).*?>\s*for\s*([\d,]+)\s*coins', message)
+            if not match:
+                return False
+            count = int(match.group(1).replace(',', ''))
+            item_name = match.group(2).lower()
+            total = int(match.group(3).replace(',', ''))
+            return (count > 0 and total <= FAST_BUY_MAX_TOTAL and
+                    total / float(count) <= float(_get_cached_limits().get(item_name, -1)))
+        except Exception:
+            return False
+
+
+def _fast_buy_handle_message(message):
+    global _fast_buy_pending_code, _fast_buy_listing_allowed
+    if not isinstance(message, str) or 'Server' not in message:
+        return
+    if '💰Sell <' in message:
+        _fast_buy_listing_allowed = _fast_buy_listing_is_allowed(message)
+        return
+    if '💰Sell ID: ' in message and _fast_buy_listing_allowed:
+        item_id = message.split('💰Sell ID: ', 1)[1].strip().split()[0]
+        if item_id not in _fast_buy_seen_ids:
+            _fast_buy_seen_ids.add(item_id)
+            if len(_fast_buy_seen_ids) > 150:
+                _fast_buy_seen_ids.clear()
+            _fast_buy_pending_code = item_id
+            safe_chat_send('b ' + item_id)
+        _fast_buy_listing_allowed = False
+        return
+    if '💳Buy < ' in message and _fast_buy_pending_code:
+        try:
+            # Same server response parsing/order used by fastBuy_V2_16.py.
+            parts = message.split(': ')
+            code = parts[1].strip()
+            details = parts[2].replace(',', '')
+            if code != _fast_buy_pending_code:
+                return
+            tokens = details.split()
+            count = int(tokens[2])
+            item_name = tokens[3].lower()
+            total = int(tokens[7])
+            process_buy(code, count, item_name, total)
+            _fast_buy_pending_code = None
+        except Exception as exc:
+            print('Fast buyer parse error: %s' % exc)
+            _fast_buy_pending_code = None
+
+
+def _fast_buy_loop():
+    global _fast_buy_last_message, _fast_buy_last_count, _fast_buy_seen_messages, _fast_buy_initialized
+    try:
+        if auto_buyer_enabled:
+            messages = GCM() or []
+            # Establish a baseline first so old chat history is never purchased on plugin load.
+            if not _fast_buy_initialized:
+                _fast_buy_seen_messages.update(str(m) for m in messages)
+                _fast_buy_initialized = True
+                _fast_buy_last_count = len(messages)
+                return
+            # Scan a recent tail in order; remember each processed line to avoid repeats.
+            for message in messages[-12:]:
+                fingerprint = str(message)
+                if fingerprint in _fast_buy_seen_messages:
+                    continue
+                _fast_buy_seen_messages.add(fingerprint)
+                _fast_buy_handle_message(fingerprint)
+                _fast_buy_last_message = fingerprint
+            if len(_fast_buy_seen_messages) > 500:
+                _fast_buy_seen_messages.clear()
+                _fast_buy_seen_messages.update(str(m) for m in messages[-30:])
+            _fast_buy_last_count = len(messages)
+    except Exception as exc:
+        print('Fast buyer loop error: %s' % exc)
+    finally:
+        teck(0.05, _fast_buy_loop)
 
 
 def check_reaction(msg):
@@ -1746,6 +1923,7 @@ class byMahyar(Plugin):
         teck(0.5, s.calc_ear)
         teck(1, s.reconnect_ear)
         teck(2.0, _sb_check_enemy_roster)
+        teck(0.05, _fast_buy_loop)
         teck(2.5, _show_mahyar_credit)
 
         from bauiv1lib import party
@@ -1762,8 +1940,14 @@ class byMahyar(Plugin):
             try:
                 saved_x = float(saved_x)
                 saved_y = float(saved_y)
+                # Ignore stale/off-screen coordinates left by older window sizes.
+                if not (0 <= saved_x <= max(0, self._width - 90) and
+                        0 <= saved_y <= max(0, self._height - 35)):
+                    saved_x, saved_y = float(default_x), float(default_y)
             except:
                 saved_x, saved_y = float(default_x), float(default_y)
+            saved_x = min(max(0.0, saved_x), max(0.0, float(self._width) - 90.0))
+            saved_y = min(max(0.0, saved_y), max(0.0, float(self._height) - 35.0))
 
             b_mods = AR.bw(
                 position=(saved_x, saved_y),
@@ -1796,18 +1980,6 @@ class byMahyar(Plugin):
 
             s.last_msg_hash = current_hash
             msg = last_msg
-
-            try:
-                if auto_buyer_enabled:
-                    m = SELL_PATTERN.search(msg)
-                    if m:
-                        process_sell(m.group(1))
-                        return
-                    m = BUY_PATTERN.search(msg)
-                    if m:
-                        process_buy(m.group(1), int(m.group(2).replace(',', '')), m.group(3).lower(), int(m.group(4).replace(',', '')))
-                        return
-            except: pass
 
             try:
                 if check_spam_command(msg): return
@@ -2154,6 +2326,7 @@ def _sb_check_enemy_roster():
         print("Enemy roster check error: " + str(exc))
     try:
         teck(2.0, _sb_check_enemy_roster)
+        teck(0.05, _fast_buy_loop)
     except Exception:
         pass
 
