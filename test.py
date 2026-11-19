@@ -1,242 +1,264 @@
 # ba_meta require api 9
-"""Mahyar Watch - custom replay browser/player controls for BombSquad API 9.
-
-Important engine limitation:
-BombSquad's .brp replays are simulation streams, not ordinary video files.
-The engine's new_replay_session() replaces the current foreground session.
-Therefore starting a replay necessarily leaves/disconnects a remote party session.
-This plugin does not attempt to fake an in-session video player.
-"""
-
-from __future__ import annotations
-
-import os
-
-import babase
-import bauiv1 as bui
-import bascenev1 as bs
-
-
-class MahyarWatchWindow(bui.MainWindow):
-    """Replay browser with a custom dark/cyan interface."""
-
-    def __init__(self, transition: str = 'in_right',
-                 origin_widget: bui.Widget | None = None):
-        self._selected: str | None = None
-        self._rows: list[bui.Widget] = []
-        self._width = 760
-        self._height = 540
-        self._scale = (1.35 if bui.app.ui_v1.uiscale is bui.UIScale.SMALL
-                       else 1.0)
-        root = bui.containerwidget(
-            size=(self._width, self._height),
-            scale=self._scale,
-            transition=transition,
-            toolbar_visibility='menu_minimal',
-        )
-        super().__init__(root_widget=root, transition=transition)
-        bui.containerwidget(edit=root, on_cancel_call=self._back)
-
-        bui.textwidget(
-            parent=root, position=(self._width * 0.5, self._height - 48),
-            size=(0, 0), text='MAHYAR  WATCH', scale=1.45,
-            color=(0.25, 0.9, 1.0), h_align='center', v_align='center')
-        bui.textwidget(
-            parent=root, position=(self._width * 0.5, self._height - 78),
-            size=(0, 0), text='Saved replays', scale=0.8,
-            color=(0.75, 0.85, 0.9), h_align='center', v_align='center')
-
-        self._scroll = bui.scrollwidget(
-            parent=root, position=(35, 105), size=(690, 340),
-            border_opacity=0.35)
-        self._column = bui.columnwidget(
-            parent=self._scroll, border=2, margin=8)
-        bui.widget(edit=self._scroll, autoselect=True)
-
-        self._play_btn = bui.buttonwidget(
-            parent=root, position=(495, 35), size=(220, 54),
-            label='PLAY REPLAY', color=(0.08, 0.48, 0.58),
-            textcolor=(1, 1, 1), on_activate_call=self._play)
-        self._refresh_btn = bui.buttonwidget(
-            parent=root, position=(265, 35), size=(210, 54),
-            label='REFRESH', color=(0.16, 0.22, 0.3),
-            textcolor=(0.8, 0.95, 1), on_activate_call=self._refresh)
-        self._back_btn = bui.buttonwidget(
-            parent=root, position=(35, 35), size=(200, 54),
-            label='BACK', button_type='back', on_activate_call=self._back)
-        bui.containerwidget(edit=root, cancel_button=self._back_btn,
-                            selected_child=self._refresh_btn)
-        self._refresh()
-
-    def _back(self) -> None:
-        bui.app.ui_v1.get_main_window().main_window_back()
-
-    def _refresh(self) -> None:
-        for child in self._column.get_children():
-            child.delete()
-        self._rows = []
-        self._selected = None
-        try:
-            import _bascenev1 as _ba
-            replay_dir = _ba.get_replays_dir()
-            names = [n for n in os.listdir(replay_dir) if n.lower().endswith('.brp')]
-            names.sort(key=lambda n: (n != '__lastReplay.brp', n.lower()))
-        except Exception:
-            babase.print_exception('Mahyar Watch: could not read replay folder.')
-            names = []
-
-        if not names:
-            bui.textwidget(
-                parent=self._column, size=(630, 45),
-                text='No saved replays found.', color=(0.8, 0.8, 0.85),
-                h_align='center', v_align='center')
-            return
-
-        for index, name in enumerate(names):
-            label = ('▶  LAST REPLAY' if name == '__lastReplay.brp'
-                     else '▶  ' + name[:-4])
-            row = bui.buttonwidget(
-                parent=self._column, size=(630, 48), label=label,
-                color=(0.08, 0.28, 0.34) if index == 0
-                else (0.12, 0.15, 0.2),
-                textcolor=(0.65, 0.95, 1.0) if index == 0
-                else (0.92, 0.94, 1.0),
-                on_activate_call=bui.Call(self._select, name))
-            self._rows.append(row)
-            if index == 0:
-                bui.widget(edit=row, up_widget=self._refresh_btn)
-
-    def _select(self, name: str) -> None:
-        self._selected = name
-        bui.screenmessage('Selected: ' + name[:-4], color=(0.25, 0.9, 1.0))
-
-    def _play(self) -> None:
-        if self._selected is None:
-            bui.screenmessage('Select a replay first.', color=(1, 0.3, 0.25))
-            bui.getsound('error').play()
-            return
-
-        # Replays are engine sessions, not video textures. Starting one
-        # replaces the current session; remote party connection cannot remain.
-        try:
-            import _bascenev1 as _ba
-            replay_path = os.path.join(_ba.get_replays_dir(), self._selected)
-            bui.containerwidget(edit=self._root_widget, transition='out_left')
-
-            def launch() -> None:
-                _ba.set_replay_speed_exponent(0)
-                _ba.fade_screen(True)
-                _ba.new_replay_session(replay_path)
-
-            _ba.fade_screen(False, endcall=bui.Call(bui.pushcall, launch))
-        except Exception:
-            babase.print_exception('Mahyar Watch: replay launch failed.')
-            bui.screenmessage('Could not start this replay.', color=(1, 0.25, 0.25))
-
-    def get_main_window_state(self) -> bui.MainWindowState:
-        return bui.BasicMainWindowState(
-            create_call=lambda transition, origin_widget: MahyarWatchWindow(
-                transition=transition, origin_widget=origin_widget))
-
-
-class MahyarReplayHUD:
-    """Compact custom playback controls shown during replay sessions."""
-
-    def __init__(self) -> None:
-        self._root: bui.Widget | None = None
-        self._speed = 0
-        self._paused = False
-        self._show()
-
-    def _show(self) -> None:
-        try:
-            self._root = bui.containerwidget(
-                size=(680, 92), scale=0.78,
-                stack_offset=(0, 0), transition='in_bottom',
-                background=True)
-            bui.textwidget(
-                parent=self._root, position=(310, 72), size=(0, 0),
-                text='MAHYAR REPLAY PLAYER', color=(0.25, 0.9, 1),
-                scale=0.78, h_align='center', v_align='center')
-            buttons = [
-                ('-10s', 12, lambda: self._seek(-10.0)),
-                ('-5s', 112, lambda: self._seek(-5.0)),
-                ('PLAY / PAUSE', 212, self._toggle_pause),
-                ('+5s', 362, lambda: self._seek(5.0)),
-                ('+10s', 462, lambda: self._seek(10.0)),
-                ('SPEED', 562, self._next_speed),
-            ]
-            for label, x, call in buttons:
-                bui.buttonwidget(
-                    parent=self._root, position=(x, 12), size=(92, 42),
-                    label=label, color=(0.08, 0.36, 0.44),
-                    textcolor=(1, 1, 1), on_activate_call=call)
-        except Exception:
-            babase.print_exception('Mahyar Watch: could not create replay HUD.')
-
-    def _seek(self, delta: float) -> None:
-        try:
-            import _bascenev1 as _ba
-            _ba.seek_replay(delta)
-        except Exception:
-            babase.print_exception('Mahyar Watch: seek failed.')
-
-    def _toggle_pause(self) -> None:
-        try:
-            import _bascenev1 as _ba
-            if _ba.is_replay_paused():
-                _ba.resume_replay()
-                self._paused = False
-            else:
-                _ba.pause_replay()
-                self._paused = True
-        except Exception:
-            babase.print_exception('Mahyar Watch: pause toggle failed.')
-
-    def _next_speed(self) -> None:
-        try:
-            import _bascenev1 as _ba
-            # Exponents -1, 0, 1, 2, 3 = 0.5x, 1x, 2x, 4x, 8x.
-            self._speed += 1
-            if self._speed > 3:
-                self._speed = -1
-            _ba.set_replay_speed_exponent(self._speed)
-            speed = 2 ** self._speed
-            bui.screenmessage('Replay speed: ' + str(speed) + 'x',
-                              color=(0.25, 0.9, 1.0))
-        except Exception:
-            babase.print_exception('Mahyar Watch: speed change failed.')
-
-
 # ba_meta export babase.Plugin
-class MahyarWatchPlugin(babase.Plugin):
-    """Adds a custom Watch page to the Mods/settings menu."""
 
-    def __init__(self) -> None:
-        self._hud: MahyarReplayHUD | None = None
+from babase import Plugin, apptimer
+import bauiv1 as bui
+from bauiv1 import (
+    containerwidget,
+    buttonwidget,
+    textwidget,
+    get_special_widget,
+    UIScale,
+)
+import threading
+import urllib.request
+import re
+import html
+import time
+from datetime import datetime, timedelta
 
-    def on_app_running(self) -> None:
-        self._check_replay_state()
+PAGE_URL = "https://bslife.ir/post.php?post=RankingReset"
+REQUEST_TIMEOUT = 12
 
-    def _check_replay_state(self) -> None:
+
+def _clean_page(raw):
+    """Convert page HTML to readable lines."""
+    raw = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", raw)
+    raw = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</tr>|</li>", "\n", raw)
+    raw = re.sub(r"<[^>]+>", " ", raw)
+    raw = html.unescape(raw)
+    lines = []
+    for line in raw.splitlines():
+        line = re.sub(r"\s+", " ", line).strip()
+        if line and line not in lines:
+            lines.append(line)
+    return lines
+
+
+def _extract_reset_lines(lines):
+    keys = ("reset", "restart", "ranking", "ریست", "ریستارت", "رنک")
+    found = []
+    for line in lines:
+        low = line.lower()
+        if any(key in low for key in keys):
+            found.append(line[:180])
+    return found[:18]
+
+
+def _find_next_datetime(lines):
+    """Find an explicit date+time if the page publishes one."""
+    text = "\n".join(lines)
+    patterns = [
+        r"(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})[ T،-]+(\d{1,2}):(\d{2})",
+        r"(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})[ T،-]+(\d{1,2}):(\d{2})",
+    ]
+    for index, pattern in enumerate(patterns):
+        match = re.search(pattern, text)
+        if not match:
+            continue
         try:
-            if bs.is_in_replay():
-                if self._hud is None:
-                    self._hud = MahyarReplayHUD()
-            elif self._hud is not None:
-                if self._hud._root is not None:
-                    self._hud._root.delete()
-                self._hud = None
+            if index == 0:
+                year, month, day, hour, minute = map(int, match.groups())
+            else:
+                day, month, year, hour, minute = map(int, match.groups())
+            return datetime(year, month, day, hour, minute)
+        except ValueError:
+            pass
+    return None
+
+
+class RankingWindow:
+    def __init__(self, source=None):
+        self._alive = True
+        self._last_lines = []
+        self._next_reset = None
+        self._status = "در حال دریافت اطلاعات..."
+        scale = 1.0
+        try:
+            ui_scale = bui.app.ui_v1.uiscale
+            scale = 1.25 if ui_scale == UIScale.SMALL else 1.0 if ui_scale == UIScale.MEDIUM else 0.85
         except Exception:
-            babase.print_exception('Mahyar Watch: replay state check failed.')
-        bui.apptimer(0.5, self._check_replay_state)
+            pass
 
-    def has_settings_ui(self) -> bool:
-        return True
+        self._w = containerwidget(
+            parent=get_special_widget("overlay_stack"),
+            size=(390, 390),
+            scale=scale,
+            color=(0.10, 0.12, 0.19),
+            transition="in_scale",
+        )
+        containerwidget(
+            self._w,
+            on_outside_click_call=self.close,
+            on_cancel_call=self.close,
+        )
+        textwidget(
+            parent=self._w, text="BSLIFE RANKING",
+            position=(195, 350), size=(330, 30),
+            scale=0.95, color=(0.3, 0.9, 1.0),
+            h_align="center",
+        )
+        buttonwidget(
+            parent=self._w, label="X", size=(30, 30),
+            position=(345, 345), color=(0.65, 0.16, 0.22),
+            on_activate_call=self.close,
+        )
+        self._status_text = textwidget(
+            parent=self._w, text=self._status,
+            position=(20, 305), size=(350, 28),
+            scale=0.65, color=(1, 0.85, 0.3),
+            h_align="center",
+        )
+        self._countdown_text = textwidget(
+            parent=self._w, text="زمان ریست بعدی: نامشخص",
+            position=(20, 265), size=(350, 30),
+            scale=0.72, color=(0.35, 1.0, 0.65),
+            h_align="center",
+        )
+        self._content = textwidget(
+            parent=self._w,
+            text="برای دریافت زمان‌بندی، دکمه بروزرسانی را بزنید.",
+            position=(22, 75), size=(346, 175),
+            scale=0.58, color=(0.92, 0.94, 1.0),
+            h_align="center", v_align="top",
+            maxwidth=340,
+        )
+        buttonwidget(
+            parent=self._w, label="بروزرسانی اطلاعات",
+            size=(220, 38), position=(85, 22),
+            color=(0.12, 0.48, 0.72),
+            on_activate_call=self.refresh,
+        )
+        self.refresh()
+        self._tick()
 
-    def show_settings_ui(self, source_widget: bui.Widget | None) -> None:
-        main_window = bui.app.ui_v1.get_main_window()
-        if not main_window.main_window_has_control():
+    def close(self):
+        self._alive = False
+        try:
+            bui.getsound("swish").play()
+            containerwidget(self._w, transition="out_scale")
+        except Exception:
+            pass
+
+    def refresh(self):
+        if not self._alive:
             return
-        main_window.main_window_replace(
-            MahyarWatchWindow(origin_widget=source_widget))
+        textwidget(self._status_text, text="در حال اتصال به BSLIFE...",
+                   color=(1, 0.85, 0.3))
+        threading.Thread(target=self._fetch, daemon=True).start()
+
+    def _fetch(self):
+        try:
+            request = urllib.request.Request(
+                PAGE_URL,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+                raw = response.read().decode("utf-8", "replace")
+            lines = _clean_page(raw)
+            reset_lines = _extract_reset_lines(lines)
+            next_reset = _find_next_datetime(lines)
+            if not reset_lines:
+                reset_lines = ["صفحه دریافت شد، اما زمان‌بندی قابل تشخیص نبود."]
+            apptimer(0.0, lambda: self._show_result(
+                "اطلاعات دریافت شد", reset_lines, next_reset, None
+            ))
+        except Exception as exc:
+            message = str(exc)
+            apptimer(0.0, lambda: self._show_result(
+                "دریافت اطلاعات ناموفق بود", [],
+                None, message
+            ))
+
+    def _show_result(self, status, lines, next_reset, error):
+        if not self._alive:
+            return
+        self._status = status
+        self._last_lines = lines
+        self._next_reset = next_reset
+        color = (0.3, 1.0, 0.55) if error is None else (1.0, 0.35, 0.3)
+        textwidget(self._status_text, text=status, color=color)
+        if error:
+            body = (
+                "اتصال به سایت انجام نشد.\n"
+                "ممکن است سایت دسترسی ربات را محدود کرده باشد.\n\n"
+                + error[:120]
+            )
+        else:
+            body = "\n".join(lines) if lines else "اطلاعاتی پیدا نشد."
+        textwidget(self._content, text=body)
+        self._update_countdown()
+
+    def _update_countdown(self):
+        if not self._alive:
+            return
+        if self._next_reset is None:
+            value = "زمان ریست بعدی: در اطلاعات سایت پیدا نشد"
+        else:
+            remaining = self._next_reset - datetime.now()
+            if remaining.total_seconds() <= 0:
+                value = "زمان اعلام‌شده گذشته است؛ بروزرسانی کنید."
+            else:
+                seconds = int(remaining.total_seconds())
+                days, seconds = divmod(seconds, 86400)
+                hours, seconds = divmod(seconds, 3600)
+                minutes, seconds = divmod(seconds, 60)
+                value = "تا ریست: {} روز، {:02d}:{:02d}:{:02d}".format(
+                    days, hours, minutes, seconds
+                )
+        try:
+            textwidget(self._countdown_text, text=value)
+        except Exception:
+            pass
+
+    def _tick(self):
+        if not self._alive:
+            return
+        self._update_countdown()
+        apptimer(1.0, self._tick)
+
+
+# ba_meta require api 9
+# ba_meta export babase.Plugin
+class BSLifeRankingPlugin(Plugin):
+    def __init__(self):
+        from bauiv1lib import party
+        self._old_party_init = party.PartyWindow.__init__
+        plugin = self
+
+        def party_init(window, *args, **kwargs):
+            result = plugin._old_party_init(window, *args, **kwargs)
+            try:
+                buttonwidget(
+                    parent=window._root_widget,
+                    label="Ranking",
+                    size=(92, 30),
+                    position=(window._width - 105, 15),
+                    color=(0.12, 0.48, 0.72),
+                    textcolor=(1, 1, 1),
+                    button_type="square",
+                    on_activate_call=plugin.open_ranking,
+                )
+            except Exception as exc:
+                print("BSLife Ranking button error:", exc)
+            return result
+
+        party.PartyWindow.__init__ = party_init
+
+    def open_ranking(self):
+        try:
+            RankingWindow()
+            bui.getsound("swish").play()
+        except Exception as exc:
+            bui.screenmessage("Ranking error: " + str(exc), color=(1, 0, 0))
+            print("BSLife Ranking error:", exc)
+
+    def on_app_shutdown(self):
+        try:
+            from bauiv1lib import party
+            party.PartyWindow.__init__ = self._old_party_init
+        except Exception:
+            pass
