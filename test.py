@@ -160,22 +160,42 @@ def save_server(ip, port):
     except: pass
 
 
+# Keep a live in-memory copy as well as the persistent app config.
+# The in-memory value also protects position changes if a config commit is delayed.
+_mods_button_position_memory = None
+
 def get_mods_button_position(default_x=None, default_y=None):
+    global _mods_button_position_memory
+    try:
+        if _mods_button_position_memory is not None:
+            return (float(_mods_button_position_memory[0]),
+                    float(_mods_button_position_memory[1]))
+    except Exception:
+        _mods_button_position_memory = None
     try:
         x = app.config.get('mahyar_mods_btn_x', default_x)
         y = app.config.get('mahyar_mods_btn_y', default_y)
-        return float(x), float(y)
-    except:
-        return default_x, default_y
+        if x is not None and y is not None:
+            _mods_button_position_memory = (float(x), float(y))
+            return _mods_button_position_memory
+    except Exception:
+        pass
+    return default_x, default_y
 
 
 def save_mods_button_position(x, y):
+    global _mods_button_position_memory
     try:
-        app.config['mahyar_mods_btn_x'] = float(x)
-        app.config['mahyar_mods_btn_y'] = float(y)
+        x, y = float(x), float(y)
+        _mods_button_position_memory = (x, y)
+    except Exception:
+        return
+    try:
+        app.config['mahyar_mods_btn_x'] = x
+        app.config['mahyar_mods_btn_y'] = y
         app.config.commit()
-    except:
-        pass
+    except Exception as exc:
+        print('Mods position config save error: %s' % exc)
 
 
 def get_filter_words():
@@ -1399,7 +1419,7 @@ class FilterWindow:
 class EditPlaceWindow:
     def __init__(s, source, mods_button):
         s.mods_button = mods_button
-        s.step = 5
+        s.step = 10
 
         try:
             pos = mods_button.get_position()
@@ -1957,6 +1977,19 @@ class byMahyar(Plugin):
                 color=(0.3, 0.5, 0.8)
             )
             bw(b_mods, on_activate_call=lambda: s.delayed_open(ModsMenu, b_mods))
+
+            # Re-apply after the PartyWindow has completed its layout. Some game UI
+            # versions reset child positions during the first layout pass.
+            def _restore_mods_button_position():
+                try:
+                    if b_mods.exists():
+                        px, py = get_mods_button_position(default_x, default_y)
+                        px = min(max(0.0, float(px)), max(0.0, float(self._width) - 90.0))
+                        py = min(max(0.0, float(py)), max(0.0, float(self._height) - 35.0))
+                        bw(b_mods, position=(px, py))
+                except Exception as exc:
+                    print('Mods position restore error: %s' % exc)
+            teck(0.1, _restore_mods_button_position)
 
             return r
 
