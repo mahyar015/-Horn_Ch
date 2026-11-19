@@ -24,6 +24,11 @@ from bascenev1 import (
 import math
 import re
 import time
+import threading
+import queue
+import urllib.parse
+import urllib.request
+import json
 import bauiv1 as bui
 import bascenev1
 from babase import app
@@ -308,6 +313,157 @@ def safe_chat_send(message):
         CM(message)
     except Exception as e:
         print(f"Chat send error: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Translate outgoing messages typed in the game's party chat.
+# The request runs in a worker thread so the game UI never freezes.
+# ---------------------------------------------------------------------------
+TRANSLATE_CONFIG_KEY = 'mahyar_translate_enabled'
+translate_enabled = bool(app.config.get(TRANSLATE_CONFIG_KEY, False))
+_translate_original_chat = None
+_translate_lock = threading.Lock()
+_translate_queue = queue.Queue()
+_translate_worker_active = False
+_translate_pending = 0
+
+
+def _translate_to_english(message):
+    """Translate text with Google's public translate endpoint."""
+    query = urllib.parse.urlencode({
+        'client': 'gtx', 'sl': 'auto', 'tl': 'en', 'dt': 't', 'q': message
+    })
+    url = 'https://translate.googleapis.com/translate_a/single?' + query
+    request = urllib.request.Request(
+        url, headers={'User-Agent': 'Mozilla/5.0'}
+    )
+    with urllib.request.urlopen(request, timeout=12) as response:
+        data = json.loads(response.read().decode('utf-8'))
+    translated = ''.join(part[0] for part in data[0] if part and part[0])
+    return translated.strip() or message
+
+
+def _translate_send_result(message, args, kwargs):
+    """Send the translated text on the game thread, falling back to original."""
+    global _translate_pending
+    try:
+        _translate_original_chat(message, *args, **kwargs)
+    except Exception as exc:
+        print('Translate send error: %s' % exc)
+    finally:
+        with _translate_lock:
+            _translate_pending = max(0, _translate_pending - 1)
+
+
+def _translate_worker_loop():
+    """Process messages sequentially so their original order is preserved."""
+    global _translate_pending, _translate_worker_active
+    while True:
+        try:
+            message, args, kwargs = _translate_queue.get_nowait()
+        except queue.Empty:
+            with _translate_lock:
+                if _translate_queue.empty():
+                    _translate_worker_active = False
+                    return
+            continue
+        try:
+            try:
+                translated = _translate_to_english(message) or message
+            except Exception as exc:
+                print('Translate failed; sending original: %s' % exc)
+                translated = message
+            import babase as _translate_babase
+            _translate_babase.pushcall(
+                lambda m=translated, a=args, k=kwargs: _translate_send_result(m, a, k),
+                from_other_thread=True
+            )
+        except Exception as exc:
+            print('Translate callback error: %s' % exc)
+            try:
+                import babase as _translate_babase
+                _translate_babase.pushcall(
+                    lambda m=message, a=args, k=kwargs: _translate_send_result(m, a, k),
+                    from_other_thread=True
+                )
+            except Exception:
+                with _translate_lock:
+                    _translate_pending = max(0, _translate_pending - 1)
+        finally:
+            _translate_queue.task_done()
+
+
+def _translated_chatmessage(message, *args, **kwargs):
+    """Hook used by the native party chat's send action."""
+    global _translate_pending, _translate_worker_active
+    if not translate_enabled or not isinstance(message, str) or not message.strip():
+        return _translate_original_chat(message, *args, **kwargs)
+    with _translate_lock:
+        _translate_queue.put((message, args, kwargs))
+        _translate_pending += 1
+        should_start = not _translate_worker_active
+        if should_start:
+            _translate_worker_active = True
+    if should_start:
+        try:
+            threading.Thread(target=_translate_worker_loop, daemon=True).start()
+        except Exception as exc:
+            print('Translate worker start error: %s' % exc)
+            with _translate_lock:
+                _translate_worker_active = False
+            # Keep the original chat usable if background work cannot start.
+            try:
+                _translate_original_chat(message, *args, **kwargs)
+            except Exception:
+                pass
+            with _translate_lock:
+                _translate_pending = max(0, _translate_pending - 1)
+    return None
+
+
+def _install_translate_hook():
+    global _translate_original_chat
+    if _translate_original_chat is not None:
+        return
+    _translate_original_chat = bascenev1.chatmessage
+    bascenev1.chatmessage = _translated_chatmessage
+
+
+def _set_translate_enabled(value):
+    global translate_enabled
+    translate_enabled = bool(value)
+    try:
+        app.config[TRANSLATE_CONFIG_KEY] = translate_enabled
+        app.config.commit()
+    except Exception:
+        pass
+    push('Translate ON' if translate_enabled else 'Translate OFF',
+         color=(0.25, 1.0, 0.4) if translate_enabled else (1.0, 0.55, 0.25))
+
+
+class TranslateWindow:
+    def __init__(self, source):
+        self.w = AR.cw(source=source, size=(290, 190), ps=AR.UIS() * 0.3)
+        AR.add_close_button(self.w, position=(260, 155))
+        tw(parent=self.w, text='TRANSLATE', scale=0.9,
+           position=(145, 150), h_align='center', color=(1, 0.45, 0.78))
+        tw(parent=self.w, text='Auto translate your chat to English', scale=0.52,
+           position=(145, 112), h_align='center', color=(0.88, 0.82, 0.92))
+        self.toggle_btn = bw(
+            parent=self.w, label='ON' if translate_enabled else 'OFF',
+            size=(230, 42), position=(30, 48),
+            on_activate_call=Call(self.toggle),
+            color=(0.12, 0.62, 0.25) if translate_enabled else (0.62, 0.16, 0.22),
+            textcolor=(1, 1, 1), button_type='square', text_scale=0.85
+        )
+        gs('swish').play()
+
+    def toggle(self):
+        _set_translate_enabled(not translate_enabled)
+        bw(self.toggle_btn,
+           label='ON' if translate_enabled else 'OFF',
+           color=(0.12, 0.62, 0.25) if translate_enabled else (0.62, 0.16, 0.22))
+        gs('dingSmall').play()
 
 
 original_connect_to_party = original_connect
@@ -1307,6 +1463,7 @@ class ModsMenu:
             ('Filter', FilterWindow, (0.7, 0.4, 0.9)),
             ('Radar', 'RADAR', (0.72, 0.06, 0.36)),
             ('File Manager', 'FILE_MANAGER', (0.48, 0.035, 0.25)),
+            ('Translate', 'TRANSLATE', (0.72, 0.12, 0.42)),
             ('Edit Place', None, (0.6, 0.4, 0.7)),
         ]
 
@@ -1349,6 +1506,8 @@ class ModsMenu:
                 teck(0.15, _open_radar)
             elif cls == 'FILE_MANAGER':
                 teck(0.15, _open_file_manager)
+            elif cls == 'TRANSLATE':
+                teck(0.15, lambda: TranslateWindow(s.w))
             elif cls is None:
                 if s.mods_button_ref is not None:
                     teck(0.15, lambda: EditPlaceWindow(s.w, s.mods_button_ref))
@@ -1575,6 +1734,8 @@ def _show_mahyar_credit():
 class byMahyar(Plugin):
     def __init__(s):
         global my_own_name
+        try: _install_translate_hook()
+        except Exception as exc: print('Translate hook install error: %s' % exc)
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
 
