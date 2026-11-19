@@ -1,4 +1,5 @@
-from babase import Plugin
+# ba_meta require api 9
+from babase import Plugin, pushcall
 from bauiv1 import (
     containerwidget as cw,
     buttonwidget as bw,
@@ -1494,12 +1495,14 @@ class RankingWindow:
                 if not rows:
                     raise ValueError('No server schedule rows were found.')
 
-                teck(0, lambda: s.show_rows(rows))
+                # UI widgets must only be touched on Ballistica's logic thread.
+                pushcall(lambda: s.show_rows(rows), from_other_thread=True)
             except Exception as exc:
                 error = str(exc)
-                teck(0, lambda: s.show_error(error))
+                pushcall(lambda: s.show_error(error), from_other_thread=True)
 
-        threading.Thread(target=fetch, daemon=True).start()
+        # Network I/O runs away from the game logic/UI thread.
+        threading.Thread(target=fetch, name='BSLifeRankingFetch', daemon=True).start()
 
     def show_error(s, error):
         try:
@@ -1525,7 +1528,7 @@ class RankingWindow:
                 # Alternating dark panels keep the list readable and compact.
                 panel_color = (0.13, 0.19, 0.29) if i % 2 == 0 else (0.17, 0.22, 0.32)
                 cw(parent=s.container, size=(320, 58), position=(5, y),
-                   color=panel_color, border=1, radius=5)
+                   color=panel_color)
                 tw(parent=s.container, text=name, position=(165, y + 38),
                    scale=0.67, h_align='center', color=(0.55, 0.9, 1),
                    maxwidth=290)
@@ -2034,7 +2037,6 @@ def stop_auto_reconnect():
 # Plugin
 # ============================================================
 
-# ba_meta require api 9
 # ba_meta export babase.Plugin
 class byMahyar(Plugin):
     def __init__(s):
