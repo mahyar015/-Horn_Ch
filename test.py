@@ -1956,27 +1956,38 @@ def _open_enemy_list():
         except Exception: pass
 
 
+def _sb_enemy_match_key(enemy, roster_person):
+    """Match a saved enemy by stable identity, with exact-name fallback."""
+    saved_id = str(enemy.get("id", "")).strip().casefold()
+    live_id = str(_sb_person_stable_id(roster_person) or "").strip().casefold()
+    if saved_id and live_id and saved_id == live_id:
+        return "id:" + saved_id
+    saved_name = str(enemy.get("name", "")).strip().casefold()
+    live_name = str(roster_person.get("name", "")).strip().casefold()
+    if saved_name and live_name and saved_name == live_name:
+        return "name:" + saved_name
+    return None
+
+
 def _sb_check_enemy_roster():
     """Show a local alert whenever a saved enemy appears in the current roster."""
     global _sb_enemy_announced_this_session
     try:
-        known = {str(item.get("id", "")).casefold(): item for item in _sb_enemies}
+        roster = _sb_roster()
         present_now = set()
-        if server_ip != "127.0.0.1":
-            for person in _sb_roster():
-                ident = _sb_person_stable_id(person)
-                if not ident:
+        for person in roster:
+            for enemy in _sb_enemies:
+                match_key = _sb_enemy_match_key(enemy, person)
+                if not match_key:
                     continue
-                key = ident.casefold()
-                if key not in known:
-                    continue
-                present_now.add(key)
-                if key not in _sb_enemy_announced_this_session:
-                    _sb_enemy_announced_this_session.add(key)
-                    enemy_name = str(person.get("name") or known[key].get("name") or "Player")
+                present_now.add(match_key)
+                if match_key not in _sb_enemy_announced_this_session:
+                    _sb_enemy_announced_this_session.add(match_key)
+                    enemy_name = str(person.get("name") or enemy.get("name") or "Player")
                     push("Enemy (%s) is here" % enemy_name,
-                         color=(1.0, 0.30, 0.72), top=True)
-        # If an enemy leaves, allow another alert when they join again.
+                         color=(0.25, 1.0, 0.42), top=True)
+                break
+        # Clear departed enemies so a later rejoin triggers another alert.
         _sb_enemy_announced_this_session.intersection_update(present_now)
     except Exception as exc:
         print("Enemy roster check error: " + str(exc))
@@ -1991,49 +2002,84 @@ _sb_load_enemies()
 
 class _EnemyListWindow(_SBPanel):
     def __init__(self):
-        super().__init__("ENEMYS", accent=(1.0, 0.30, 0.70), height=760)
-        try: bui.containerwidget(edit=self.root_widget, color=(0.075, 0.012, 0.055))
-        except Exception: pass
+        # A larger, brighter custom panel with clear online status.
+        super().__init__("ENEMYS", accent=(1.0, 0.38, 0.78), width=1120, height=820)
+        try:
+            bui.containerwidget(edit=self.root_widget, color=(0.13, 0.035, 0.15))
+        except Exception:
+            pass
         total = len(_sb_enemies)
+        try:
+            roster = _sb_roster()
+        except Exception:
+            roster = []
+        online_by_enemy = {}
+        for item in _sb_enemies:
+            for person in roster:
+                if _sb_enemy_match_key(item, person):
+                    online_by_enemy[str(item.get("id", "")).casefold()] = str(
+                        person.get("name") or item.get("name") or "Player")
+                    break
+
         bui.textwidget(parent=self.root_widget,
-            position=(22, self._height - 132), size=(self._width - 190, 34),
-            text="SAVED ENEMIES  •  %d" % total, h_align="left", v_align="center",
-            scale=0.76, color=(1.0, 0.62, 0.84))
-        bw(parent=self.root_widget, position=(self._width - 154, self._height - 132),
-           size=(132, 34), button_type="square", label="REFRESH", text_scale=0.58,
-           color=(0.56, 0.045, 0.29), textcolor=(1, 1, 1),
+            position=(24, self._height - 132), size=(self._width - 220, 38),
+            text="SAVED ENEMIES  •  %d     |     ONLINE  •  %d" % (total, len(online_by_enemy)),
+            h_align="left", v_align="center", scale=0.82,
+            color=(1.0, 0.76, 0.92), shadow=0.8)
+        bw(parent=self.root_widget, position=(self._width - 176, self._height - 136),
+           size=(150, 42), button_type="square", label="REFRESH",
+           text_scale=0.66, color=(0.82, 0.12, 0.49), textcolor=(1, 1, 1),
            on_activate_call=_open_enemy_list)
-        margin = 20
+
+        margin = 22
         view_y = 58
         view_h = self._height - 212
         inner_w = self._width - 2 * margin
         scroll = bui.scrollwidget(parent=self.root_widget,
             position=(margin, view_y), size=(inner_w, view_h),
             highlight=False, capture_arrows=True)
-        row_h = 76
-        content_h = max(view_h, total * row_h + 18)
-        content = bui.containerwidget(parent=scroll, size=(inner_w, content_h), background=False)
+        row_h = 94
+        content_h = max(view_h, total * row_h + 20)
+        content = bui.containerwidget(parent=scroll,
+            size=(inner_w, content_h), background=False)
         if not _sb_enemies:
-            bui.textwidget(parent=content, position=(12, content_h - 88),
-                size=(inner_w - 24, 58), text="No enemies saved yet",
-                h_align="center", v_align="center", scale=0.9,
-                color=(1.0, 0.72, 0.88))
+            bui.textwidget(parent=content, position=(12, content_h - 100),
+                size=(inner_w - 24, 68), text="NO SAVED ENEMIES",
+                h_align="center", v_align="center", scale=1.0,
+                color=(1.0, 0.78, 0.93))
         for idx, item in enumerate(_sb_enemies):
-            y = content_h - 72 - idx * row_h
-            shade = (0.19, 0.035, 0.12) if idx % 2 == 0 else (0.13, 0.025, 0.095)
-            bw(parent=content, position=(4, y - 2), size=(inner_w - 8, 64),
-               button_type="square", label="", color=shade, enable_sound=False)
-            bui.textwidget(parent=content, position=(16, y + 24),
-                size=(inner_w - 116, 28), text=str(item.get("name", "Player"))[:42],
-                h_align="left", v_align="center", scale=0.72,
-                color=(1.0, 0.76, 0.9))
-            bui.textwidget(parent=content, position=(16, y + 5),
-                size=(inner_w - 116, 20), text=str(item.get("id", ""))[:72],
-                h_align="left", v_align="center", scale=0.52,
-                color=(1.0, 0.40, 0.72))
-            bw(parent=content, position=(inner_w - 82, y + 12), size=(66, 38),
-               button_type="square", label="REMOVE", text_scale=0.48,
-               color=(0.66, 0.035, 0.27), textcolor=(1, 1, 1),
+            y = content_h - 86 - idx * row_h
+            ident_key = str(item.get("id", "")).casefold()
+            online_name = online_by_enemy.get(ident_key)
+            card_color = (0.19, 0.12, 0.22) if idx % 2 == 0 else (0.23, 0.10, 0.22)
+            bw(parent=content, position=(5, y - 2), size=(inner_w - 10, 82),
+               button_type="square", label="", color=card_color, enable_sound=False)
+            bui.textwidget(parent=content, position=(22, y + 43),
+                size=(inner_w - 260, 30), text=str(item.get("name", "Player"))[:46],
+                h_align="left", v_align="center", scale=0.82,
+                color=(1.0, 0.82, 0.94))
+            bui.textwidget(parent=content, position=(22, y + 15),
+                size=(inner_w - 270, 24), text=str(item.get("id", ""))[:86],
+                h_align="left", v_align="center", scale=0.57,
+                color=(1.0, 0.52, 0.82))
+            if online_name:
+                bui.textwidget(parent=content, position=(inner_w - 250, y + 37),
+                    size=(150, 28), text="IS HERE", h_align="center",
+                    v_align="center", scale=0.78,
+                    color=(0.25, 1.0, 0.42), shadow=1.0)
+                bui.textwidget(parent=content, position=(inner_w - 250, y + 13),
+                    size=(150, 20), text="ONLINE", h_align="center",
+                    v_align="center", scale=0.52,
+                    color=(0.55, 1.0, 0.65))
+            else:
+                bui.textwidget(parent=content, position=(inner_w - 250, y + 25),
+                    size=(150, 26), text="OFFLINE", h_align="center",
+                    v_align="center", scale=0.65,
+                    color=(0.72, 0.65, 0.76))
+            # Slightly larger action target for easier tapping.
+            bw(parent=content, position=(inner_w - 112, y + 17), size=(94, 48),
+               button_type="square", label="REMOVE", text_scale=0.58,
+               color=(0.78, 0.10, 0.39), textcolor=(1, 1, 1),
                on_activate_call=lambda ident=item["id"]: _sb_remove_enemy(ident))
 
 
