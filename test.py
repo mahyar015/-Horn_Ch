@@ -1,242 +1,503 @@
 # ba_meta require api 9
-# ba_meta export babase.Plugin
-"""Mahyar Watch - custom replay browser/player controls for BombSquad API 9.
+"""
+Mahyar Advanced Replay Player
+Standalone plugin for BombSquad 1.8.7 / API 9.
 
-Important engine limitation:
-BombSquad's .brp replays are simulation streams, not ordinary video files.
-The engine's new_replay_session() replaces the current foreground session.
-Therefore starting a replay necessarily leaves/disconnects a remote party session.
-This plugin does not attempt to fake an in-session video player.
+Adds an "ADVANCED PLAYER" button to the official Watch window.
+The replay itself is rendered by BombSquad's replay engine; this plugin
+adds a replay library window and an in-replay control panel.
+
+Controls available during playback:
+- Pause / Resume
+- Rewind 5 seconds / Forward 5 seconds
+- Slower / Faster playback
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
+from typing import Any
 
+from babase import Plugin
 import babase
-import bauiv1 as bui
 import bascenev1 as bs
+import bauiv1 as bui
 
 
-class MahyarWatchWindow(bui.MainWindow):
-    """Replay browser with a custom dark/cyan interface."""
+_LOG = logging.getLogger("MahyarReplayPlayer")
+_PLUGIN_INSTANCE: "MahyarReplayPlayer | None" = None
 
-    def __init__(self, transition: str = 'in_right',
-                 origin_widget: bui.Widget | None = None):
+
+def _replay_dir() -> str:
+    """Return the official BombSquad replay directory."""
+    return bui.get_replays_dir()
+
+
+def _replay_names() -> list[str]:
+    """Return replay files in the official replay directory."""
+    try:
+        names = [
+            name for name in os.listdir(_replay_dir())
+            if name.lower().endswith(".brp")
+        ]
+        names.sort(key=lambda value: value.lower())
+        # Keep the latest replay easy to find.
+        if "__lastReplay.brp" in names:
+            names.remove("__lastReplay.brp")
+            names.insert(0, "__lastReplay.brp")
+        return names
+    except Exception:
+        _LOG.exception("Could not read replay directory.")
+        return []
+
+
+def _display_name(name: str) -> str:
+    if name == "__lastReplay.brp":
+        return "Last Game Replay"
+    return name[:-4] if name.lower().endswith(".brp") else name
+
+
+class AdvancedReplayWindow:
+    """Large replay-library window opened from the official Watch page."""
+
+    def __init__(self, source_widget: bui.Widget | None = None):
         self._selected: str | None = None
-        self._rows: list[bui.Widget] = []
-        self._width = 760
-        self._height = 540
-        self._scale = (1.35 if bui.app.ui_v1.uiscale is bui.UIScale.SMALL
-                       else 1.0)
-        root = bui.containerwidget(
-            size=(self._width, self._height),
-            scale=self._scale,
-            transition=transition,
-            toolbar_visibility='menu_minimal',
+        self._busy = False
+        self._row_widgets: list[bui.Widget] = []
+
+        width = 900
+        height = 620
+        self._root = bui.containerwidget(
+            parent=bui.get_special_widget("overlay_stack"),
+            size=(width, height),
+            scale=0.82,
+            stack_offset=(0.0, 0.0),
+            transition="in_scale",
+            background=True,
+            darken_behind=True,
         )
-        super().__init__(root_widget=root, transition=transition)
-        bui.containerwidget(edit=root, on_cancel_call=self._back)
 
         bui.textwidget(
-            parent=root, position=(self._width * 0.5, self._height - 48),
-            size=(0, 0), text='MAHYAR  WATCH', scale=1.45,
-            color=(0.25, 0.9, 1.0), h_align='center', v_align='center')
+            parent=self._root,
+            position=(width * 0.5, height - 48),
+            size=(0, 0),
+            text="MAHYAR  |  ADVANCED REPLAY PLAYER",
+            color=(0.75, 0.9, 1.0),
+            scale=1.15,
+            h_align="center",
+            v_align="center",
+        )
+
         bui.textwidget(
-            parent=root, position=(self._width * 0.5, self._height - 78),
-            size=(0, 0), text='Saved replays', scale=0.8,
-            color=(0.75, 0.85, 0.9), h_align='center', v_align='center')
+            parent=self._root,
+            position=(width * 0.5, height - 82),
+            size=(0, 0),
+            text="Saved replays",
+            color=(0.7, 1.0, 0.72),
+            scale=0.75,
+            h_align="center",
+            v_align="center",
+        )
+
+        self._selected_text = bui.textwidget(
+            parent=self._root,
+            position=(width * 0.5, 78),
+            size=(width - 80, 25),
+            text="Select a replay from the list",
+            color=(1.0, 0.9, 0.45),
+            scale=0.65,
+            h_align="center",
+            v_align="center",
+        )
 
         self._scroll = bui.scrollwidget(
-            parent=root, position=(35, 105), size=(690, 340),
-            border_opacity=0.35)
+            parent=self._root,
+            position=(45, 135),
+            size=(width - 90, height - 245),
+            capture_arrows=True,
+        )
         self._column = bui.columnwidget(
-            parent=self._scroll, border=2, margin=8)
-        bui.widget(edit=self._scroll, autoselect=True)
+            parent=self._scroll,
+            border=2,
+            margin=8,
+        )
 
-        self._play_btn = bui.buttonwidget(
-            parent=root, position=(495, 35), size=(220, 54),
-            label='PLAY REPLAY', color=(0.08, 0.48, 0.58),
-            textcolor=(1, 1, 1), on_activate_call=self._play)
-        self._refresh_btn = bui.buttonwidget(
-            parent=root, position=(265, 35), size=(210, 54),
-            label='REFRESH', color=(0.16, 0.22, 0.3),
-            textcolor=(0.8, 0.95, 1), on_activate_call=self._refresh)
-        self._back_btn = bui.buttonwidget(
-            parent=root, position=(35, 35), size=(200, 54),
-            label='BACK', button_type='back', on_activate_call=self._back)
-        bui.containerwidget(edit=root, cancel_button=self._back_btn,
-                            selected_child=self._refresh_btn)
+        self._play_button = bui.buttonwidget(
+            parent=self._root,
+            position=(width - 245, 24),
+            size=(190, 46),
+            label="PLAY SELECTED",
+            color=(0.12, 0.55, 0.30),
+            textcolor=(1, 1, 1),
+            text_scale=0.8,
+            on_activate_call=self._play_selected,
+        )
+
+        self._refresh_button = bui.buttonwidget(
+            parent=self._root,
+            position=(width - 455, 24),
+            size=(190, 46),
+            label="REFRESH",
+            color=(0.22, 0.36, 0.62),
+            textcolor=(1, 1, 1),
+            text_scale=0.75,
+            on_activate_call=self._refresh,
+        )
+
+        self._close_button = bui.buttonwidget(
+            parent=self._root,
+            position=(45, 24),
+            size=(110, 46),
+            label="×",
+            color=(0.48, 0.20, 0.22),
+            textcolor=(1, 1, 1),
+            text_scale=0.75,
+            on_activate_call=self.close,
+        )
+
+        bui.containerwidget(
+            edit=self._root,
+            cancel_button=self._close_button,
+            selected_child=self._scroll,
+        )
         self._refresh()
 
-    def _back(self) -> None:
-        bui.app.ui_v1.get_main_window().main_window_back()
+    def close(self) -> None:
+        try:
+            if self._root and self._root.exists():
+                bui.containerwidget(edit=self._root, transition="out_scale")
+        except Exception:
+            pass
 
     def _refresh(self) -> None:
         for child in self._column.get_children():
             child.delete()
-        self._rows = []
-        self._selected = None
-        try:
-            import _bascenev1 as _ba
-            replay_dir = _ba.get_replays_dir()
-            names = [n for n in os.listdir(replay_dir) if n.lower().endswith('.brp')]
-            names.sort(key=lambda n: (n != '__lastReplay.brp', n.lower()))
-        except Exception:
-            babase.print_exception('Mahyar Watch: could not read replay folder.')
-            names = []
+        self._row_widgets.clear()
 
+        names = _replay_names()
         if not names:
             bui.textwidget(
-                parent=self._column, size=(630, 45),
-                text='No saved replays found.', color=(0.8, 0.8, 0.85),
-                h_align='center', v_align='center')
+                parent=self._column,
+                text="No saved .brp replay files were found.",
+                scale=0.75,
+                color=(1.0, 0.7, 0.55),
+                size=(700, 45),
+            )
+            self._selected = None
+            bui.textwidget(
+                edit=self._selected_text,
+                text="No replay files found",
+            )
             return
 
         for index, name in enumerate(names):
-            label = ('▶  LAST REPLAY' if name == '__lastReplay.brp'
-                     else '▶  ' + name[:-4])
-            row = bui.buttonwidget(
-                parent=self._column, size=(630, 48), label=label,
-                color=(0.08, 0.28, 0.34) if index == 0
-                else (0.12, 0.15, 0.2),
-                textcolor=(0.65, 0.95, 1.0) if index == 0
-                else (0.92, 0.94, 1.0),
-                on_activate_call=bui.Call(self._select, name))
-            self._rows.append(row)
-            if index == 0:
-                bui.widget(edit=row, up_widget=self._refresh_btn)
+            label = _display_name(name)
+            button = bui.buttonwidget(
+                parent=self._column,
+                size=(700, 44),
+                label=label,
+                color=(0.18, 0.28, 0.25),
+                textcolor=(1.0, 1.0, 1.0),
+                text_scale=0.72,
+                button_type="square",
+                on_activate_call=bui.Call(self._select, name),
+            )
+            self._row_widgets.append(button)
+
+        self._select(names[0])
 
     def _select(self, name: str) -> None:
         self._selected = name
-        bui.screenmessage('Selected: ' + name[:-4], color=(0.25, 0.9, 1.0))
-
-    def _play(self) -> None:
-        if self._selected is None:
-            bui.screenmessage('Select a replay first.', color=(1, 0.3, 0.25))
-            bui.getsound('error').play()
-            return
-
-        # Replays are engine sessions, not video textures. Starting one
-        # replaces the current session; remote party connection cannot remain.
+        bui.textwidget(
+            edit=self._selected_text,
+            text="Selected: " + _display_name(name),
+        )
+        for button in self._row_widgets:
+            try:
+                bui.buttonwidget(
+                    edit=button,
+                    color=(0.18, 0.28, 0.25),
+                )
+            except Exception:
+                pass
+        # Highlight the selected row.
         try:
-            import _bascenev1 as _ba
-            replay_path = os.path.join(_ba.get_replays_dir(), self._selected)
-            bui.containerwidget(edit=self._root_widget, transition='out_left')
+            names = _replay_names()
+            index = names.index(name)
+            bui.buttonwidget(
+                edit=self._row_widgets[index],
+                color=(0.12, 0.48, 0.34),
+            )
+        except Exception:
+            pass
+
+    def _play_selected(self) -> None:
+        if self._selected is None:
+            bui.screenmessage("Select a replay first.", color=(1, 0.3, 0.3))
+            return
+        if self._busy:
+            return
+        path = os.path.join(_replay_dir(), self._selected)
+        if not os.path.isfile(path):
+            bui.screenmessage("Replay file no longer exists.", color=(1, 0.3, 0.3))
+            self._refresh()
+            return
+        self._busy = True
+        bui.app.create_async_task(self._prepare_and_play(path))
+
+    async def _prepare_and_play(self, path: str) -> None:
+        try:
+            # Resolve required assets before leaving the menu.
+            if not await bs.prepare_replay(path):
+                self._busy = False
+                return
+
+            if bui.app.classic is not None:
+                bui.app.classic.save_ui_state()
 
             def launch() -> None:
-                _ba.set_replay_speed_exponent(0)
-                _ba.fade_screen(True)
-                _ba.new_replay_session(replay_path)
+                try:
+                    bs.set_replay_speed_exponent(0)
+                    bui.fade_screen(True)
+                    bs.launch_replay(path)
+                except Exception:
+                    _LOG.exception("Could not launch replay.")
+                    from bascenev1lib import mainmenu
+                    bs.new_host_session(mainmenu.MainMenuSession)
 
-            _ba.fade_screen(False, endcall=bui.Call(bui.pushcall, launch))
+            bui.fade_screen(
+                False,
+                endcall=bui.CallStrict(bui.pushcall, launch),
+            )
+            self.close()
         except Exception:
-            babase.print_exception('Mahyar Watch: replay launch failed.')
-            bui.screenmessage('Could not start this replay.', color=(1, 0.25, 0.25))
-
-    def get_main_window_state(self) -> bui.MainWindowState:
-        return bui.BasicMainWindowState(
-            create_call=lambda transition, origin_widget: MahyarWatchWindow(
-                transition=transition, origin_widget=origin_widget))
+            self._busy = False
+            _LOG.exception("Replay preparation failed.")
+            bui.screenmessage("Could not prepare this replay.", color=(1, 0.3, 0.3))
 
 
-class MahyarReplayHUD:
-    """Compact custom playback controls shown during replay sessions."""
+class ReplayControlOverlay:
+    """Compact controls shown over the replay while it is playing."""
 
-    def __init__(self) -> None:
+    def __init__(self):
         self._root: bui.Widget | None = None
         self._speed = 0
         self._paused = False
-        self._show()
+        self._make_widgets()
 
-    def _show(self) -> None:
+    def _make_widgets(self) -> None:
+        width = 560
+        height = 92
         try:
-            self._root = bui.containerwidget(
-                size=(680, 92), scale=0.78,
-                stack_offset=(0, 0), transition='in_bottom',
-                background=True)
-            bui.textwidget(
-                parent=self._root, position=(310, 72), size=(0, 0),
-                text='MAHYAR REPLAY PLAYER', color=(0.25, 0.9, 1),
-                scale=0.78, h_align='center', v_align='center')
-            buttons = [
-                ('-10s', 12, lambda: self._seek(-10.0)),
-                ('-5s', 112, lambda: self._seek(-5.0)),
-                ('PLAY / PAUSE', 212, self._toggle_pause),
-                ('+5s', 362, lambda: self._seek(5.0)),
-                ('+10s', 462, lambda: self._seek(10.0)),
-                ('SPEED', 562, self._next_speed),
-            ]
-            for label, x, call in buttons:
-                bui.buttonwidget(
-                    parent=self._root, position=(x, 12), size=(92, 42),
-                    label=label, color=(0.08, 0.36, 0.44),
-                    textcolor=(1, 1, 1), on_activate_call=call)
+            screen_w, _screen_h = bui.get_virtual_screen_size()
+            x = max(10.0, (screen_w - width) * 0.5)
         except Exception:
-            babase.print_exception('Mahyar Watch: could not create replay HUD.')
+            x = 180.0
 
-    def _seek(self, delta: float) -> None:
+        self._root = bui.containerwidget(
+            parent=bui.get_special_widget("overlay_stack"),
+            position=(x, 35),
+            size=(width, height),
+            background=True,
+            color=(0.08, 0.10, 0.16),
+            opacity=0.92,
+            scale=0.85,
+            stack_offset=(0, 0),
+            transition="in_scale",
+        )
+
+        bui.textwidget(
+            parent=self._root,
+            position=(width * 0.5, height - 18),
+            size=(0, 0),
+            text="REPLAY CONTROLS",
+            color=(0.65, 0.9, 1.0),
+            scale=0.55,
+            h_align="center",
+        )
+
+        controls = [
+            ("-5s", 10, 42, lambda: self._seek(-5.0)),
+            ("PAUSE", 88, 42, self._toggle_pause),
+            ("+5s", 166, 42, lambda: self._seek(5.0)),
+            ("SLOWER", 244, 42, lambda: self._change_speed(-1)),
+            ("FASTER", 340, 42, lambda: self._change_speed(1)),
+            ("HIDE", 436, 42, self.close),
+        ]
+        self._pause_button = None
+        for label, px, py, callback in controls:
+            button = bui.buttonwidget(
+                parent=self._root,
+                position=(px, py),
+                size=(88, 34),
+                label=label,
+                color=(0.18, 0.35, 0.52),
+                textcolor=(1, 1, 1),
+                text_scale=0.58,
+                button_type="square",
+                on_activate_call=callback,
+            )
+            if label == "PAUSE":
+                self._pause_button = button
+
+        self._speed_text = bui.textwidget(
+            parent=self._root,
+            position=(width * 0.5, 8),
+            size=(0, 0),
+            text="Speed: 1x",
+            color=(0.85, 0.9, 1.0),
+            scale=0.48,
+            h_align="center",
+        )
+
+    def _seek(self, seconds: float) -> None:
         try:
-            import _bascenev1 as _ba
-            _ba.seek_replay(delta)
+            bs.seek_replay(seconds)
         except Exception:
-            babase.print_exception('Mahyar Watch: seek failed.')
+            _LOG.exception("Replay seek failed.")
 
     def _toggle_pause(self) -> None:
         try:
-            import _bascenev1 as _ba
-            if _ba.is_replay_paused():
-                _ba.resume_replay()
+            if bs.is_replay_paused():
+                bs.resume_replay()
                 self._paused = False
             else:
-                _ba.pause_replay()
+                bs.pause_replay()
                 self._paused = True
+            if self._pause_button is not None:
+                bui.buttonwidget(
+                    edit=self._pause_button,
+                    label="RESUME" if self._paused else "PAUSE",
+                )
         except Exception:
-            babase.print_exception('Mahyar Watch: pause toggle failed.')
+            _LOG.exception("Could not pause/resume replay.")
 
-    def _next_speed(self) -> None:
+    def _change_speed(self, delta: int) -> None:
         try:
-            import _bascenev1 as _ba
-            # Exponents -1, 0, 1, 2, 3 = 0.5x, 1x, 2x, 4x, 8x.
-            self._speed += 1
-            if self._speed > 3:
-                self._speed = -1
-            _ba.set_replay_speed_exponent(self._speed)
+            current = bs.get_replay_speed_exponent()
+            self._speed = max(-3, min(3, current + delta))
+            bs.set_replay_speed_exponent(self._speed)
             speed = 2 ** self._speed
-            bui.screenmessage('Replay speed: ' + str(speed) + 'x',
-                              color=(0.25, 0.9, 1.0))
+            bui.textwidget(
+                edit=self._speed_text,
+                text=f"Speed: {speed:g}x",
+            )
         except Exception:
-            babase.print_exception('Mahyar Watch: speed change failed.')
+            _LOG.exception("Could not change replay speed.")
 
-
-class MahyarWatchPlugin(babase.Plugin):
-    """Adds a custom Watch page to the Mods/settings menu."""
-
-    def __init__(self) -> None:
-        self._hud: MahyarReplayHUD | None = None
-
-    def on_app_running(self) -> None:
-        self._check_replay_state()
-
-    def _check_replay_state(self) -> None:
+    def close(self) -> None:
         try:
-            if bs.is_in_replay():
-                if self._hud is None:
-                    self._hud = MahyarReplayHUD()
-            elif self._hud is not None:
-                if self._hud._root is not None:
-                    self._hud._root.delete()
-                self._hud = None
+            if self._root is not None and self._root.exists():
+                self._root.delete()
         except Exception:
-            babase.print_exception('Mahyar Watch: replay state check failed.')
-        bui.apptimer(0.5, self._check_replay_state)
+            pass
+        self._root = None
 
-    def has_settings_ui(self) -> bool:
-        return True
+    def exists(self) -> bool:
+        try:
+            return self._root is not None and self._root.exists()
+        except Exception:
+            return False
 
-    def show_settings_ui(self, source_widget: bui.Widget | None) -> None:
-        main_window = bui.app.ui_v1.get_main_window()
-        if not main_window.main_window_has_control():
-            return
-        main_window.main_window_replace(
-            MahyarWatchWindow(origin_widget=source_widget))
+
+# ba_meta export babase.Plugin
+class MahyarReplayPlayer(Plugin):
+    """Plugin entry point."""
+
+    def __init__(self):
+        global _PLUGIN_INSTANCE
+        _PLUGIN_INSTANCE = self
+        self._overlay: ReplayControlOverlay | None = None
+        self._overlay_hidden_for_current_replay = False
+        self._last_replay_state = False
+        self._poll_replay_state()
+
+        # Add the launcher button using the same __init__ wrapping pattern
+        # used by Spam.py for PartyWindow.
+        try:
+            from bauiv1lib import watch
+            original_init = watch.WatchWindow.__init__
+
+            if not getattr(original_init, "_mahyar_replay_wrapped", False):
+                def enhanced_init(window: Any, *args: Any, **kwargs: Any) -> Any:
+                    result = original_init(window, *args, **kwargs)
+                    try:
+                        root = getattr(window, "_root_widget", None)
+                        if root is None:
+                            return result
+
+                        existing = getattr(window, "_mahyar_advanced_button", None)
+                        if existing is not None and existing.exists():
+                            return result
+
+                        width = float(getattr(window, "_width", 600))
+                        y_offset = float(getattr(window, "yoffs", 100))
+                        button = bui.buttonwidget(
+                            parent=root,
+                            position=(width - 245, y_offset - 58),
+                            size=(190, 42),
+                            label="ADVANCED PLAYER",
+                            color=(0.12, 0.48, 0.34),
+                            textcolor=(1, 1, 1),
+                            text_scale=0.65,
+                            on_activate_call=bui.Call(_open_advanced_window),
+                        )
+                        window._mahyar_advanced_button = button
+                    except Exception:
+                        _LOG.exception("Could not add Advanced Player button.")
+                    return result
+
+                enhanced_init._mahyar_replay_wrapped = True  # type: ignore[attr-defined]
+                watch.WatchWindow.__init__ = enhanced_init
+        except Exception:
+            _LOG.exception("Could not hook the official Watch window.")
+
+    def _poll_replay_state(self) -> None:
+        try:
+            in_replay = bool(bs.is_in_replay())
+            if in_replay and not self._last_replay_state:
+                self._overlay_hidden_for_current_replay = False
+            if in_replay:
+                if (
+                    not self._overlay_hidden_for_current_replay
+                    and (self._overlay is None or not self._overlay.exists())
+                ):
+                    self._overlay = ReplayControlOverlay()
+            else:
+                if self._overlay is not None:
+                    self._overlay.close()
+                    self._overlay = None
+                self._overlay_hidden_for_current_replay = False
+            self._last_replay_state = in_replay
+        except Exception:
+            _LOG.exception("Replay state check failed.")
+        bui.apptimer(0.5, self._poll_replay_state)
+
+
+def _open_advanced_window() -> None:
+    try:
+        AdvancedReplayWindow()
+    except Exception:
+        _LOG.exception("Could not open Advanced Replay Player.")
+        bui.screenmessage(
+            "Advanced Replay Player could not be opened.",
+            color=(1, 0.3, 0.3),
+        )
+
+
+# Patch overlay close behavior so HIDE stays hidden until this replay ends.
+_original_overlay_close = ReplayControlOverlay.close
+
+
+def _hide_overlay(self: ReplayControlOverlay) -> None:
+    try:
+        if _PLUGIN_INSTANCE is not None:
+            _PLUGIN_INSTANCE._overlay_hidden_for_current_replay = True
+    except Exception:
+        pass
+    _original_overlay_close(self)
+
+
+ReplayControlOverlay.close = _hide_overlay
