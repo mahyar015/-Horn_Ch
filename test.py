@@ -1586,6 +1586,23 @@ class RankingWindow:
         except Exception as exc:
             s.show_error(str(exc))
 
+    def _days_remaining_label(s, reset_date, reset_time):
+        match = re.search(r'(\\d{4})-(\\d{2})-(\\d{2})', reset_date)
+        if not match:
+            return 'OPEN SERVER DETAILS'
+        try:
+            target_day = datetime.date(*map(int, match.groups()))
+            days = (target_day - datetime.date.today()).days
+            if days < 0:
+                return 'RESET DATE PASSED'
+            if days == 0:
+                return 'RESET TODAY'
+            if days == 1:
+                return '1 DAY LEFT'
+            return f'{days} DAYS LEFT'
+        except Exception:
+            return 'OPEN SERVER DETAILS'
+
     def show_list(s):
         if not s.w.exists():
             return
@@ -1603,20 +1620,27 @@ class RankingWindow:
             cw(s.container, size=(330, 100))
             return
 
-        # Compact, clickable server cards. Selecting one opens its reset details.
-        row_h = 61
-        total_h = max(100, len(s.rows) * row_h + 10)
+        # Clean server cards: only show the server and days remaining.
+        row_h = 68
+        total_h = max(110, len(s.rows) * row_h + 12)
+        palette = [
+            (0.10, 0.27, 0.34),
+            (0.17, 0.23, 0.38),
+            (0.12, 0.31, 0.27),
+            (0.29, 0.20, 0.34),
+        ]
         for i, row in enumerate(s.rows):
             name, reset_time, reset_date = row
             y = total_h - (i + 1) * row_h
-            color = (0.12, 0.22, 0.31) if i % 2 == 0 else (0.15, 0.19, 0.29)
+            remaining_label = s._days_remaining_label(reset_date, reset_time)
             bw(
                 parent=s.container,
-                label=f'{name}\n{reset_time}   •   {reset_date}',
-                size=(316, 54), position=(7, y),
+                label=f'{name}\n{remaining_label}',
+                size=(316, 60), position=(7, y),
                 on_activate_call=Call(s.show_detail, i),
-                color=color, textcolor=(0.9, 0.94, 1),
-                button_type='square', text_scale=0.62
+                color=palette[i % len(palette)],
+                textcolor=(0.94, 0.97, 1),
+                button_type='square', text_scale=0.68
             )
         cw(s.container, size=(330, total_h))
         tw(s.status, text=f'{len(s.rows)} SERVERS  •  SELECT A SERVER',
@@ -1633,10 +1657,10 @@ class RankingWindow:
 
         name, reset_time, reset_date = s.selected
         cw(parent=s.container, size=(310, 330), position=(10, 35),
-           color=(0.12, 0.17, 0.25))
+           color=(0.09, 0.16, 0.25))
         tw(parent=s.container, text='SERVER DETAILS',
            position=(165, 335), scale=0.55, h_align='center',
-           color=(0.45, 0.85, 1))
+           color=(0.35, 0.92, 1))
         tw(parent=s.container, text=name,
            position=(165, 285), scale=0.88, h_align='center',
            color=(0.95, 0.96, 1), maxwidth=285)
@@ -1648,7 +1672,7 @@ class RankingWindow:
            color=(0.6, 0.75, 0.9))
         tw(parent=s.container, text=reset_date,
            position=(165, 170), scale=0.72, h_align='center',
-           color=(1, 0.85, 0.45))
+           color=(1, 0.78, 0.34))
         tw(parent=s.container, text='SCHEDULED TIME',
            position=(165, 125), scale=0.43, h_align='center',
            color=(0.6, 0.75, 0.9))
@@ -2250,6 +2274,11 @@ class byMahyar(Plugin):
         teck(0.5, s.calc_ear)
         teck(0.005, sellcek)
         teck(1, s.reconnect_ear)
+        # Creator/channel credit shown when the mod is loaded on game entry.
+        teck(2.0, lambda: bui.screenmessage(
+            'Create By Mahyar  |  Channel Tel : @Horn_Ch',
+            color=(0.35, 0.9, 1), top=True
+        ))
 
         from bauiv1lib import party
         o = party.PartyWindow.__init__
