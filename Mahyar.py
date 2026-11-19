@@ -1752,7 +1752,7 @@ def check_reaction(msg):
             if not target_is_me:
                 continue
 
-            cd_time = max(0.0, float(current_cooldowns.get(trigger, DEFAULT_COOLDOWN)))
+            cd_time = 0.0  # Fastest reaction: no client-side cooldown.
             cd_key = f"{trigger_lower}_{sender or 'unknown'}"
             last_time = react_cooldown.get(cd_key, 0.0)
             if now - last_time < cd_time:
@@ -1909,8 +1909,10 @@ class byMahyar(Plugin):
 
         s.last_msg_hash = ""
         s.last_calc_hash = ""
+        s.last_game_session = None
 
-        teck(0.01, s.ear)
+        teck(0.5, s.game_banner_ear)
+        teck(0.005, s.ear)
         teck(0.5, s.calc_ear)
         teck(0.005, sellcek)
         teck(1, s.reconnect_ear)
@@ -1945,11 +1947,33 @@ class byMahyar(Plugin):
 
         party.PartyWindow.__init__ = e
 
+    def game_banner_ear(s):
+        """Show the creator credit once whenever a new game session starts."""
+        try:
+            teck(0.5, s.game_banner_ear)
+            foreground = bascenev1.get_foreground_host_session()
+            if foreground is None or isinstance(foreground, MainMenuSession):
+                s.last_game_session = None
+                return
+
+            if foreground is not s.last_game_session:
+                s.last_game_session = foreground
+                push(
+                    "Create By Mahyar\nChannel : @Horn_Ch",
+                    color=(0.25, 0.85, 1.0),
+                )
+        except Exception as e:
+            print(f"Game banner error: {e}")
+            try:
+                teck(1.0, s.game_banner_ear)
+            except Exception:
+                pass
+
     def ear(s):
         global _last_seen_messages
         try:
             z = GCM()
-            teck(0.01, s.ear)
+            teck(0.005, s.ear)
             current = list(z or [])
             new_msgs = _collect_new_messages(current, _last_seen_messages)
             _last_seen_messages = current
