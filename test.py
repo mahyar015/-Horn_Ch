@@ -25,6 +25,7 @@ from bascenev1 import (
 import math
 import re
 import time
+import datetime
 import socket
 import threading
 import urllib.request
@@ -1446,33 +1447,76 @@ class RankingWindow:
     def __init__(s, source):
         s.w = AR.cw(source=source, size=(390, 570), ps=AR.UIS() * 0.3)
         AR.add_close_button(s.w, position=(360, 535))
-        tw(parent=s.w, text='SERVER RANKING RESET', scale=0.88,
-           position=(195, 530), h_align='center', color=(0.35, 0.9, 1))
-        tw(parent=s.w, text='Upcoming server resets • BSLIFE',
-           scale=0.48, position=(195, 505), h_align='center',
-           color=(0.75, 0.8, 0.95))
 
-        s.status = tw(parent=s.w, text='Loading server schedule...',
-                      scale=0.58, position=(195, 475),
-                      h_align='center', color=(1, 0.85, 0.35))
-        s.scroll = sw(parent=s.w, size=(350, 420), position=(20, 45))
+        tw(parent=s.w, text='SERVER RANKING', scale=0.95,
+           position=(195, 530), h_align='center', color=(0.35, 0.9, 1))
+        tw(parent=s.w, text='BSLIFE  •  RESET SCHEDULE',
+           scale=0.45, position=(195, 506), h_align='center',
+           color=(0.65, 0.75, 0.9))
+
+        s.status = tw(parent=s.w, text='Connecting to BSLIFE...',
+                      scale=0.55, position=(195, 480),
+                      h_align='center', color=(1, 0.82, 0.35))
+
+        s.scroll = sw(parent=s.w, size=(350, 410), position=(20, 55))
         s.container = cw(parent=s.scroll, size=(330, 100), background=False)
 
-        bw(parent=s.w, label='↻ Refresh', size=(110, 28),
-           position=(140, 10), on_activate_call=Call(s.refresh),
-           color=(0.18, 0.48, 0.72), textcolor=(1, 1, 1),
-           button_type='square', text_scale=0.65)
+        s.rows = []
+        s.mode = 'list'
+        s.selected = None
+        s.countdown_text = None
+        s.countdown_timer_running = False
+        s.countdown_token = 0
 
+        s.back_btn = bw(
+            parent=s.w, label='BACK', size=(105, 28), position=(25, 12),
+            on_activate_call=Call(s.show_list),
+            color=(0.25, 0.32, 0.45), textcolor=(1, 1, 1),
+            button_type='square', text_scale=0.62
+        )
+        s.refresh_btn = bw(
+            parent=s.w, label='REFRESH', size=(105, 28), position=(260, 12),
+            on_activate_call=Call(s.refresh),
+            color=(0.12, 0.52, 0.58), textcolor=(1, 1, 1),
+            button_type='square', text_scale=0.62
+        )
+        bw(
+            parent=s.w, label='CLOSE', size=(105, 28), position=(142, 12),
+            on_activate_call=Call(AR.swish, t=s.w),
+            color=(0.45, 0.22, 0.28), textcolor=(1, 1, 1),
+            button_type='square', text_scale=0.62
+        )
+
+        s._update_footer_buttons()
         s.refresh()
         gs('swish').play()
 
+    def _update_footer_buttons(s):
+        try:
+            bw(s.back_btn, color=(0.25, 0.32, 0.45) if s.mode == 'detail'
+               else (0.18, 0.25, 0.34))
+            bw(s.refresh_btn, label='REFRESH',
+               color=(0.12, 0.52, 0.58))
+        except Exception:
+            pass
+
+    def _clear_content(s):
+        try:
+            for child in s.container.get_children():
+                child.delete()
+        except Exception:
+            pass
+
     def refresh(s):
-        tw(s.status, text='Connecting to BSLIFE...', color=(1, 0.85, 0.35))
-        for child in s.container.get_children():
-            child.delete()
-        tw(parent=s.container, text='Please wait...',
-           position=(165, 40), scale=0.65, h_align='center',
-           color=(0.8, 0.85, 1))
+        s.mode = 'list'
+        s.selected = None
+        s._update_footer_buttons()
+        tw(s.status, text='Connecting to BSLIFE...', color=(1, 0.82, 0.35))
+        s._clear_content()
+        tw(parent=s.container, text='Loading server schedule...',
+           position=(165, 45), scale=0.58, h_align='center',
+           color=(0.8, 0.87, 1))
+        cw(s.container, size=(330, 100))
 
         def fetch():
             try:
@@ -1480,70 +1524,222 @@ class RankingWindow:
                     s.URL,
                     headers={'User-Agent': 'Mozilla/5.0 (compatible; BSLifeRanking/1.0)'}
                 )
-                with urllib.request.urlopen(request, timeout=12) as response:
+                with urllib.request.urlopen(request, timeout=15) as response:
                     html = response.read().decode('utf-8', errors='replace')
 
                 parser = _RankingTableParser()
                 parser.feed(html)
                 rows = []
                 for row in parser.rows:
-                    if len(row) >= 3:
-                        name, reset_time, reset_date = row[0], row[1], row[2]
-                        if name.lower() not in ('نام سرور', 'server name'):
-                            rows.append((name, reset_time, reset_date))
+                    if len(row) < 3:
+                        continue
+                    name, reset_time, reset_date = row[0], row[1], row[2]
+                    if name.lower() in ('نام سرور', 'server name'):
+                        continue
+                    if not name.strip():
+                        continue
+                    rows.append((name.strip(), reset_time.strip(), reset_date.strip()))
 
                 if not rows:
                     raise ValueError('No server schedule rows were found.')
 
-                # UI widgets must only be touched on Ballistica's logic thread.
                 pushcall(lambda: s.show_rows(rows), from_other_thread=True)
             except Exception as exc:
                 error = str(exc)
                 pushcall(lambda: s.show_error(error), from_other_thread=True)
 
-        # Network I/O runs away from the game logic/UI thread.
-        threading.Thread(target=fetch, name='BSLifeRankingFetch', daemon=True).start()
+        threading.Thread(
+            target=fetch, name='BSLifeRankingFetch', daemon=True
+        ).start()
 
     def show_error(s, error):
         try:
-            tw(s.status, text='Could not load server list', color=(1, 0.35, 0.35))
-            for child in s.container.get_children():
-                child.delete()
-            tw(parent=s.container, text='Connection failed. Check internet and try again.',
-               position=(165, 55), scale=0.55, h_align='center',
-               color=(1, 0.75, 0.65))
+            if not s.w.exists():
+                return
+            s.mode = 'list'
+            s._clear_content()
+            cw(s.container, size=(330, 280))
+            tw(s.status, text='Unable to load server schedule',
+               color=(1, 0.38, 0.38))
+            cw(parent=s.container, size=(310, 135), position=(10, 120),
+               color=(0.18, 0.12, 0.17))
+            tw(parent=s.container, text='CONNECTION FAILED',
+               position=(165, 205), scale=0.72, h_align='center',
+               color=(1, 0.55, 0.55))
+            tw(parent=s.container,
+               text='Check your internet connection\nand press REFRESH.',
+               position=(165, 165), scale=0.53, h_align='center',
+               color=(0.85, 0.85, 0.9))
             print('RankingReset error: ' + error)
         except Exception:
             pass
 
     def show_rows(s, rows):
         try:
-            for child in s.container.get_children():
-                child.delete()
-
-            row_h = 66
-            total_h = max(90, len(rows) * row_h + 15)
-            for i, (name, reset_time, reset_date) in enumerate(rows):
-                y = total_h - (i + 1) * row_h
-                # Alternating dark panels keep the list readable and compact.
-                panel_color = (0.13, 0.19, 0.29) if i % 2 == 0 else (0.17, 0.22, 0.32)
-                cw(parent=s.container, size=(320, 58), position=(5, y),
-                   color=panel_color)
-                tw(parent=s.container, text=name, position=(165, y + 38),
-                   scale=0.67, h_align='center', color=(0.55, 0.9, 1),
-                   maxwidth=290)
-                tw(parent=s.container, text=reset_time,
-                   position=(165, y + 19), scale=0.53,
-                   h_align='center', color=(1, 0.85, 0.4), maxwidth=290)
-                tw(parent=s.container, text=reset_date,
-                   position=(165, y + 4), scale=0.42,
-                   h_align='center', color=(0.78, 0.82, 0.9))
-            cw(s.container, size=(330, total_h))
-            tw(s.status, text=f'{len(rows)} servers scheduled for reset',
-               color=(0.35, 1, 0.65))
+            if not s.w.exists():
+                return
+            s.rows = rows
+            s.show_list()
+            tw(s.status, text=f'{len(rows)} SERVERS  •  LIVE DATA',
+               color=(0.35, 1, 0.68))
             gs('dingSmall').play()
         except Exception as exc:
             s.show_error(str(exc))
+
+    def show_list(s):
+        if not s.w.exists():
+            return
+        s.mode = 'list'
+        s.selected = None
+        s.countdown_timer_running = False
+        s.countdown_token += 1
+        s._update_footer_buttons()
+        s._clear_content()
+
+        if not s.rows:
+            tw(parent=s.container, text='No server data available.',
+               position=(165, 45), scale=0.58, h_align='center',
+               color=(0.85, 0.85, 0.9))
+            cw(s.container, size=(330, 100))
+            return
+
+        # Compact, clickable server cards. Selecting one opens its reset details.
+        row_h = 61
+        total_h = max(100, len(s.rows) * row_h + 10)
+        for i, row in enumerate(s.rows):
+            name, reset_time, reset_date = row
+            y = total_h - (i + 1) * row_h
+            color = (0.12, 0.22, 0.31) if i % 2 == 0 else (0.15, 0.19, 0.29)
+            bw(
+                parent=s.container,
+                label=f'{name}\n{reset_time}   •   {reset_date}',
+                size=(316, 54), position=(7, y),
+                on_activate_call=Call(s.show_detail, i),
+                color=color, textcolor=(0.9, 0.94, 1),
+                button_type='square', text_scale=0.62
+            )
+        cw(s.container, size=(330, total_h))
+        tw(s.status, text=f'{len(s.rows)} SERVERS  •  SELECT A SERVER',
+           color=(0.35, 1, 0.68))
+
+    def show_detail(s, index):
+        if not s.w.exists() or index < 0 or index >= len(s.rows):
+            return
+        s.mode = 'detail'
+        s.selected = s.rows[index]
+        s._update_footer_buttons()
+        s._clear_content()
+        cw(s.container, size=(330, 390))
+
+        name, reset_time, reset_date = s.selected
+        cw(parent=s.container, size=(310, 330), position=(10, 35),
+           color=(0.12, 0.17, 0.25))
+        tw(parent=s.container, text='SERVER DETAILS',
+           position=(165, 335), scale=0.55, h_align='center',
+           color=(0.45, 0.85, 1))
+        tw(parent=s.container, text=name,
+           position=(165, 285), scale=0.88, h_align='center',
+           color=(0.95, 0.96, 1), maxwidth=285)
+        tw(parent=s.container, text='RANKING RESET',
+           position=(165, 240), scale=0.48, h_align='center',
+           color=(0.65, 0.75, 0.9))
+        tw(parent=s.container, text='RESET DATE',
+           position=(165, 195), scale=0.43, h_align='center',
+           color=(0.6, 0.75, 0.9))
+        tw(parent=s.container, text=reset_date,
+           position=(165, 170), scale=0.72, h_align='center',
+           color=(1, 0.85, 0.45))
+        tw(parent=s.container, text='SCHEDULED TIME',
+           position=(165, 125), scale=0.43, h_align='center',
+           color=(0.6, 0.75, 0.9))
+        tw(parent=s.container, text=reset_time,
+           position=(165, 100), scale=0.65, h_align='center',
+           color=(0.9, 0.94, 1), maxwidth=285)
+        s.countdown_text = tw(
+            parent=s.container, text='Calculating countdown...',
+            position=(165, 55), scale=0.58, h_align='center',
+            color=(0.35, 1, 0.68), maxwidth=290
+        )
+        tw(s.status, text='SELECTED SERVER',
+           color=(0.35, 1, 0.68))
+        s.countdown_token += 1
+        s.countdown_timer_running = True
+        s.update_countdown(s.countdown_token)
+
+    def update_countdown(s, token=None):
+        if token is None:
+            token = s.countdown_token
+        if (not s.countdown_timer_running or s.mode != 'detail'
+                or token != s.countdown_token):
+            return
+        try:
+            if not s.w.exists() or s.selected is None:
+                s.countdown_timer_running = False
+                return
+
+            _name, reset_time, reset_date = s.selected
+            date_match = re.search(r'(\d{4})-(\d{2})-(\d{2})', reset_date)
+            if not date_match:
+                tw(s.countdown_text,
+                   text='Countdown unavailable\nDate format not recognized.',
+                   color=(1, 0.65, 0.45))
+                teck(5.0, Call(s.update_countdown, token))
+                return
+
+            year, month, day = map(int, date_match.groups())
+            reset_day = datetime.date(year, month, day)
+            now = datetime.datetime.now()
+            time_match = re.search(r'(\d{1,2}):(\d{2})', reset_time)
+
+            if time_match:
+                hour, minute = map(int, time_match.groups())
+                target = datetime.datetime.combine(
+                    reset_day, datetime.time(hour, minute)
+                )
+                remaining = int((target - now).total_seconds())
+                if remaining <= 0:
+                    message = 'RESET TIME HAS ARRIVED'
+                    color = (1, 0.55, 0.4)
+                else:
+                    days, rem = divmod(remaining, 86400)
+                    hours, rem = divmod(rem, 3600)
+                    minutes, seconds = divmod(rem, 60)
+                    message = f'{days}d  {hours:02d}h  {minutes:02d}m  {seconds:02d}s'
+                    color = (0.35, 1, 0.68)
+                tw(s.countdown_text, text='TIME LEFT\n' + message,
+                   color=color)
+            else:
+                # The site provides a date but no exact clock time for these rows.
+                days_left = (reset_day - now.date()).days
+                if days_left > 0:
+                    target = datetime.datetime.combine(
+                        reset_day, datetime.time(0, 0)
+                    )
+                    remaining = max(0, int((target - now).total_seconds()))
+                    days, rem = divmod(remaining, 86400)
+                    hours, rem = divmod(rem, 3600)
+                    minutes, seconds = divmod(rem, 60)
+                    message = (
+                        f'{days}d  {hours:02d}h  {minutes:02d}m  {seconds:02d}s'
+                        '\nExact reset hour not provided by BSLIFE'
+                    )
+                    color = (1, 0.82, 0.4)
+                elif days_left == 0:
+                    message = 'TODAY  •  EXACT HOUR NOT PROVIDED'
+                    color = (1, 0.82, 0.4)
+                else:
+                    message = 'SCHEDULED DATE HAS PASSED'
+                    color = (1, 0.55, 0.4)
+                tw(s.countdown_text, text='DATE COUNTDOWN\n' + message,
+                   color=color)
+
+            teck(1.0, Call(s.update_countdown, token))
+        except Exception as exc:
+            try:
+                tw(s.countdown_text, text=f'Countdown error: {exc}',
+                   color=(1, 0.5, 0.4))
+            except Exception:
+                pass
 
 
 class ModsMenu:
@@ -1565,8 +1761,8 @@ class ModsMenu:
             ('Spam', SpamWindow, (0.8, 0.3, 0.3)),
             ('Reconnect', ReconnectWindow, (0.4, 0.6, 0.4)),
             ('Filter', FilterWindow, (0.7, 0.4, 0.9)),
-            ('Edit Place', None, (0.6, 0.4, 0.7)),
             ('Ranking', RankingWindow, (0.12, 0.62, 0.55)),
+            ('Edit Place', None, (0.6, 0.4, 0.7)),
         ]
 
         num_buttons = len(buttons)
