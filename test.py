@@ -2154,6 +2154,7 @@ class byMahyar(Plugin):
             except:
                 pass
             print(f"Error in calc_ear: {e}")
+
     def reconnect_ear(s):
         try:
             teck(2.0, s.reconnect_ear)
