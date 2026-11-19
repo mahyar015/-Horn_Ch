@@ -1948,26 +1948,25 @@ class byMahyar(Plugin):
         party.PartyWindow.__init__ = e
 
     def game_banner_ear(s):
-        """Show the creator credit once whenever a new game session starts."""
+        """Show the creator credit once when gameplay (not server connection) starts."""
         try:
             teck(0.5, s.game_banner_ear)
             foreground = bascenev1.get_foreground_host_session()
+
+            # MainMenuSession is the menu; a different active session means a game session.
             if foreground is None or isinstance(foreground, MainMenuSession):
                 s.last_game_session = None
                 return
 
+            # A new session means a new game. Show the credit once per game session.
             if foreground is not s.last_game_session:
                 s.last_game_session = foreground
-                push(
+                teck(1.0, lambda: push(
                     "Create By Mahyar\nChannel : @Horn_Ch",
                     color=(0.25, 0.85, 1.0),
-                )
+                ))
         except Exception as e:
             print(f"Game banner error: {e}")
-            try:
-                teck(1.0, s.game_banner_ear)
-            except Exception:
-                pass
 
     def ear(s):
         global _last_seen_messages
