@@ -24,8 +24,11 @@ from bascenev1 import (
 import math
 import re
 import time
-import socket
 import threading
+import queue
+import urllib.parse
+import urllib.request
+import json
 import bauiv1 as bui
 import bascenev1
 from babase import app
@@ -46,8 +49,8 @@ DEFAULT_LIMITS = {
 }
 
 DEFAULT_REACTIONS = {'fr': 'u', 'cu': 'h', 'fl': 'fl'}
-DEFAULT_COOLDOWNS = {'fr': 0.15, 'cu': 0.15, 'fl': 0.15}
-DEFAULT_COOLDOWN = 0.15
+DEFAULT_COOLDOWNS = {'fr': 5.0, 'cu': 5.0, 'fl': 5.0}
+DEFAULT_COOLDOWN = 5.0
 DEFAULT_AUTO_REPLIES = {}
 
 
@@ -69,8 +72,8 @@ def save_limits(limits):
 def get_reactions():
     try:
         saved = app.config.get('mahyar_reactions_v18', None)
-        if saved:
-            d = dict(DEFAULT_REACTIONS); d.update(saved); return d
+        if isinstance(saved, dict):
+            return dict(saved)
     except: pass
     return dict(DEFAULT_REACTIONS)
 
@@ -84,8 +87,8 @@ def save_reactions(reactions):
 def get_cooldowns():
     try:
         saved = app.config.get('mahyar_cooldowns_v18', None)
-        if saved:
-            d = dict(DEFAULT_COOLDOWNS); d.update(saved); return d
+        if isinstance(saved, dict):
+            return dict(saved)
     except: pass
     return dict(DEFAULT_COOLDOWNS)
 
@@ -157,22 +160,42 @@ def save_server(ip, port):
     except: pass
 
 
+# Keep a live in-memory copy as well as the persistent app config.
+# The in-memory value also protects position changes if a config commit is delayed.
+_mods_button_position_memory = None
+
 def get_mods_button_position(default_x=None, default_y=None):
+    global _mods_button_position_memory
+    try:
+        if _mods_button_position_memory is not None:
+            return (float(_mods_button_position_memory[0]),
+                    float(_mods_button_position_memory[1]))
+    except Exception:
+        _mods_button_position_memory = None
     try:
         x = app.config.get('mahyar_mods_btn_x', default_x)
         y = app.config.get('mahyar_mods_btn_y', default_y)
-        return float(x), float(y)
-    except:
-        return default_x, default_y
+        if x is not None and y is not None:
+            _mods_button_position_memory = (float(x), float(y))
+            return _mods_button_position_memory
+    except Exception:
+        pass
+    return default_x, default_y
 
 
 def save_mods_button_position(x, y):
+    global _mods_button_position_memory
     try:
-        app.config['mahyar_mods_btn_x'] = float(x)
-        app.config['mahyar_mods_btn_y'] = float(y)
+        x, y = float(x), float(y)
+        _mods_button_position_memory = (x, y)
+    except Exception:
+        return
+    try:
+        app.config['mahyar_mods_btn_x'] = x
+        app.config['mahyar_mods_btn_y'] = y
         app.config.commit()
-    except:
-        pass
+    except Exception as exc:
+        print('Mods position config save error: %s' % exc)
 
 
 def get_filter_words():
@@ -213,7 +236,6 @@ filter_enabled = get_enabled_state('filter', True)
 processed_sell_ids = set()
 processed_buy_ids = set()
 react_cooldown = {}
-_reaction_pattern_cache = {}
 auto_reply_cooldown = {}
 filter_cooldown = {}
 
@@ -224,8 +246,6 @@ spam_counter = 0
 spam_timer = None
 
 server_ip, server_port = get_saved_server()
-current_ping = 0.0
-ping_thread = None
 
 auto_reconnect_enabled = False
 auto_reconnect_busy = False
@@ -234,20 +254,6 @@ my_own_name = None
 my_own_client_id = None
 my_own_display_num = None
 
-# ============================================================
-# AutoBuyer - دقیقاً منطق fastBuy_V2_16
-# ============================================================
-_sod = False
-_lasch = ""
-_max_price = 100000
-
-# Snapshotهای جداگانه برای جلوگیری از جا افتادن پیام‌ها در burstهای چت
-_last_seen_messages = None
-_buyer_seen_messages = None
-_buyer_pending_id = None
-_buyer_pending_since = 0.0
-_buyer_queue = []
-
 _limits_cache = None
 _limits_cache_time = 0
 
@@ -255,7 +261,7 @@ _limits_cache_time = 0
 def _get_cached_limits():
     global _limits_cache, _limits_cache_time
     now = time.time()
-    if _limits_cache is None or (now - _limits_cache_time) > 0.1:
+    if _limits_cache is None or (now - _limits_cache_time) > 1.0:
         try:
             _limits_cache = get_limits()
             _limits_cache_time = now
@@ -327,6 +333,226 @@ def safe_chat_send(message):
         CM(message)
     except Exception as e:
         print(f"Chat send error: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Translate outgoing messages typed in the game's party chat.
+# The request runs in a worker thread so the game UI never freezes.
+# ---------------------------------------------------------------------------
+TRANSLATE_CONFIG_KEY = 'mahyar_translate_enabled'
+TRANSLATE_LANGUAGE_KEY = 'mahyar_translate_target_language'
+translate_enabled = bool(app.config.get(TRANSLATE_CONFIG_KEY, False))
+translate_target_language = str(app.config.get(TRANSLATE_LANGUAGE_KEY, 'en'))
+_translate_original_chat = None
+_translate_lock = threading.Lock()
+_translate_queue = queue.Queue()
+_translate_worker_active = False
+_translate_pending = 0
+
+TRANSLATE_LANGUAGES = [
+    ('Afrikaans', 'af'), ('Albanian', 'sq'), ('Amharic', 'am'), ('Arabic', 'ar'),
+    ('Armenian', 'hy'), ('Azerbaijani', 'az'), ('Basque', 'eu'), ('Belarusian', 'be'),
+    ('Bengali', 'bn'), ('Bosnian', 'bs'), ('Bulgarian', 'bg'), ('Burmese', 'my'),
+    ('Catalan', 'ca'), ('Cebuano', 'ceb'), ('Chinese (Simplified)', 'zh-CN'),
+    ('Chinese (Traditional)', 'zh-TW'), ('Corsican', 'co'), ('Croatian', 'hr'),
+    ('Czech', 'cs'), ('Danish', 'da'), ('Dutch', 'nl'), ('English', 'en'),
+    ('Esperanto', 'eo'), ('Estonian', 'et'), ('Filipino', 'tl'), ('Finnish', 'fi'),
+    ('French', 'fr'), ('Frisian', 'fy'), ('Galician', 'gl'), ('Georgian', 'ka'),
+    ('German', 'de'), ('Greek', 'el'), ('Gujarati', 'gu'), ('Haitian Creole', 'ht'),
+    ('Hausa', 'ha'), ('Hawaiian', 'haw'), ('Hebrew', 'iw'), ('Hindi', 'hi'),
+    ('Hmong', 'hmn'), ('Hungarian', 'hu'), ('Icelandic', 'is'), ('Igbo', 'ig'),
+    ('Indonesian', 'id'), ('Irish', 'ga'), ('Italian', 'it'), ('Japanese', 'ja'),
+    ('Javanese', 'jw'), ('Kannada', 'kn'), ('Kazakh', 'kk'), ('Khmer', 'km'),
+    ('Korean', 'ko'), ('Kurdish', 'ku'), ('Kyrgyz', 'ky'), ('Lao', 'lo'),
+    ('Latin', 'la'), ('Latvian', 'lv'), ('Lithuanian', 'lt'), ('Luxembourgish', 'lb'),
+    ('Macedonian', 'mk'), ('Malagasy', 'mg'), ('Malay', 'ms'), ('Malayalam', 'ml'),
+    ('Maltese', 'mt'), ('Maori', 'mi'), ('Marathi', 'mr'), ('Mongolian', 'mn'),
+    ('Nepali', 'ne'), ('Norwegian', 'no'), ('Pashto', 'ps'), ('Persian', 'fa'),
+    ('Polish', 'pl'), ('Portuguese', 'pt'), ('Punjabi', 'pa'), ('Romanian', 'ro'),
+    ('Russian', 'ru'), ('Samoan', 'sm'), ('Serbian', 'sr'), ('Sesotho', 'st'),
+    ('Sinhala', 'si'), ('Slovak', 'sk'), ('Slovenian', 'sl'), ('Somali', 'so'),
+    ('Spanish', 'es'), ('Sundanese', 'su'), ('Swahili', 'sw'), ('Swedish', 'sv'),
+    ('Tamil', 'ta'), ('Telugu', 'te'), ('Thai', 'th'), ('Turkish', 'tr'),
+    ('Ukrainian', 'uk'), ('Urdu', 'ur'), ('Uzbek', 'uz'), ('Vietnamese', 'vi'),
+    ('Welsh', 'cy'), ('Xhosa', 'xh'), ('Yiddish', 'yi'), ('Yoruba', 'yo'),
+    ('Zulu', 'zu')
+]
+
+
+def _translate_to_language(message):
+    """Translate chat text into the currently selected target language."""
+    target = translate_target_language or 'en'
+    query = urllib.parse.urlencode({
+        'client': 'gtx', 'sl': 'auto', 'tl': target, 'dt': 't', 'q': message
+    })
+    url = 'https://translate.googleapis.com/translate_a/single?' + query
+    request = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(request, timeout=12) as response:
+        data = json.loads(response.read().decode('utf-8'))
+    translated = ''.join(part[0] for part in data[0] if part and part[0])
+    return translated.strip() or message
+
+
+def _translate_send_result(message, args, kwargs):
+    global _translate_pending
+    try:
+        _translate_original_chat(message, *args, **kwargs)
+    except Exception as exc:
+        print('Translate send error: %s' % exc)
+    finally:
+        with _translate_lock:
+            _translate_pending = max(0, _translate_pending - 1)
+
+
+def _translate_worker_loop():
+    global _translate_pending, _translate_worker_active
+    while True:
+        try:
+            message, args, kwargs = _translate_queue.get_nowait()
+        except queue.Empty:
+            with _translate_lock:
+                if _translate_queue.empty():
+                    _translate_worker_active = False
+                    return
+            continue
+        try:
+            try:
+                translated = _translate_to_language(message) or message
+            except Exception as exc:
+                print('Translate failed; sending original: %s' % exc)
+                translated = message
+            import babase as _translate_babase
+            _translate_babase.pushcall(
+                lambda m=translated, a=args, k=kwargs: _translate_send_result(m, a, k),
+                from_other_thread=True)
+        except Exception as exc:
+            print('Translate callback error: %s' % exc)
+            try:
+                import babase as _translate_babase
+                _translate_babase.pushcall(
+                    lambda m=message, a=args, k=kwargs: _translate_send_result(m, a, k),
+                    from_other_thread=True)
+            except Exception:
+                with _translate_lock:
+                    _translate_pending = max(0, _translate_pending - 1)
+        finally:
+            _translate_queue.task_done()
+
+
+def _translated_chatmessage(message, *args, **kwargs):
+    global _translate_pending, _translate_worker_active
+    if not translate_enabled or not isinstance(message, str) or not message.strip():
+        return _translate_original_chat(message, *args, **kwargs)
+    with _translate_lock:
+        _translate_queue.put((message, args, kwargs))
+        _translate_pending += 1
+        should_start = not _translate_worker_active
+        if should_start:
+            _translate_worker_active = True
+    if should_start:
+        try:
+            threading.Thread(target=_translate_worker_loop, daemon=True).start()
+        except Exception as exc:
+            print('Translate worker start error: %s' % exc)
+            with _translate_lock:
+                _translate_worker_active = False
+            try:
+                _translate_original_chat(message, *args, **kwargs)
+            except Exception:
+                pass
+            with _translate_lock:
+                _translate_pending = max(0, _translate_pending - 1)
+    return None
+
+
+def _install_translate_hook():
+    global _translate_original_chat
+    if _translate_original_chat is None:
+        _translate_original_chat = bascenev1.chatmessage
+        bascenev1.chatmessage = _translated_chatmessage
+
+
+def _set_translate_enabled(value):
+    global translate_enabled
+    translate_enabled = bool(value)
+    try:
+        app.config[TRANSLATE_CONFIG_KEY] = translate_enabled
+        app.config.commit()
+    except Exception:
+        pass
+    push('Translate ON' if translate_enabled else 'Translate OFF',
+         color=(0.25, 1.0, 0.4) if translate_enabled else (1.0, 0.55, 0.25))
+
+
+def _set_translate_language(code):
+    global translate_target_language
+    translate_target_language = str(code or 'en')
+    try:
+        app.config[TRANSLATE_LANGUAGE_KEY] = translate_target_language
+        app.config.commit()
+    except Exception:
+        pass
+    name = next((n for n, c in TRANSLATE_LANGUAGES if c == translate_target_language), translate_target_language)
+    push('Translate language: ' + name, color=(0.3, 0.9, 1.0))
+
+
+class TranslateLanguageWindow:
+    def __init__(self, source):
+        self.w = AR.cw(source=source, size=(330, 430), ps=AR.UIS() * 0.3)
+        AR.add_close_button(self.w, position=(300, 395))
+        tw(parent=self.w, text='SELECT LANGUAGE', scale=0.85,
+           position=(165, 395), h_align='center', color=(1, 0.45, 0.78))
+        self.scroll = sw(parent=self.w, size=(290, 350), position=(20, 25))
+        self.container = cw(parent=self.scroll, size=(280, len(TRANSLATE_LANGUAGES) * 34), background=False)
+        total_h = len(TRANSLATE_LANGUAGES) * 34
+        for index, (name, code) in enumerate(TRANSLATE_LANGUAGES):
+            y = total_h - (index + 1) * 34
+            selected = code == translate_target_language
+            bw(parent=self.container, label=(('✓ ' if selected else '') + name),
+               size=(270, 30), position=(5, y),
+               on_activate_call=Call(self.choose, code),
+               color=(0.35, 0.18, 0.35) if selected else (0.16, 0.19, 0.27),
+               textcolor=(1, 1, 1), button_type='square', text_scale=0.58)
+        gs('swish').play()
+
+    def choose(self, code):
+        _set_translate_language(code)
+        AR.swish(self.w)
+
+
+class TranslateWindow:
+    def __init__(self, source):
+        self.w = AR.cw(source=source, size=(310, 225), ps=AR.UIS() * 0.3)
+        AR.add_close_button(self.w, position=(280, 190))
+        tw(parent=self.w, text='TRANSLATE', scale=0.9,
+           position=(155, 190), h_align='center', color=(1, 0.45, 0.78))
+        tw(parent=self.w, text='Choose target language:', scale=0.53,
+           position=(155, 157), h_align='center', color=(0.88, 0.82, 0.92))
+        self.language_btn = bw(
+            parent=self.w, label=self._language_label(), size=(250, 35),
+            position=(30, 112), on_activate_call=Call(self.open_languages),
+            color=(0.28, 0.22, 0.42), textcolor=(1, 1, 1),
+            button_type='square', text_scale=0.65)
+        self.toggle_btn = bw(
+            parent=self.w, label='ON' if translate_enabled else 'OFF',
+            size=(250, 42), position=(30, 48),
+            on_activate_call=Call(self.toggle),
+            color=(0.12, 0.62, 0.25) if translate_enabled else (0.62, 0.16, 0.22),
+            textcolor=(1, 1, 1), button_type='square', text_scale=0.85)
+        gs('swish').play()
+
+    def _language_label(self):
+        name = next((n for n, c in TRANSLATE_LANGUAGES if c == translate_target_language), 'English')
+        return 'Language: ' + name
+
+    def open_languages(self):
+        TranslateLanguageWindow(self.w)
+
+    def toggle(self):
+        _set_translate_enabled(not translate_enabled)
+        bw(self.toggle_btn, label='ON' if translate_enabled else 'OFF',
+           color=(0.12, 0.62, 0.25) if translate_enabled else (0.62, 0.16, 0.22))
+        gs('dingSmall').play()
 
 
 original_connect_to_party = original_connect
@@ -704,7 +930,9 @@ class ReactionEditorWindow:
     def build_grid(s):
         current_reactions = get_reactions()
         current_cooldowns = get_cooldowns()
-        for child in s.container.get_children(): child.delete()
+        for child in s.container.get_children():
+            try: child.delete()
+            except Exception: pass
         s.item_buttons.clear()
         items = list(current_reactions.items())
         row_height = 30
@@ -730,8 +958,9 @@ class ReactionEditorWindow:
         if trigger in current_reactions: del current_reactions[trigger]
         if trigger in current_cooldowns: del current_cooldowns[trigger]
         save_reactions(current_reactions); save_cooldowns(current_cooldowns)
-        bui.screenmessage(f'Deleted: %{trigger}', color=(1, 0.5, 0)); gs('dingSmallLow').play()
+        # Re-read persisted config; deleted defaults must not be reinserted.
         s.build_grid()
+        bui.screenmessage(f'Deleted: %{trigger}', color=(1, 0.5, 0)); gs('dingSmallLow').play()
     def reset_all(s):
         save_reactions(dict(DEFAULT_REACTIONS))
         save_cooldowns(dict(DEFAULT_COOLDOWNS))
@@ -1190,7 +1419,7 @@ class FilterWindow:
 class EditPlaceWindow:
     def __init__(s, source, mods_button):
         s.mods_button = mods_button
-        s.step = 5
+        s.step = 10
 
         try:
             pos = mods_button.get_position()
@@ -1275,8 +1504,8 @@ class EditPlaceWindow:
 
     def apply_position(s):
         try:
-            max_x = max(0, s.parent_w - 85)
-            max_y = max(0, s.parent_h - 25)
+            max_x = max(0, s.parent_w - 90)
+            max_y = max(0, s.parent_h - 35)
             if s.current_x < 0: s.current_x = 0
             if s.current_y < 0: s.current_y = 0
             if s.current_x > max_x: s.current_x = max_x
@@ -1296,114 +1525,20 @@ class EditPlaceWindow:
         except:
             default_x, default_y = 0, 0
 
+        # Restore a visible default position and persist it for the next launch.
+        default_x = max(0, min(float(default_x), max(0.0, s.parent_w - 90.0)))
+        default_y = max(0, min(float(default_y), max(0.0, s.parent_h - 35.0)))
         s.current_x, s.current_y = float(default_x), float(default_y)
-        s.apply_position()
-
-        bui.screenmessage('Reset!', color=(0, 1, 1))
-        gs('dingSmallHigh').play()
-
-
-
-# ============================================================
-# Ping (integrated into the Mods menu)
-# ============================================================
-def get_ping_icon(ping):
-    if ping == 0 or ping >= 999:
-        return "❓"
-    if ping < 100:
-        return "🔵"
-    if ping < 200:
-        return "⚪"
-    if ping < 350:
-        return "🟠"
-    return "🔴"
-
-
-class RealPingThread(threading.Thread):
-    def __init__(self):
-        super().__init__(daemon=True)
-        self.running = True
-
-    def run(self):
-        global current_ping
-        while self.running:
-            try:
-                # Only attempt a real ping when a non-default server is selected.
-                if server_ip != "127.0.0.1" or server_port != 43210:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    sock.settimeout(0.8)
-                    started = time.monotonic()
-                    try:
-                        sock.sendto(b'\x0b', (server_ip, int(server_port)))
-                        data, _ = sock.recvfrom(16)
-                        if data == b'\x0c':
-                            current_ping = round((time.monotonic() - started) * 1000.0, 2)
-                        else:
-                            current_ping = 999
-                    except socket.timeout:
-                        current_ping = 999
-                    except OSError:
-                        current_ping = 0
-                    finally:
-                        sock.close()
-                else:
-                    current_ping = 0
-            except Exception as exc:
-                current_ping = 0
-                print(f"[Ping] error: {exc}")
-            time.sleep(1.0)
-
-
-class PingWindow:
-    def __init__(self, source):
-        self.w = AR.cw(source=source, size=(280, 235), ps=AR.UIS() * 0.3)
-        AR.add_close_button(self.w, position=(250, 200))
-        tw(parent=self.w, text='Ping', scale=0.9, position=(140, 195),
-           h_align='center', color=(0, 1, 1))
-        self.ping_text = tw(
-            parent=self.w, text=f'Current: {current_ping:.2f} ms' if 0 < current_ping < 999 else 'Current: ? ms',
-            position=(140, 155), h_align='center', scale=0.75,
-            color=(1, 1, 0)
-        )
-        tw(parent=self.w, text='Server:', position=(140, 120),
-           h_align='center', scale=0.45, color=(0.8, 0.8, 1))
-        self.server_text = tw(
-            parent=self.w, text=f'{server_ip}:{server_port}',
-            position=(140, 98), h_align='center', scale=0.45,
-            color=(0.8, 0.8, 1)
-        )
-        AR.bw(
-            parent=self.w, label='Send Ping to Chat',
-            size=(190, 34), position=(45, 45),
-            on_activate_call=self.send_ping,
-            color=(0.2, 0.7, 0.3), text_scale=0.65
-        )
-        self.update_ping()
-
-    def update_ping(self):
         try:
-            if not self.w.exists():
+            if not s.mods_button or not s.mods_button.exists():
+                bui.screenmessage('Reopen the Party window to restore Mods.', color=(1, 0.6, 0))
                 return
-            ping_value = f'{current_ping:.2f}' if 0 < current_ping < 999 else '?'
-            tw(self.ping_text, text=f'Current: {ping_value} ms')
-            tw(self.server_text, text=f'{server_ip}:{server_port}')
-            teck(0.5, self.update_ping)
         except Exception:
             pass
+        s.apply_position()
 
-    def send_ping(self):
-        try:
-            icon = get_ping_icon(current_ping)
-            value = '?' if current_ping <= 0 or current_ping >= 999 else f'{current_ping:.2f}'
-            message = f'My Ping : {icon} {value} ms'
-            CM(message)
-            push(f'Sent: {message}', color=(0, 1, 0))
-            try:
-                gs('dingSmallHigh').play()
-            except Exception:
-                pass
-        except Exception as exc:
-            push(f'Ping error: {exc}', color=(1, 0, 0))
+        bui.screenmessage('Mods position restored!', color=(0, 1, 1))
+        gs('dingSmallHigh').play()
 
 
 class ModsMenu:
@@ -1418,13 +1553,15 @@ class ModsMenu:
 
         buttons = [
             ('Calculator', Calculator, (0, 0.3, 0.8)),
-            ('Ping', PingWindow, (0.4, 0.6, 0.8)),
             ('Auto Buyer', AutoBuyerWindow, (0.2, 0.6, 0.8)),
             ('Auto React', ReactionEditorWindow, (0.8, 0.5, 0.2)),
             ('Auto Reply', AutoReplyEditorWindow, (0.3, 0.7, 0.4)),
             ('Spam', SpamWindow, (0.8, 0.3, 0.3)),
             ('Reconnect', ReconnectWindow, (0.4, 0.6, 0.4)),
             ('Filter', FilterWindow, (0.7, 0.4, 0.9)),
+            ('Radar', 'RADAR', (0.72, 0.06, 0.36)),
+            ('File Manager', 'FILE_MANAGER', (0.48, 0.035, 0.25)),
+            ('Translate', 'TRANSLATE', (0.72, 0.12, 0.42)),
             ('Edit Place', None, (0.6, 0.4, 0.7)),
         ]
 
@@ -1463,7 +1600,13 @@ class ModsMenu:
         gs('swish').play()
         try:
             AR.swish(s.w)
-            if cls is None:
+            if cls == 'RADAR':
+                teck(0.15, _open_radar)
+            elif cls == 'FILE_MANAGER':
+                teck(0.15, _open_file_manager)
+            elif cls == 'TRANSLATE':
+                teck(0.15, lambda: TranslateWindow(s.w))
+            elif cls is None:
                 if s.mods_button_ref is not None:
                     teck(0.15, lambda: EditPlaceWindow(s.w, s.mods_button_ref))
                 else:
@@ -1474,304 +1617,182 @@ class ModsMenu:
             print(f"Open window error: {e}")
 
 
-# ============================================================
-# AutoBuyer - دقیقاً منطق fastBuy_V2_16 با رفع باگ تکرار
-# ============================================================
+SELL_PATTERN = re.compile(r'Sell ID:\s*(\w+)')
+BUY_PATTERN = re.compile(r'(\w+):\s*Buy\s*<\s*([\d,]+)\s+(\w+)\s*\([^)]+\)\s*>\s*for\s*([\d,]+)\s*coins(?:\?.*)?')
+FAST_BUY_MAX_TOTAL = 100000
+_fast_buy_last_message = ''
+_fast_buy_last_count = 0
+_fast_buy_seen_messages = set()
+_fast_buy_initialized = False
+_fast_buy_pending_code = None
+_fast_buy_listing_allowed = False
+_fast_buy_seen_ids = set()
 
-def fast_send(message):
-    """ارسال کوتاه و سریع پاسخ خرید به چت سرور."""
+
+def process_sell(item_id):
+    if item_id in processed_sell_ids:
+        return
+    processed_sell_ids.add(item_id)
+    if len(processed_sell_ids) > 150:
+        processed_sell_ids.clear()
+    safe_chat_send('b ' + str(item_id))
+
+
+def process_buy(item_id, count, item_name, total_price):
+    """Validate the server's final buy prompt and answer immediately."""
+    current_limits = _get_cached_limits()
+    allowed = False
     try:
-        CM(message)
+        if count > 0 and total_price <= FAST_BUY_MAX_TOTAL:
+            allowed = total_price / float(count) <= float(current_limits.get(item_name, -1))
     except Exception:
-        pass
+        allowed = False
+    safe_chat_send('1 ' if allowed else '0 ')
 
 
-def _collect_new_messages(current, previous):
-    """Return messages appended since the previous snapshot, including rolling buffers."""
-    current = list(current or [])
-    if previous is None:
-        return current
-    previous = list(previous or [])
-    if not current:
-        return []
-    if current == previous:
-        return []
-
-    # Works for both an ever-growing history and a fixed-size/rolling chat history.
-    max_overlap = min(len(previous), len(current))
-    for overlap in range(max_overlap, 0, -1):
-        if previous[-overlap:] == current[:overlap]:
-            return current[overlap:]
-
-    # No overlap means the history was reset/replaced or more messages arrived than
-    # fit in the old window. Process the visible window rather than silently missing it.
-    return current
-
-
-def _buysel(message=None):
-    """Evaluate the server's Buy prompt for the currently pending sell ID."""
-    global _lasch, _buyer_pending_id, _buyer_pending_since
-
+def _fast_buy_listing_is_allowed(message):
+    """Use the fastBuy_V2 listing price check, with current editable limits."""
     try:
-        if message is None:
-            z = GCM()
-            candidates = list(z[-5:]) if z else []
-        else:
-            candidates = [message]
-
-        for line in candidates:
-            if "💳Buy < " not in line:
-                continue
-
-            # Expected protocol: Server: <sell-id>: 💳Buy < ...
-            parts = line.split(": ", 2)
-            if len(parts) < 3:
-                continue
-            cod = parts[1].strip()
-            if str(_lasch).strip() != cod:
-                continue
-
-            words = parts[2].replace(",", "").split()
-            if len(words) < 8:
-                continue
-
-            count = int(words[2])
-            item_name = words[3]
-            price_match = re.search(r"-?\d+", words[7])
-            if not price_match or count <= 0:
-                continue
-            total_price = int(price_match.group(0))
-            unit_price = total_price / count
-
-            current_limits = _get_cached_limits()
-            limit = current_limits.get(item_name, 0)
-            answer = "1 " if total_price <= _max_price and unit_price <= limit else "0 "
-
-            _lasch = answer
-            _buyer_pending_id = None
-            _buyer_pending_since = 0.0
-            fast_send(answer)
-            _dispatch_next_buy()
-            return True
-    except Exception as e:
-        print(f"AutoBuyer response error: {e}")
-    return False
-
-
-def _send_buy_request(sell_id):
-    """Send one buy request and remember its response ID."""
-    global _lasch, _buyer_pending_id, _buyer_pending_since
-    _lasch = str(sell_id).strip()
-    _buyer_pending_id = _lasch
-    _buyer_pending_since = time.monotonic()
-    fast_send(f"b {_lasch}")
-
-
-def _dispatch_next_buy():
-    """Start the next queued eligible listing as soon as the current one completes."""
-    global _buyer_queue
-    if _buyer_pending_id is not None:
-        return
-    now = time.monotonic()
-    while _buyer_queue:
-        sell_id, queued_at = _buyer_queue.pop(0)
-        if now - queued_at > 5.0:
-            continue  # Do not buy an offer that sat in the queue too long.
-        _send_buy_request(sell_id)
-        return
-
-
-def _process_buyer_message(message):
-    """Process one unseen server line immediately; no delayed retry timers needed."""
-    global _sod, _lasch, _buyer_pending_id, _buyer_pending_since
-
-    if not isinstance(message, str):
-        return
-
-    if "💳Buy < " in message:
-        _buysel(message)
-        return
-
-    if "Server" not in message:
-        return
-
-    if "💰Sell <" in message:
+        if '💰Sell <' not in message:
+            return False
+        body = message.split('💰Sell <', 1)[1].replace(',', '')
+        parts = body.split()
+        count = int(parts[0])
+        item_name = parts[1].lower()
+        # The source fast-buy format puts the total amount at token 4.
+        total = int(parts[4][:-1])
+        limits = _get_cached_limits()
+        return (count > 0 and total <= FAST_BUY_MAX_TOTAL and
+                total / float(count) <= float(limits.get(item_name, -1)))
+    except Exception:
+        # Fallback for the alternate server line format already handled by the mod.
         try:
-            body = message.split("💰Sell <", 1)[1].replace(",", "")
-            parts = body.split()
-            if len(parts) < 5:
-                _sod = False
-                return
-
-            count = int(parts[0])
-            item_name = parts[1]
-            price_match = re.search(r"-?\d+", parts[4])
-            if not price_match or count <= 0:
-                _sod = False
-                return
-            total_price = int(price_match.group(0))
-            unit_price = total_price / count
-            limit = _get_cached_limits().get(item_name, 0)
-            _sod = total_price <= _max_price and unit_price <= limit
+            match = re.search(r'💰Sell\s*<\s*([\d,]+)\s+(\w+).*?>\s*for\s*([\d,]+)\s*coins', message)
+            if not match:
+                return False
+            count = int(match.group(1).replace(',', ''))
+            item_name = match.group(2).lower()
+            total = int(match.group(3).replace(',', ''))
+            return (count > 0 and total <= FAST_BUY_MAX_TOTAL and
+                    total / float(count) <= float(_get_cached_limits().get(item_name, -1)))
         except Exception:
-            _sod = False
+            return False
+
+
+def _fast_buy_handle_message(message):
+    global _fast_buy_pending_code, _fast_buy_listing_allowed
+    if not isinstance(message, str) or 'Server' not in message:
         return
-
-    if "💰Sell ID: " in message and _sod:
-        try:
-            sell_id = message.split("💰Sell ID: ", 1)[1].strip()
-            if not sell_id:
-                return
-
-            now = time.monotonic()
-            _sod = False
-            if _buyer_pending_id is not None:
-                # Preserve rapid incoming listings instead of losing their IDs
-                # while another Buy prompt is being answered.
-                already_queued = any(queued_id == sell_id for queued_id, _ in _buyer_queue)
-                if sell_id != _buyer_pending_id and not already_queued and len(_buyer_queue) < 20:
-                    _buyer_queue.append((sell_id, now))
-                return
-
-            _send_buy_request(sell_id)
-        except Exception as e:
-            print(f"AutoBuyer sell-ID error: {e}")
-
-
-def _dls():
-    """Compatibility helper for older scheduled callbacks."""
-    if _buyer_pending_id is not None:
-        _buysel()
-
-
-def sellcek():
-    """Poll quickly, but process every unseen chat message instead of only z[-1]."""
-    global _buyer_seen_messages, _buyer_pending_id, _buyer_pending_since, _lasch, _sod, _buyer_queue
-
-    if not auto_buyer_enabled:
-        # Keep the cursor current while disabled so old listings are not bought
-        # immediately after the feature is enabled again.
-        try:
-            _buyer_seen_messages = list(GCM() or [])
-        except Exception:
-            pass
-        _buyer_pending_id = None
-        _buyer_pending_since = 0.0
-        _buyer_queue[:] = []
-        _sod = False
-        _lasch = "0 "
-        teck(0.2, sellcek)
+    if '💰Sell <' in message:
+        _fast_buy_listing_allowed = _fast_buy_listing_is_allowed(message)
         return
+    if '💰Sell ID: ' in message and _fast_buy_listing_allowed:
+        item_id = message.split('💰Sell ID: ', 1)[1].strip().split()[0]
+        if item_id not in _fast_buy_seen_ids:
+            _fast_buy_seen_ids.add(item_id)
+            if len(_fast_buy_seen_ids) > 150:
+                _fast_buy_seen_ids.clear()
+            _fast_buy_pending_code = item_id
+            safe_chat_send('b ' + item_id)
+        _fast_buy_listing_allowed = False
+        return
+    if '💳Buy < ' in message and _fast_buy_pending_code:
+        try:
+            # Same server response parsing/order used by fastBuy_V2_16.py.
+            parts = message.split(': ')
+            code = parts[1].strip()
+            details = parts[2].replace(',', '')
+            if code != _fast_buy_pending_code:
+                return
+            tokens = details.split()
+            count = int(tokens[2])
+            item_name = tokens[3].lower()
+            total = int(tokens[7])
+            process_buy(code, count, item_name, total)
+            _fast_buy_pending_code = None
+        except Exception as exc:
+            print('Fast buyer parse error: %s' % exc)
+            _fast_buy_pending_code = None
 
+
+def _fast_buy_loop():
+    global _fast_buy_last_message, _fast_buy_last_count, _fast_buy_seen_messages, _fast_buy_initialized
     try:
-        z = GCM()
-        current = list(z or [])
-        if _buyer_seen_messages is None:
-            # Preserve the old startup behavior: inspect only the newest line once.
-            new_messages = current[-1:]
-        else:
-            new_messages = _collect_new_messages(current, _buyer_seen_messages)
-        _buyer_seen_messages = current
+        if auto_buyer_enabled:
+            messages = GCM() or []
+            # Establish a baseline first so old chat history is never purchased on plugin load.
+            if not _fast_buy_initialized:
+                _fast_buy_seen_messages.update(str(m) for m in messages)
+                _fast_buy_initialized = True
+                _fast_buy_last_count = len(messages)
+                return
+            # Scan a recent tail in order; remember each processed line to avoid repeats.
+            for message in messages[-12:]:
+                fingerprint = str(message)
+                if fingerprint in _fast_buy_seen_messages:
+                    continue
+                _fast_buy_seen_messages.add(fingerprint)
+                _fast_buy_handle_message(fingerprint)
+                _fast_buy_last_message = fingerprint
+            if len(_fast_buy_seen_messages) > 500:
+                _fast_buy_seen_messages.clear()
+                _fast_buy_seen_messages.update(str(m) for m in messages[-30:])
+            _fast_buy_last_count = len(messages)
+    except Exception as exc:
+        print('Fast buyer loop error: %s' % exc)
+    finally:
+        teck(0.05, _fast_buy_loop)
 
-        # Process newly-arrived responses before timing out a pending ID, so a
-        # delayed server reply in this same batch still gets matched correctly.
-        for message in new_messages:
-            _process_buyer_message(message)
-
-        now = time.monotonic()
-        if _buyer_pending_id is not None and now - _buyer_pending_since >= 3.0:
-            _buyer_pending_id = None
-            _buyer_pending_since = 0.0
-            _lasch = "0 "
-            _dispatch_next_buy()
-    except Exception as e:
-        print(f"AutoBuyer loop error: {e}")
-
-    teck(0.005, sellcek)
-
-
-# ============================================================
-# بقیه توابع
-# ============================================================
 
 def check_reaction(msg):
-    """Respond to every matching FR/FL-style command that targets this player."""
     global my_own_client_id, my_own_display_num
-    if not auto_react_enabled:
-        return
-
+    if not auto_react_enabled: return
     try:
-        if my_own_client_id is None or my_own_display_num is None:
+        if my_own_client_id is None and my_own_display_num is None:
             get_my_ids()
-
-        # Convert Persian/Arabic numerals (e.g. ۱۲۱) to ASCII so ID parsing is stable.
-        digit_map = str.maketrans(
-            "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
-            "01234567890123456789",
-        )
-        normalized_msg = str(msg).translate(digit_map)
-        sender = None
-        content = normalized_msg
-        if ": " in normalized_msg:
-            sender, content = normalized_msg.split(": ", 1)
-            sender = sender.strip()
-            content = content.strip()
-
-        if sender and my_own_name and sender == my_own_name:
-            return
-
-        content_lower = content.lower()
         current_reactions = get_reactions()
         current_cooldowns = get_cooldowns()
-        now = time.time()
+        sender = None; content = msg
+        if ': ' in msg:
+            parts = msg.split(': ', 1)
+            sender = parts[0].strip(); content = parts[1].strip()
+        content_lower = content.lower()
 
         for trigger, response in current_reactions.items():
-            trigger_lower = str(trigger).lower().strip()
-            if not trigger_lower:
+            trigger_lower = trigger.lower()
+            esc_trigger = re.escape(trigger_lower)
+
+            pattern = rf'(?:^|[\s/])%?\s*{esc_trigger}\s*%?\s*(\d+)'
+            m = re.search(pattern, content_lower)
+            if not m:
                 continue
 
-            pattern = _reaction_pattern_cache.get(trigger_lower)
-            if pattern is None:
-                pattern = re.compile(
-                    rf"(?:^|[\s/])%?\s*{re.escape(trigger_lower)}\s*%?\s*(\d+)"
-                )
-                _reaction_pattern_cache[trigger_lower] = pattern
-            target_is_me = False
-            for match in pattern.finditer(content_lower):
-                try:
-                    target_num = int(match.group(1))
-                except (TypeError, ValueError):
-                    continue
-                if (
-                    (my_own_client_id is not None and target_num == my_own_client_id)
-                    or (my_own_display_num is not None and target_num == my_own_display_num)
-                ):
-                    target_is_me = True
-                    break
-
-            if not target_is_me:
-                continue
-
-            cd_time = 0.0  # Fastest reaction: no client-side cooldown.
-            cd_key = f"{trigger_lower}_{sender or 'unknown'}"
-            last_time = react_cooldown.get(cd_key, 0.0)
-            if now - last_time < cd_time:
-                # Do not stop checking other triggers; FR cooling down must not
-                # prevent FL (or another configured trigger) from replying.
-                continue
-
-            react_cooldown[cd_key] = now
-            if len(react_cooldown) > 100:
-                cutoff = now - 300
-                for key, timestamp in list(react_cooldown.items()):
-                    if timestamp < cutoff:
-                        del react_cooldown[key]
-
-            safe_chat_send(response)
             try:
-                gs('dingSmall').play()
-            except Exception:
-                pass
+                target_num = int(m.group(1))
+            except:
+                continue
+
+            is_target_me = False
+            if my_own_client_id is not None and target_num == my_own_client_id:
+                is_target_me = True
+            elif my_own_display_num is not None and target_num == my_own_display_num:
+                is_target_me = True
+
+            if is_target_me:
+                cd_time = current_cooldowns.get(trigger, DEFAULT_COOLDOWN)
+                current_time = time.time()
+                cd_key = f"{trigger_lower}_{sender or 'unknown'}"
+                last_time = react_cooldown.get(cd_key, 0)
+                if current_time - last_time < cd_time: break
+                react_cooldown[cd_key] = current_time
+                if len(react_cooldown) > 50:
+                    now = time.time()
+                    to_del = [k for k, v in react_cooldown.items() if now - v > 300]
+                    for k in to_del: del react_cooldown[k]
+                safe_chat_send(response)
+                try: gs('dingSmall').play()
+                except: pass
+                break
     except Exception as e:
         print(f"React error: {e}")
 
@@ -1892,30 +1913,38 @@ def stop_auto_reconnect():
     push("Auto Reconnect: OFF", color=(1, 0.5, 0))
 
 
-# ============================================================
-# Plugin
-# ============================================================
+def _show_mahyar_credit():
+    message = 'Create By Mahyar\nChannel Tel : @Horn_Ch'
+    try:
+        push(message, color=(1.0, 0.30, 0.72), top=True)
+    except TypeError:
+        try:
+            push(message, color=(1.0, 0.30, 0.72))
+        except Exception:
+            pass
+    except Exception:
+        pass
+
 
 # ba_meta require api 9
 # ba_meta export babase.Plugin
 class byMahyar(Plugin):
     def __init__(s):
-        global my_own_name, ping_thread
-        if ping_thread is None or not ping_thread.is_alive():
-            ping_thread = RealPingThread()
-            ping_thread.start()
+        global my_own_name
+        try: _install_translate_hook()
+        except Exception as exc: print('Translate hook install error: %s' % exc)
         try: my_own_name = APP.plus.get_v1_account_name()
         except: my_own_name = None
 
         s.last_msg_hash = ""
         s.last_calc_hash = ""
-        s.last_game_session = None
 
-        teck(0.5, s.game_banner_ear)
-        teck(0.005, s.ear)
+        teck(0.5, s.ear)
         teck(0.5, s.calc_ear)
-        teck(0.005, sellcek)
         teck(1, s.reconnect_ear)
+        teck(2.0, _sb_check_enemy_roster)
+        teck(0.05, _fast_buy_loop)
+        teck(2.5, _show_mahyar_credit)
 
         from bauiv1lib import party
         o = party.PartyWindow.__init__
@@ -1931,8 +1960,14 @@ class byMahyar(Plugin):
             try:
                 saved_x = float(saved_x)
                 saved_y = float(saved_y)
+                # Ignore stale/off-screen coordinates left by older window sizes.
+                if not (0 <= saved_x <= max(0, self._width - 90) and
+                        0 <= saved_y <= max(0, self._height - 35)):
+                    saved_x, saved_y = float(default_x), float(default_y)
             except:
                 saved_x, saved_y = float(default_x), float(default_y)
+            saved_x = min(max(0.0, saved_x), max(0.0, float(self._width) - 90.0))
+            saved_y = min(max(0.0, saved_y), max(0.0, float(self._height) - 35.0))
 
             b_mods = AR.bw(
                 position=(saved_x, saved_y),
@@ -1943,64 +1978,59 @@ class byMahyar(Plugin):
             )
             bw(b_mods, on_activate_call=lambda: s.delayed_open(ModsMenu, b_mods))
 
+            # Re-apply after the PartyWindow has completed its layout. Some game UI
+            # versions reset child positions during the first layout pass.
+            def _restore_mods_button_position():
+                try:
+                    if b_mods.exists():
+                        px, py = get_mods_button_position(default_x, default_y)
+                        px = min(max(0.0, float(px)), max(0.0, float(self._width) - 90.0))
+                        py = min(max(0.0, float(py)), max(0.0, float(self._height) - 35.0))
+                        bw(b_mods, position=(px, py))
+                except Exception as exc:
+                    print('Mods position restore error: %s' % exc)
+            teck(0.1, _restore_mods_button_position)
+
             return r
 
         party.PartyWindow.__init__ = e
 
-    def game_banner_ear(s):
-        """Show the creator credit once when gameplay (not server connection) starts."""
-        try:
-            teck(0.5, s.game_banner_ear)
-            foreground = bascenev1.get_foreground_host_session()
-
-            # MainMenuSession is the menu; a different active session means a game session.
-            if foreground is None or isinstance(foreground, MainMenuSession):
-                s.last_game_session = None
-                return
-
-            # A new session means a new game. Show the credit once per game session.
-            if foreground is not s.last_game_session:
-                s.last_game_session = foreground
-                teck(1.0, lambda: push(
-                    "Create By Mahyar\nChannel : @Horn_Ch",
-                    color=(0.25, 0.85, 1.0),
-                ))
-        except Exception as e:
-            print(f"Game banner error: {e}")
-
     def ear(s):
-        global _last_seen_messages
         try:
             z = GCM()
-            teck(0.005, s.ear)
-            current = list(z or [])
-            new_msgs = _collect_new_messages(current, _last_seen_messages)
-            _last_seen_messages = current
+            teck(0.05, s.ear)
 
-            for msg in new_msgs:
-                try:
-                    if check_spam_command(msg):
-                        continue
-                except Exception:
-                    pass
-                try:
-                    if check_auto_reply(msg):
-                        continue
-                except Exception:
-                    pass
-                try:
-                    if check_filter(msg):
-                        continue
-                except Exception:
-                    pass
-                try:
-                    check_reaction(msg)
-                except Exception:
-                    pass
+            if not z:
+                s.last_msg_hash = ""
+                return
+
+            current_count = len(z)
+            last_msg = z[-1]
+            current_hash = f"{current_count}_{len(last_msg)}_{last_msg}"
+
+            if current_hash == s.last_msg_hash:
+                return
+
+            s.last_msg_hash = current_hash
+            msg = last_msg
+
+            try:
+                if check_spam_command(msg): return
+            except: pass
+            try:
+                if check_auto_reply(msg): return
+            except: pass
+            try:
+                if check_filter(msg): return
+            except: pass
+            try:
+                check_reaction(msg)
+            except: pass
+
         except Exception as e:
             try:
                 teck(0.05, s.ear)
-            except Exception:
+            except:
                 pass
             print(f"Error in ear: {e}")
 
@@ -2051,3 +2081,641 @@ class byMahyar(Plugin):
 
     def delayed_open(s, cls, btn):
         teck(0.05, lambda: cls(btn))
+
+# ---------------------------------------------------------------------------
+# MAHYAR PINK RADAR + FILE MANAGER (merged into the original test.py)
+# ---------------------------------------------------------------------------
+import os as _sb_os
+import babase
+import bascenev1 as bs
+
+_SB_ACCENT = (1.0, 0.28, 0.68)
+_SB_PANEL_BG = (0.055, 0.018, 0.060)
+_SB_PANEL_INNER = (0.12, 0.035, 0.095)
+_SB_TEXT = (1.0, 0.82, 0.93)
+
+
+def _sb_config_get(key, default=None):
+    try:
+        value = babase.app.config.get(key, default)
+        return value if value is not None else default
+    except Exception:
+        return default
+
+
+def _sb_config_set(key, value):
+    try:
+        babase.app.config[key] = value
+        babase.app.config.commit()
+        return True
+    except Exception:
+        return False
+
+
+def _sb_roster():
+    """Read the online players and their raw server-provided roster fields."""
+    try:
+        raw = bs.get_game_roster() or []
+    except Exception:
+        raw = []
+    result = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        players = [p for p in (entry.get("players") or []) if isinstance(p, dict)]
+        if not players:
+            continue
+        cid = entry.get("client_id", entry.get("clientID", entry.get("clientid", -1)))
+        try:
+            cid = int(cid)
+        except Exception:
+            cid = -1
+        names = []
+        for player in players:
+            name = (player.get("name_full") or player.get("nameFull") or
+                    player.get("name") or player.get("name_full_raw"))
+            if name:
+                names.append(str(name))
+        result.append({"client_id": cid, "name": names[0] if names else "Player",
+                       "names": names, "account_id": entry.get("account_id", entry.get("accountID")),
+                       "raw": entry})
+    return result
+
+
+class _SBPanel:
+    def __init__(self, title, accent=_SB_ACCENT, width=980, height=680):
+        try:
+            sw, sh = bui.get_virtual_screen_size()
+        except Exception:
+            sw, sh = width, height
+        self._width = min(width, max(420, int(sw - 30)))
+        self._height = min(height, max(440, int(sh - 30)))
+        x = max(10, (sw - self._width) * 0.5)
+        y = max(10, (sh - self._height) * 0.5)
+        self._closed = False
+        self.root_widget = bui.containerwidget(
+            parent=gsw("overlay_stack"), position=(x, y),
+            size=(self._width, self._height), transition="in_scale",
+            scale=1.0, color=_SB_PANEL_BG)
+        bui.textwidget(parent=self.root_widget,
+                       position=(18, self._height - 62),
+                       size=(self._width - 90, 42), text=title,
+                       h_align="left", v_align="center", scale=1.15,
+                       color=accent, shadow=1.0, flatness=0.2)
+        bui.textwidget(parent=self.root_widget,
+                       position=(18, self._height - 88),
+                       size=(self._width - 36, 20),
+                       text="",
+                       h_align="left", v_align="center", scale=0.55,
+                       color=(1.0, 0.42, 0.76))
+        bw(parent=self.root_widget,
+           position=(self._width - 58, self._height - 66), size=(38, 38),
+           button_type="square", label="✕", text_scale=0.9,
+           color=(0.62, 0.06, 0.30), textcolor=(1, 1, 1),
+           on_activate_call=bui.WeakCall(self.close))
+
+    def make_scroll(self, content_height):
+        margin = 18
+        sy = 54
+        sh = self._height - 160
+        sw = self._width - 2 * margin
+        scroll = bui.scrollwidget(parent=self.root_widget,
+                                  position=(margin, sy), size=(sw, sh),
+                                  highlight=False, capture_arrows=True)
+        content = bui.containerwidget(parent=scroll,
+                                      size=(sw, max(sh, int(content_height))),
+                                      background=False)
+        return content, sw, max(sh, int(content_height))
+
+    def close(self):
+        self._closed = True
+        try:
+            bui.containerwidget(edit=self.root_widget, transition="out_scale")
+        except Exception:
+            try:
+                bui.widget(edit=self.root_widget, delete=True)
+            except Exception:
+                pass
+
+
+
+_SB_CONFIG_ENEMIES = "Mahyar Saved Enemies"
+_sb_enemies = []
+_sb_enemy_announced_this_session = set()
+
+
+def _sb_load_enemies():
+    global _sb_enemies
+    # Migrate the previous internal setting name without showing old branding.
+    raw = _sb_config_get(_SB_CONFIG_ENEMIES, None)
+    if raw is None:
+        raw = _sb_config_get("StudioBon Radar Enemies", [])
+    cleaned = []
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                ident = str(item.get("id", "")).strip()[:100]
+                label = str(item.get("name", "Player")).strip()[:60]
+                if ident and not any(x.get("id", "").casefold() == ident.casefold() for x in cleaned):
+                    cleaned.append({"id": ident, "name": label or "Player"})
+    _sb_enemies = cleaned
+
+
+def _sb_save_enemies():
+    _sb_config_set(_SB_CONFIG_ENEMIES, _sb_enemies)
+
+
+def _sb_person_device_id(person):
+    """Read V2/device/account display identity from nested server roster data."""
+    if not isinstance(person, dict):
+        return None
+    raw = person.get("raw", person)
+    wanted = (
+        "account_display_string", "account_display_name", "account_name",
+        "device_name", "device_display_string", "device_display_name",
+        "v2_name", "v2name", "v2_alias", "device_alias", "device",
+        "device_id", "deviceid", "display_string", "account_id_string", "account_id", "accountid",
+    )
+    values = []
+    def walk(obj, depth=0):
+        if depth > 6:
+            return
+        if isinstance(obj, dict):
+            for key in wanted:
+                for actual_key, value in obj.items():
+                    if str(actual_key).casefold() == key.casefold() and value is not None:
+                        values.append((key, value))
+            for value in obj.values():
+                if isinstance(value, (dict, list, tuple)):
+                    walk(value, depth + 1)
+        elif isinstance(obj, (list, tuple)):
+            for value in obj:
+                if isinstance(value, (dict, list, tuple)):
+                    walk(value, depth + 1)
+    walk(raw)
+    for key in wanted:
+        value = person.get(key)
+        if value is not None:
+            values.append((key, value))
+    visible_name = str(person.get("name", "")).strip().casefold()
+    for key, value in values:
+        try:
+            ident = str(value).strip()
+        except Exception:
+            continue
+        if not ident or ident.casefold() in ("none", "unknown", "player", "server"):
+            continue
+        if ident.casefold() == visible_name:
+            continue
+        # Short numeric roster IDs (e.g. 137) are not Device/V2 identities.
+        if ident.isdigit() and len(ident) < 6:
+            continue
+        if re.search(r"(?i)(android|pc)\d{3,}|^[0-9a-f]{12,}$|^pb-[a-z0-9-]{6,}$", ident):
+            return ident
+        # Alias-like strings such as Ostokhon are accepted only from a device/account field.
+        if key.casefold() not in ("account_id", "accountid") and len(ident) >= 4 and re.search(r"[A-Za-z]", ident):
+            return ident
+    return None
+
+
+def _sb_person_stable_id(person):
+    """Identity used by the enemy list: the server-provided device/V2 identity."""
+    return _sb_person_device_id(person)
+
+
+def _sb_add_enemy(person):
+    try:
+        ident = _sb_person_stable_id(person)
+        if not ident:
+            push("Device/V2 این بازیکن از اطلاعات سرور پیدا نشد؛ چیزی ذخیره نشد.", color=(1, 0.25, 0.25))
+            return
+        if any(str(item.get("id", "")).casefold() == ident.casefold() for item in _sb_enemies):
+            push("این Device/V2 از قبل در لیست دشمنان است", color=(1, 0.4, 0.25))
+            return
+        player_name = str(person.get("name", "Player"))[:60] if isinstance(person, dict) else "Player"
+        _sb_enemies.append({"id": ident, "name": player_name})
+        _sb_save_enemies()
+        push("Enemy saved", color=(1.0, 0.30, 0.72))
+        _open_radar()
+    except Exception as exc:
+        try: push("Radar add error: %s" % str(exc)[:100], color=(1, 0.2, 0.2))
+        except Exception: pass
+
+
+def _sb_remove_enemy(ident):
+    global _sb_enemies
+    _sb_enemies = [item for item in _sb_enemies if item.get("id", "").casefold() != str(ident).casefold()]
+    _sb_save_enemies()
+    _open_enemy_list()
+
+
+_enemy_list_window = None
+
+def _open_enemy_list():
+    global _enemy_list_window
+    try:
+        if _enemy_list_window is not None:
+            _enemy_list_window.close()
+        _enemy_list_window = _EnemyListWindow()
+    except Exception as exc:
+        try: push("Enemy list error: %s" % exc, color=(1, 0.3, 0.3))
+        except Exception: pass
+
+
+def _sb_enemy_match_key(enemy, roster_person):
+    """Match a saved enemy by stable identity, with exact-name fallback."""
+    saved_id = str(enemy.get("id", "")).strip().casefold()
+    live_id = str(_sb_person_stable_id(roster_person) or "").strip().casefold()
+    if saved_id and live_id and saved_id == live_id:
+        return "id:" + saved_id
+    saved_name = str(enemy.get("name", "")).strip().casefold()
+    live_name = str(roster_person.get("name", "")).strip().casefold()
+    if saved_name and live_name and saved_name == live_name:
+        return "name:" + saved_name
+    return None
+
+
+def _sb_check_enemy_roster():
+    """Show a local alert whenever a saved enemy appears in the current roster."""
+    global _sb_enemy_announced_this_session
+    try:
+        roster = _sb_roster()
+        present_now = set()
+        for person in roster:
+            for enemy in _sb_enemies:
+                match_key = _sb_enemy_match_key(enemy, person)
+                if not match_key:
+                    continue
+                present_now.add(match_key)
+                if match_key not in _sb_enemy_announced_this_session:
+                    _sb_enemy_announced_this_session.add(match_key)
+                    enemy_name = str(person.get("name") or enemy.get("name") or "Player")
+                    push("Enemy (%s) is here" % enemy_name,
+                         color=(0.25, 1.0, 0.42), top=True)
+                break
+        # Clear departed enemies so a later rejoin triggers another alert.
+        _sb_enemy_announced_this_session.intersection_update(present_now)
+    except Exception as exc:
+        print("Enemy roster check error: " + str(exc))
+    try:
+        teck(2.0, _sb_check_enemy_roster)
+        teck(0.05, _fast_buy_loop)
+    except Exception:
+        pass
+
+
+_sb_load_enemies()
+
+
+class _EnemyListWindow(_SBPanel):
+    def __init__(self):
+        # A larger, brighter custom panel with clear online status.
+        super().__init__("ENEMYS", accent=(1.0, 0.38, 0.78), width=1120, height=820)
+        try:
+            bui.containerwidget(edit=self.root_widget, color=(0.13, 0.035, 0.15))
+        except Exception:
+            pass
+        total = len(_sb_enemies)
+        try:
+            roster = _sb_roster()
+        except Exception:
+            roster = []
+        online_by_enemy = {}
+        for item in _sb_enemies:
+            for person in roster:
+                if _sb_enemy_match_key(item, person):
+                    online_by_enemy[str(item.get("id", "")).casefold()] = str(
+                        person.get("name") or item.get("name") or "Player")
+                    break
+
+        bui.textwidget(parent=self.root_widget,
+            position=(24, self._height - 132), size=(self._width - 220, 38),
+            text="SAVED ENEMIES  •  %d     |     ONLINE  •  %d" % (total, len(online_by_enemy)),
+            h_align="left", v_align="center", scale=0.82,
+            color=(1.0, 0.76, 0.92), shadow=0.8)
+        bw(parent=self.root_widget, position=(self._width - 176, self._height - 136),
+           size=(150, 42), button_type="square", label="REFRESH",
+           text_scale=0.66, color=(0.82, 0.12, 0.49), textcolor=(1, 1, 1),
+           on_activate_call=_open_enemy_list)
+
+        margin = 22
+        view_y = 58
+        view_h = self._height - 212
+        inner_w = self._width - 2 * margin
+        scroll = bui.scrollwidget(parent=self.root_widget,
+            position=(margin, view_y), size=(inner_w, view_h),
+            highlight=False, capture_arrows=True)
+        row_h = 94
+        content_h = max(view_h, total * row_h + 20)
+        content = bui.containerwidget(parent=scroll,
+            size=(inner_w, content_h), background=False)
+        if not _sb_enemies:
+            bui.textwidget(parent=content, position=(12, content_h - 100),
+                size=(inner_w - 24, 68), text="NO SAVED ENEMIES",
+                h_align="center", v_align="center", scale=1.0,
+                color=(1.0, 0.78, 0.93))
+        for idx, item in enumerate(_sb_enemies):
+            y = content_h - 86 - idx * row_h
+            ident_key = str(item.get("id", "")).casefold()
+            online_name = online_by_enemy.get(ident_key)
+            card_color = (0.19, 0.12, 0.22) if idx % 2 == 0 else (0.23, 0.10, 0.22)
+            bw(parent=content, position=(5, y - 2), size=(inner_w - 10, 82),
+               button_type="square", label="", color=card_color, enable_sound=False)
+            bui.textwidget(parent=content, position=(22, y + 43),
+                size=(inner_w - 260, 30), text=str(item.get("name", "Player"))[:46],
+                h_align="left", v_align="center", scale=0.82,
+                color=(1.0, 0.82, 0.94))
+            bui.textwidget(parent=content, position=(22, y + 15),
+                size=(inner_w - 270, 24), text=str(item.get("id", ""))[:86],
+                h_align="left", v_align="center", scale=0.57,
+                color=(1.0, 0.52, 0.82))
+            if online_name:
+                bui.textwidget(parent=content, position=(inner_w - 250, y + 37),
+                    size=(150, 28), text="IS HERE", h_align="center",
+                    v_align="center", scale=0.78,
+                    color=(0.25, 1.0, 0.42), shadow=1.0)
+                bui.textwidget(parent=content, position=(inner_w - 250, y + 13),
+                    size=(150, 20), text="ONLINE", h_align="center",
+                    v_align="center", scale=0.52,
+                    color=(0.55, 1.0, 0.65))
+            else:
+                bui.textwidget(parent=content, position=(inner_w - 250, y + 25),
+                    size=(150, 26), text="OFFLINE", h_align="center",
+                    v_align="center", scale=0.65,
+                    color=(0.72, 0.65, 0.76))
+            # Slightly larger action target for easier tapping.
+            bw(parent=content, position=(inner_w - 112, y + 17), size=(94, 48),
+               button_type="square", label="REMOVE", text_scale=0.58,
+               color=(0.78, 0.10, 0.39), textcolor=(1, 1, 1),
+               on_activate_call=lambda ident=item["id"]: _sb_remove_enemy(ident))
+
+
+_radar_window = None
+
+
+def _open_radar():
+    global _radar_window
+    try:
+        if _radar_window is not None:
+            _radar_window.close()
+        _radar_window = _MahyarRadarWindow()
+    except Exception as exc:
+        try: push("Radar error: %s" % exc, color=(1, 0.3, 0.3))
+        except Exception: pass
+
+
+class _MahyarRadarWindow(_SBPanel):
+    """Radar uses the same roster fields as the reference PlayerInfo manager."""
+    def __init__(self):
+        super().__init__("RADAR",
+                         accent=(1.0, 0.30, 0.72), height=720)
+        try: bui.containerwidget(edit=self.root_widget, color=(0.075, 0.018, 0.12))
+        except Exception: pass
+        # Dedicated Enemys section opens the user's saved enemy list.
+        bw(parent=self.root_widget, position=(20, self._height - 116), size=(150, 42),
+            button_type="square", label="ENEMYS", text_scale=0.72,
+            color=(0.72, 0.045, 0.34), textcolor=(1, 1, 1),
+            on_activate_call=_open_enemy_list)
+        try:
+            roster = _sb_roster()
+        except Exception:
+            roster = []
+        bui.textwidget(parent=self.root_widget, position=(190, self._height - 112),
+            size=(self._width - 212, 36), text="ONLINE PLAYERS  •  %d" % len(roster),
+            h_align="left", v_align="center", scale=0.78, color=(1.0, 0.72, 0.88))
+        margin = 18
+        viewport_y = 54
+        viewport_h = max(180, self._height - 178)
+        inner_w = self._width - 2 * margin
+        scroll = bui.scrollwidget(parent=self.root_widget, position=(margin, viewport_y),
+            size=(inner_w, viewport_h), highlight=False, capture_arrows=True)
+        content_h = max(viewport_h, len(roster) * 76 + 48)
+        content = bui.containerwidget(parent=scroll, size=(inner_w, content_h), background=False)
+        known = {item["id"].casefold() for item in _sb_enemies}
+        headers = (("PLAYER NAME", 12), ("CLIENT ID", 270), ("DEVICE ID", 390))
+        for title, x in headers:
+            bui.textwidget(parent=content, position=(x, content_h - 28), size=(160, 22),
+                text=title, h_align="left", v_align="center", scale=0.58,
+                color=(1.0, 0.48, 0.80))
+        for idx, person in enumerate(roster):
+            y = content_h - 78 - idx * 76
+            name = str(person.get("name", "Player"))
+            cid = str(person.get("client_id", -1))
+            ident = _sb_person_stable_id(person)
+            is_enemy = bool(ident and ident.casefold() in known)
+            bg = (0.24, 0.06, 0.10) if is_enemy else ((0.06, 0.12, 0.22) if idx % 2 == 0 else (0.035, 0.085, 0.17))
+            bw(parent=content, position=(5, y), size=(inner_w - 10, 62),
+                button_type="square", label="", color=bg, enable_sound=False)
+            bui.textwidget(parent=content, position=(12, y + 16), size=(240, 36),
+                text=name[:36], h_align="left", v_align="center", scale=0.7,
+                color=(1.0, 0.35, 0.72) if is_enemy else (1, 1, 1))
+            bui.textwidget(parent=content, position=(270, y + 16), size=(100, 36),
+                text=cid, h_align="left", v_align="center", scale=0.65,
+                color=(1.0, 0.72, 0.88))
+            bui.textwidget(parent=content, position=(390, y + 16), size=(inner_w - 610, 36),
+                text=ident or "ID unavailable", h_align="left", v_align="center",
+                scale=0.62, color=(1.0, 0.35, 0.72) if is_enemy else (0.6, 1.0, 0.68))
+            # Preserve the existing add-to-enemy action; no PlayerInfo management
+            # controls such as Kick All are imported into this panel.
+            bw(parent=content, position=(inner_w - 205, y + 13), size=(190, 36),
+                button_type="square",
+                label="ADDED" if is_enemy else "ADD ENEMY",
+                text_scale=0.54, color=(0.32, 0.035, 0.20) if is_enemy else (0.62, 0.025, 0.06),
+                textcolor=(1, 1, 1), on_activate_call=lambda p=person: _sb_add_enemy(p))
+        if not roster:
+            bui.textwidget(parent=content, position=(10, content_h - 90), size=(inner_w - 20, 60),
+                text="No players online",
+                h_align="center", v_align="center", scale=0.8, color=_SB_TEXT)
+        bw(parent=self.root_widget, position=(20, 12), size=(self._width - 40, 34),
+            button_type="square", label="REFRESH RADAR", text_scale=0.7,
+            color=(0.025, 0.16, 0.48), textcolor=(1, 1, 1),
+            on_activate_call=_open_radar)
+
+
+
+_file_manager_window = None
+
+
+def _open_file_manager():
+    global _file_manager_window
+    try:
+        if _file_manager_window is not None:
+            _file_manager_window.close()
+        _file_manager_window = _MahyarFileManagerWindow()
+    except Exception as exc:
+        try:
+            push("File Manager error: %s" % str(exc)[:100], color=(1, 0.3, 0.3))
+        except Exception:
+            pass
+
+
+class _MahyarFileManagerWindow(_SBPanel):
+    def __init__(self):
+        super().__init__("FILE MANAGER", accent=(1.0, 0.30, 0.72),
+                         width=760, height=560)
+        try:
+            bui.containerwidget(edit=self.root_widget, color=(0.065, 0.018, 0.095))
+        except Exception:
+            pass
+        try:
+            env = babase.env()
+            self.mod_path = str(env.get("python_directory_user") or "")
+        except Exception:
+            self.mod_path = ""
+        if not self.mod_path:
+            self.mod_path = _sb_os.path.dirname(_sb_os.path.abspath(__file__))
+        bui.textwidget(parent=self.root_widget,
+            position=(18, self._height - 125), size=(self._width - 36, 24),
+            text="INSTALLED MOD FILES  •  Tap a row's trash icon to remove a file",
+            h_align="left", v_align="center", scale=0.58,
+            color=(1.0, 0.72, 0.89))
+        self._status = bui.textwidget(parent=self.root_widget,
+            position=(18, 18), size=(self._width - 210, 26),
+            text="Ready", h_align="left", v_align="center", scale=0.58,
+            color=(1.0, 0.48, 0.80))
+        bw(parent=self.root_widget, position=(self._width - 180, 14), size=(88, 32),
+           button_type="square", label="↻ Refresh", text_scale=0.55,
+           color=(0.68, 0.06, 0.34), textcolor=(1, 1, 1),
+           on_activate_call=self.refresh_files)
+        bw(parent=self.root_widget, position=(self._width - 88, 14), size=(70, 32),
+           button_type="square", label="PYC", text_scale=0.58,
+           color=(0.48, 0.035, 0.22), textcolor=(1, 1, 1),
+           on_activate_call=self.confirm_delete_all_pyc)
+        self._scroll = bui.scrollwidget(parent=self.root_widget,
+            position=(16, 56), size=(self._width - 32, self._height - 194),
+            highlight=False, capture_arrows=True)
+        self._scroll_w = self._width - 32
+        self._scroll_h = self._height - 194
+        self._content = bui.containerwidget(parent=self._scroll,
+            size=(self._scroll_w, self._scroll_h), background=False)
+        self.refresh_files()
+
+    def refresh_files(self):
+        try:
+            for child in self._content.get_children():
+                child.delete()
+        except Exception:
+            pass
+        try:
+            files = []
+            for name in _sb_os.listdir(self.mod_path):
+                path = _sb_os.path.join(self.mod_path, name)
+                if _sb_os.path.isfile(path):
+                    files.append({"name": name, "path": path,
+                                  "size": _sb_os.path.getsize(path)})
+            files.sort(key=lambda item: item["name"].casefold())
+            if not files:
+                bui.textwidget(parent=self._content,
+                    position=(12, self._scroll_h - 55),
+                    size=(self._scroll_w - 24, 42), text="No files found in the mods folder",
+                    h_align="center", v_align="center", scale=0.72,
+                    color=(1.0, 0.78, 0.25))
+                bui.textwidget(edit=self._status, text="0 files")
+                return
+            row_h = 34
+            content_h = max(self._scroll_h, len(files) * row_h + 20)
+            bui.containerwidget(edit=self._content, size=(self._scroll_w, content_h))
+            for idx, item in enumerate(files):
+                y = content_h - row_h - 8 - idx * row_h
+                row_bg = (0.055, 0.12, 0.27) if idx % 2 == 0 else (0.04, 0.085, 0.21)
+                bw(parent=self._content, position=(5, y - 2),
+                   size=(self._scroll_w - 10, row_h - 2), button_type="square",
+                   label="", color=row_bg, enable_sound=False)
+                name = item["name"]
+                if len(name) > 42:
+                    name = name[:39] + "..."
+                if item["name"].endswith(".py"):
+                    file_color = (1.0, 0.48, 0.80)
+                elif item["name"].endswith(".pyc"):
+                    file_color = (1.0, 0.32, 0.68)
+                elif item["name"].endswith(".json"):
+                    file_color = (1.0, 0.68, 0.84)
+                else:
+                    file_color = (1.0, 0.85, 0.94)
+                bui.textwidget(parent=self._content,
+                    position=(14, y + 2), size=(self._scroll_w - 230, 24),
+                    text=name, h_align="left", v_align="center", scale=0.59,
+                    color=file_color)
+                size = item["size"]
+                size_text = ("%0.1f MB" % (size / 1048576.0) if size >= 1048576
+                             else ("%0.1f KB" % (size / 1024.0) if size >= 1024
+                                   else "%d B" % size))
+                bui.textwidget(parent=self._content,
+                    position=(self._scroll_w - 195, y + 2), size=(90, 24),
+                    text=size_text, h_align="right", v_align="center", scale=0.52,
+                    color=(1.0, 0.62, 0.84))
+                bw(parent=self._content, position=(self._scroll_w - 88, y + 1),
+                   size=(32, 25), button_type="square", label="🗑",
+                   text_scale=0.55, color=(0.68, 0.035, 0.28),
+                   textcolor=(1, 1, 1),
+                   on_activate_call=lambda p=item["path"], n=item["name"]: self.confirm_delete_file(p, n))
+            bui.textwidget(edit=self._status, text="%d files • mods folder" % len(files))
+        except Exception as exc:
+            try:
+                bui.textwidget(parent=self._content,
+                    position=(12, self._scroll_h - 55),
+                    size=(self._scroll_w - 24, 42),
+                    text="Error: " + str(exc)[:100],
+                    h_align="center", v_align="center", scale=0.65,
+                    color=(1.0, 0.5, 0.5))
+                bui.textwidget(edit=self._status, text="Could not read mods folder")
+            except Exception:
+                pass
+
+    def _confirm_window(self, title, confirm_label, callback):
+        width, height = 360, 150
+        try:
+            sw, sh = bui.get_virtual_screen_size()
+        except Exception:
+            sw, sh = 800, 600
+        x, y = max(10, (sw - width) * 0.5), max(10, (sh - height) * 0.5)
+        win = bui.containerwidget(parent=gsw("overlay_stack"),
+            position=(x, y), size=(width, height), transition="in_scale",
+            scale=1.0, color=(0.10, 0.018, 0.075))
+        bui.textwidget(parent=win, position=(18, 82), size=(width - 36, 42),
+            text=title, h_align="center", v_align="center", scale=0.68,
+            color=(1.0, 0.68, 0.86))
+        bw(parent=win, position=(width - 48, height - 48), size=(32, 32),
+           button_type="square", label="✕", text_scale=0.7,
+           color=(0.4, 0.08, 0.12), textcolor=(1, 1, 1),
+           on_activate_call=lambda: bui.containerwidget(edit=win, transition="out_scale"))
+        def confirmed():
+            try:
+                callback()
+            finally:
+                try: bui.containerwidget(edit=win, transition="out_scale")
+                except Exception: pass
+        bw(parent=win, position=(width / 2 - 65, 22), size=(130, 36),
+           button_type="square", label=confirm_label, text_scale=0.65,
+           color=(0.68, 0.035, 0.28), textcolor=(1, 1, 1),
+           on_activate_call=confirmed)
+
+    def confirm_delete_file(self, file_path, file_name):
+        def delete():
+            try:
+                _sb_os.remove(file_path)
+                push("Deleted: " + file_name, color=(0.35, 1.0, 0.55))
+                self.refresh_files()
+            except Exception as exc:
+                push("Delete failed: " + str(exc)[:80], color=(1, 0.3, 0.3))
+        self._confirm_window('Delete "%s"?' % file_name[:36], "🗑 DELETE", delete)
+
+    def confirm_delete_all_pyc(self):
+        def delete_all():
+            deleted = 0
+            try:
+                for name in _sb_os.listdir(self.mod_path):
+                    if name.endswith(".pyc"):
+                        try:
+                            _sb_os.remove(_sb_os.path.join(self.mod_path, name))
+                            deleted += 1
+                        except Exception:
+                            pass
+                push("Deleted %d .pyc files" % deleted, color=(0.35, 1.0, 0.55))
+                self.refresh_files()
+            except Exception as exc:
+                push("Delete failed: " + str(exc)[:80], color=(1, 0.3, 0.3))
+        self._confirm_window("Delete all .pyc cache files?", "DELETE PYC", delete_all)
+
+
+
