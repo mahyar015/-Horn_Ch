@@ -67,8 +67,8 @@ def save_limits(limits):
 def get_reactions():
     try:
         saved = app.config.get('mahyar_reactions_v18', None)
-        if saved:
-            d = dict(DEFAULT_REACTIONS); d.update(saved); return d
+        if isinstance(saved, dict):
+            return dict(saved)
     except: pass
     return dict(DEFAULT_REACTIONS)
 
@@ -82,8 +82,8 @@ def save_reactions(reactions):
 def get_cooldowns():
     try:
         saved = app.config.get('mahyar_cooldowns_v18', None)
-        if saved:
-            d = dict(DEFAULT_COOLDOWNS); d.update(saved); return d
+        if isinstance(saved, dict):
+            return dict(saved)
     except: pass
     return dict(DEFAULT_COOLDOWNS)
 
@@ -685,7 +685,9 @@ class ReactionEditorWindow:
     def build_grid(s):
         current_reactions = get_reactions()
         current_cooldowns = get_cooldowns()
-        for child in s.container.get_children(): child.delete()
+        for child in s.container.get_children():
+            try: child.delete()
+            except Exception: pass
         s.item_buttons.clear()
         items = list(current_reactions.items())
         row_height = 30
@@ -711,8 +713,9 @@ class ReactionEditorWindow:
         if trigger in current_reactions: del current_reactions[trigger]
         if trigger in current_cooldowns: del current_cooldowns[trigger]
         save_reactions(current_reactions); save_cooldowns(current_cooldowns)
-        bui.screenmessage(f'Deleted: %{trigger}', color=(1, 0.5, 0)); gs('dingSmallLow').play()
+        # Re-read persisted config; deleted defaults must not be reinserted.
         s.build_grid()
+        bui.screenmessage(f'Deleted: %{trigger}', color=(1, 0.5, 0)); gs('dingSmallLow').play()
     def reset_all(s):
         save_reactions(dict(DEFAULT_REACTIONS))
         save_cooldowns(dict(DEFAULT_COOLDOWNS))
@@ -1343,7 +1346,7 @@ class ModsMenu:
         try:
             AR.swish(s.w)
             if cls == 'RADAR':
-                teck(0.15, _open_studiobon_radar)
+                teck(0.15, _open_radar)
             elif cls == 'FILE_MANAGER':
                 teck(0.15, _open_file_manager)
             elif cls is None:
@@ -1796,7 +1799,7 @@ class _SBPanel:
         bui.textwidget(parent=self.root_widget,
                        position=(18, self._height - 88),
                        size=(self._width - 36, 20),
-                       text="STUDIOBON  //  API 9  •  LIVE TOOLS",
+                       text="",
                        h_align="left", v_align="center", scale=0.55,
                        color=(1.0, 0.42, 0.76))
         bw(parent=self.root_widget,
@@ -1830,14 +1833,17 @@ class _SBPanel:
 
 
 
-_SB_CONFIG_ENEMIES = "StudioBon Radar Enemies"
+_SB_CONFIG_ENEMIES = "Mahyar Saved Enemies"
 _sb_enemies = []
 _sb_enemy_announced_this_session = set()
 
 
 def _sb_load_enemies():
     global _sb_enemies
-    raw = _sb_config_get(_SB_CONFIG_ENEMIES, [])
+    # Migrate the previous internal setting name without showing old branding.
+    raw = _sb_config_get(_SB_CONFIG_ENEMIES, None)
+    if raw is None:
+        raw = _sb_config_get("StudioBon Radar Enemies", [])
     cleaned = []
     if isinstance(raw, list):
         for item in raw:
@@ -1923,12 +1929,8 @@ def _sb_add_enemy(person):
         player_name = str(person.get("name", "Player"))[:60] if isinstance(person, dict) else "Player"
         _sb_enemies.append({"id": ident, "name": player_name})
         _sb_save_enemies()
-        push("این شخص (%s) متخلف به لیست دشمنان اضافه شد☢️" % ident, color=(1, 0.18, 0.18))
-        try:
-            safe_chat_send("🚫(%s) Added to ENEMYIES !" % ident)
-        except Exception:
-            pass
-        _open_studiobon_radar()
+        push("Enemy saved", color=(1.0, 0.30, 0.72))
+        _open_radar()
     except Exception as exc:
         try: push("Radar add error: %s" % str(exc)[:100], color=(1, 0.2, 0.2))
         except Exception: pass
@@ -1955,21 +1957,30 @@ def _open_enemy_list():
 
 
 def _sb_check_enemy_roster():
+    """Show a local alert whenever a saved enemy appears in the current roster."""
+    global _sb_enemy_announced_this_session
     try:
+        known = {str(item.get("id", "")).casefold(): item for item in _sb_enemies}
+        present_now = set()
         if server_ip != "127.0.0.1":
-            known = {item["id"].casefold(): item for item in _sb_enemies}
             for person in _sb_roster():
                 ident = _sb_person_stable_id(person)
-                if not ident or ident.casefold() not in known:
+                if not ident:
                     continue
                 key = ident.casefold()
+                if key not in known:
+                    continue
+                present_now.add(key)
                 if key not in _sb_enemy_announced_this_session:
                     _sb_enemy_announced_this_session.add(key)
-                    safe_chat_send("📡 StudioBon Radar | (%s) is ENEMY" % ident)
-    except Exception:
-        pass
+                    enemy_name = str(person.get("name") or known[key].get("name") or "Player")
+                    push("Enemy (%s) is here" % enemy_name,
+                         color=(1.0, 0.30, 0.72), top=True)
+        # If an enemy leaves, allow another alert when they join again.
+        _sb_enemy_announced_this_session.intersection_update(present_now)
+    except Exception as exc:
+        print("Enemy roster check error: " + str(exc))
     try:
-        # Keep checking while offline too; this catches saved enemies after joining.
         teck(2.0, _sb_check_enemy_roster)
     except Exception:
         pass
@@ -1980,72 +1991,84 @@ _sb_load_enemies()
 
 class _EnemyListWindow(_SBPanel):
     def __init__(self):
-        super().__init__("Enemies list🚫", accent=(1.0, 0.30, 0.70), height=820)
-        try: bui.containerwidget(edit=self.root_widget, color=(0.16, 0.018, 0.085))
+        super().__init__("ENEMYS", accent=(1.0, 0.30, 0.70), height=760)
+        try: bui.containerwidget(edit=self.root_widget, color=(0.075, 0.012, 0.055))
         except Exception: pass
-        margin = 18
-        viewport_y = 48
-        viewport_h = max(180, self._height - 205)
-        sw = self._width - 2 * margin
-        scroll = bui.scrollwidget(parent=self.root_widget, position=(margin, viewport_y),
-            size=(sw, viewport_h), highlight=False, capture_arrows=True)
-        ch = max(viewport_h, len(_sb_enemies) * 66 + 20)
-        content = bui.containerwidget(parent=scroll, size=(sw, ch), background=False)
+        total = len(_sb_enemies)
         bui.textwidget(parent=self.root_widget,
-            position=(20, self._height - 128), size=(self._width - 180, 30),
-            text="تعداد دشمنان من : %s" % str(len(_sb_enemies)).translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")),
-            h_align="left", v_align="center", scale=0.72,
-            color=(1.0, 0.72, 0.88))
-        bw(parent=self.root_widget, position=(self._width - 145, self._height - 128), size=(125, 30),
-           button_type="square", label="↻ REFRESH", text_scale=0.55,
-           color=(0.58, 0.06, 0.28), textcolor=(1, 1, 1), on_activate_call=_open_enemy_list)
+            position=(22, self._height - 132), size=(self._width - 190, 34),
+            text="SAVED ENEMIES  •  %d" % total, h_align="left", v_align="center",
+            scale=0.76, color=(1.0, 0.62, 0.84))
+        bw(parent=self.root_widget, position=(self._width - 154, self._height - 132),
+           size=(132, 34), button_type="square", label="REFRESH", text_scale=0.58,
+           color=(0.56, 0.045, 0.29), textcolor=(1, 1, 1),
+           on_activate_call=_open_enemy_list)
+        margin = 20
+        view_y = 58
+        view_h = self._height - 212
+        inner_w = self._width - 2 * margin
+        scroll = bui.scrollwidget(parent=self.root_widget,
+            position=(margin, view_y), size=(inner_w, view_h),
+            highlight=False, capture_arrows=True)
+        row_h = 76
+        content_h = max(view_h, total * row_h + 18)
+        content = bui.containerwidget(parent=scroll, size=(inner_w, content_h), background=False)
         if not _sb_enemies:
-            bui.textwidget(parent=content, position=(12, ch - 70), size=(sw - 24, 50),
-                text="No saved enemy IDs yet.", h_align="center", v_align="center", scale=0.8,
+            bui.textwidget(parent=content, position=(12, content_h - 88),
+                size=(inner_w - 24, 58), text="No enemies saved yet",
+                h_align="center", v_align="center", scale=0.9,
                 color=(1.0, 0.72, 0.88))
         for idx, item in enumerate(_sb_enemies):
-            y = ch - 78 - idx * 66
-            bui.textwidget(parent=content, position=(10, y + 12), size=(sw - 90, 42),
-                text="%02d. %s\n%s" % (idx + 1, item.get("name", "Player"), item["id"]),
-                h_align="left", v_align="center", scale=0.66, color=(1.0, 0.78, 0.91))
-            bw(parent=content, position=(sw - 72, y + 15), size=(60, 38),
-                button_type="square", label="🗑", text_scale=0.7,
-                color=(0.62, 0.035, 0.30), textcolor=(1, 1, 1),
-                on_activate_call=lambda ident=item["id"]: _sb_remove_enemy(ident))
+            y = content_h - 72 - idx * row_h
+            shade = (0.19, 0.035, 0.12) if idx % 2 == 0 else (0.13, 0.025, 0.095)
+            bw(parent=content, position=(4, y - 2), size=(inner_w - 8, 64),
+               button_type="square", label="", color=shade, enable_sound=False)
+            bui.textwidget(parent=content, position=(16, y + 24),
+                size=(inner_w - 116, 28), text=str(item.get("name", "Player"))[:42],
+                h_align="left", v_align="center", scale=0.72,
+                color=(1.0, 0.76, 0.9))
+            bui.textwidget(parent=content, position=(16, y + 5),
+                size=(inner_w - 116, 20), text=str(item.get("id", ""))[:72],
+                h_align="left", v_align="center", scale=0.52,
+                color=(1.0, 0.40, 0.72))
+            bw(parent=content, position=(inner_w - 82, y + 12), size=(66, 38),
+               button_type="square", label="REMOVE", text_scale=0.48,
+               color=(0.66, 0.035, 0.27), textcolor=(1, 1, 1),
+               on_activate_call=lambda ident=item["id"]: _sb_remove_enemy(ident))
 
 
 _radar_window = None
 
 
-def _open_studiobon_radar():
+def _open_radar():
     global _radar_window
     try:
         if _radar_window is not None:
             _radar_window.close()
-        _radar_window = _StudioBonRadarWindow()
+        _radar_window = _MahyarRadarWindow()
     except Exception as exc:
         try: push("Radar error: %s" % exc, color=(1, 0.3, 0.3))
         except Exception: pass
 
 
-class _StudioBonRadarWindow(_SBPanel):
+class _MahyarRadarWindow(_SBPanel):
     """Radar uses the same roster fields as the reference PlayerInfo manager."""
     def __init__(self):
-        super().__init__("▣ STUDIOBON RADAR / PLAYER MANAGER",
+        super().__init__("RADAR",
                          accent=(1.0, 0.30, 0.72), height=720)
         try: bui.containerwidget(edit=self.root_widget, color=(0.075, 0.018, 0.12))
         except Exception: pass
-        # Keep the existing enemy-list button.
-        bw(parent=self.root_widget, position=(20, self._height - 112), size=(70, 38),
-            button_type="square", label="🚫", text_scale=0.85,
-            color=(0.62, 0.035, 0.30), textcolor=(1, 1, 1),
+        # Dedicated Enemys section opens the user's saved enemy list.
+        bw(parent=self.root_widget, position=(20, self._height - 116), size=(150, 42),
+            button_type="square", label="ENEMYS", text_scale=0.72,
+            color=(0.72, 0.045, 0.34), textcolor=(1, 1, 1),
             on_activate_call=_open_enemy_list)
         try:
             roster = _sb_roster()
         except Exception:
             roster = []
-        bui.textwidget(parent=self.root_widget, position=(102, self._height - 112),
-            size=(self._width - 124, 36), text="ONLINE PLAYERS  •  %d" % len(roster),
+        bui.textwidget(parent=self.root_widget, position=(190, self._height - 112),
+            size=(self._width - 212, 36), text="ONLINE PLAYERS  •  %d" % len(roster),
             h_align="left", v_align="center", scale=0.78, color=(1.0, 0.72, 0.88))
         margin = 18
         viewport_y = 54
@@ -2056,7 +2079,7 @@ class _StudioBonRadarWindow(_SBPanel):
         content_h = max(viewport_h, len(roster) * 76 + 48)
         content = bui.containerwidget(parent=scroll, size=(inner_w, content_h), background=False)
         known = {item["id"].casefold() for item in _sb_enemies}
-        headers = (("PLAYER NAME", 12), ("CLIENT ID", 270), ("DEVICE / V2", 390))
+        headers = (("PLAYER NAME", 12), ("CLIENT ID", 270), ("DEVICE ID", 390))
         for title, x in headers:
             bui.textwidget(parent=content, position=(x, content_h - 28), size=(160, 22),
                 text=title, h_align="left", v_align="center", scale=0.58,
@@ -2077,23 +2100,23 @@ class _StudioBonRadarWindow(_SBPanel):
                 text=cid, h_align="left", v_align="center", scale=0.65,
                 color=(1.0, 0.72, 0.88))
             bui.textwidget(parent=content, position=(390, y + 16), size=(inner_w - 610, 36),
-                text=ident or "Not exposed by roster", h_align="left", v_align="center",
+                text=ident or "ID unavailable", h_align="left", v_align="center",
                 scale=0.62, color=(1.0, 0.35, 0.72) if is_enemy else (0.6, 1.0, 0.68))
             # Preserve the existing add-to-enemy action; no PlayerInfo management
             # controls such as Kick All are imported into this panel.
             bw(parent=content, position=(inner_w - 205, y + 13), size=(190, 36),
                 button_type="square",
-                label="IN ENEMY LIST" if is_enemy else "Add to ENEMY'S list",
+                label="ADDED" if is_enemy else "ADD ENEMY",
                 text_scale=0.54, color=(0.32, 0.035, 0.20) if is_enemy else (0.62, 0.025, 0.06),
                 textcolor=(1, 1, 1), on_activate_call=lambda p=person: _sb_add_enemy(p))
         if not roster:
             bui.textwidget(parent=content, position=(10, content_h - 90), size=(inner_w - 20, 60),
-                text="No players found. Open while connected to a server.",
+                text="No players online",
                 h_align="center", v_align="center", scale=0.8, color=_SB_TEXT)
         bw(parent=self.root_widget, position=(20, 12), size=(self._width - 40, 34),
             button_type="square", label="REFRESH RADAR", text_scale=0.7,
             color=(0.025, 0.16, 0.48), textcolor=(1, 1, 1),
-            on_activate_call=_open_studiobon_radar)
+            on_activate_call=_open_radar)
 
 
 
@@ -2105,7 +2128,7 @@ def _open_file_manager():
     try:
         if _file_manager_window is not None:
             _file_manager_window.close()
-        _file_manager_window = _StudioBonFileManagerWindow()
+        _file_manager_window = _MahyarFileManagerWindow()
     except Exception as exc:
         try:
             push("File Manager error: %s" % str(exc)[:100], color=(1, 0.3, 0.3))
@@ -2113,9 +2136,9 @@ def _open_file_manager():
             pass
 
 
-class _StudioBonFileManagerWindow(_SBPanel):
+class _MahyarFileManagerWindow(_SBPanel):
     def __init__(self):
-        super().__init__("📁 FILE MANAGER", accent=(1.0, 0.30, 0.72),
+        super().__init__("FILE MANAGER", accent=(1.0, 0.30, 0.72),
                          width=760, height=560)
         try:
             bui.containerwidget(edit=self.root_widget, color=(0.065, 0.018, 0.095))
