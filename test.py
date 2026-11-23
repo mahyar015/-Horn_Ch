@@ -1741,7 +1741,7 @@ def _fast_buy_loop():
     except Exception as exc:
         print('Fast buyer loop error: %s' % exc)
     finally:
-        teck(0.05, _fast_buy_loop)
+        teck(0.15, _fast_buy_loop)
 
 
 def check_reaction(msg):
@@ -1943,7 +1943,7 @@ class byMahyar(Plugin):
         teck(0.5, s.calc_ear)
         teck(1, s.reconnect_ear)
         teck(2.0, _sb_check_enemy_roster)
-        teck(0.05, _fast_buy_loop)
+        teck(0.15, _fast_buy_loop)
         teck(2.5, _show_mahyar_credit)
 
         from bauiv1lib import party
@@ -1998,7 +1998,7 @@ class byMahyar(Plugin):
     def ear(s):
         try:
             z = GCM()
-            teck(0.05, s.ear)
+            teck(0.15, s.ear)
 
             if not z:
                 s.last_msg_hash = ""
@@ -2029,7 +2029,7 @@ class byMahyar(Plugin):
 
         except Exception as e:
             try:
-                teck(0.05, s.ear)
+                teck(0.15, s.ear)
             except:
                 pass
             print(f"Error in ear: {e}")
@@ -2037,7 +2037,7 @@ class byMahyar(Plugin):
     def calc_ear(s):
         try:
             z = GCM()
-            teck(0.3, s.calc_ear)
+            teck(0.5, s.calc_ear)
 
             if not z:
                 s.last_calc_hash = ""
@@ -2063,7 +2063,7 @@ class byMahyar(Plugin):
             except: pass
         except Exception as e:
             try:
-                teck(0.3, s.calc_ear)
+                teck(0.5, s.calc_ear)
             except:
                 pass
             print(f"Error in calc_ear: {e}")
@@ -2359,7 +2359,6 @@ def _sb_check_enemy_roster():
         print("Enemy roster check error: " + str(exc))
     try:
         teck(2.0, _sb_check_enemy_roster)
-        teck(0.05, _fast_buy_loop)
     except Exception:
         pass
 
